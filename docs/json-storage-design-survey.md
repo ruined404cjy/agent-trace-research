@@ -162,11 +162,11 @@ Langfuse v4 是当前最直接的实现样本，详见第 3.2.1 节。
 
 源码证据：
 
-- [events_full DDL](https://github.com/langfuse/langfuse/blob/983c2a6e5bbe9e8f35fe10eb017c9abd6220833b/packages/shared/clickhouse/migrations/clustered/0039_create_events_full.up.sql)
-- [events_core materialized view](https://github.com/langfuse/langfuse/blob/983c2a6e5bbe9e8f35fe10eb017c9abd6220833b/packages/shared/clickhouse/migrations/clustered/0041_create_events_core_mv.up.sql)
-- [长字段 overflow 处理](https://github.com/langfuse/langfuse/blob/983c2a6e5bbe9e8f35fe10eb017c9abd6220833b/worker/src/features/observation-field-overflow/processObservationFieldOverflow.ts)
-- [阈值配置](https://github.com/langfuse/langfuse/blob/983c2a6e5bbe9e8f35fe10eb017c9abd6220833b/worker/src/env.ts)
-- [Media schema](https://github.com/langfuse/langfuse/blob/983c2a6e5bbe9e8f35fe10eb017c9abd6220833b/packages/shared/prisma/schema.prisma)
+- [events_full DDL](https://github.com/langfuse/langfuse/blob/add6ca4aceb949905df887b88cac619756e003b7/packages/shared/clickhouse/migrations/clustered/0039_create_events_full.up.sql)
+- [events_core materialized view](https://github.com/langfuse/langfuse/blob/add6ca4aceb949905df887b88cac619756e003b7/packages/shared/clickhouse/migrations/clustered/0041_create_events_core_mv.up.sql)
+- [长字段 overflow 处理](https://github.com/langfuse/langfuse/blob/add6ca4aceb949905df887b88cac619756e003b7/worker/src/features/observation-field-overflow/processObservationFieldOverflow.ts)
+- [阈值配置](https://github.com/langfuse/langfuse/blob/add6ca4aceb949905df887b88cac619756e003b7/worker/src/env.ts)
+- [Media schema](https://github.com/langfuse/langfuse/blob/add6ca4aceb949905df887b88cac619756e003b7/packages/shared/prisma/schema.prisma)
 
 Langfuse 同时覆盖“JSON 长字段”和“媒体大 payload”，两者共用 media/asset 设施；`contentType` 与 `origin` 区分文本 overflow 和媒体提取。它没有把 input/output 改为 ClickHouse 原生 JSON，也没有通过自动子列化解决数千 metadata 路径问题。Full/Core 与对象化长字段分别控制常规查询读取和极端字段大小。
 
@@ -217,24 +217,24 @@ Tempo 适合验证“Trace 原生列式布局、热点属性和对象存储 bloc
 
 这些工作说明“热点列 + residual”可以由应用、存储引擎或文件格式实现。当前项目在应用层原型中应先固定重建语义和 workload，再评估是否值得向引擎能力演进。
 
-#### 3.2.7 方案能力比较
+### 3.3 方案能力比较
 
-| 方向 | 写入开销 | 热点路径效率 | 冷路径效率 | 整对象效率 | schema 演进能力 | 长字段治理能力 |
+| 方向 | 写入效率 | 热点路径效率 | 冷路径效率 | 整对象效率 | schema 演进能力 | 长字段治理能力 |
 |---|---:|---:|---:|---:|---:|---:|
-| JSON 文本 | 低 | 低 | 低 | 高 | 高 | 低 |
-| JSONB + 通用索引 | 高 | 中 | 中 | 中 | 高 | 低 |
-| JSONB + 定向索引/生成列 | 中 | 高 | 中 | 中 | 中 | 低 |
-| 热点列 + 完整 JSON | 中 | 高 | 中 | 高 | 中 | 低 |
-| 热点列 + residual | 高 | 高 | 中 | 中 | 中 | 低 |
-| 自动子列 + shared data | 高 | 高 | 中 | 中 | 高 | 低 |
-| Map/flattened/EAV | 中 | 中 | 中 | 中 | 高 | 低 |
-| Full/Core | 高 | 高 | 中 | 高 | 中 | 中 |
-| 内部 LOB/TOAST | 中 | 中 | 中 | 高 | 高 | 中 |
-| 对象引用 | 高 | 高 | 低 | 低 | 高 | 高 |
+| JSON 文本 | ★★★★★ | ★☆☆☆☆ | ★☆☆☆☆ | ★★★★★ | ★★★★★ | ★☆☆☆☆ |
+| JSONB + 通用索引 | ★☆☆☆☆ | ★★★☆☆ | ★★★☆☆ | ★★★☆☆ | ★★★★★ | ★☆☆☆☆ |
+| JSONB + 定向索引/生成列 | ★★★☆☆ | ★★★★★ | ★★★☆☆ | ★★★☆☆ | ★★★☆☆ | ★☆☆☆☆ |
+| 热点列 + 完整 JSON | ★★★☆☆ | ★★★★★ | ★★★☆☆ | ★★★★★ | ★★★☆☆ | ★☆☆☆☆ |
+| 热点列 + residual | ★☆☆☆☆ | ★★★★★ | ★★★☆☆ | ★★★☆☆ | ★★★☆☆ | ★☆☆☆☆ |
+| 自动子列 + shared data | ★☆☆☆☆ | ★★★★★ | ★★★☆☆ | ★★★☆☆ | ★★★★★ | ★☆☆☆☆ |
+| Map/flattened/EAV | ★★★☆☆ | ★★★☆☆ | ★★★☆☆ | ★★★☆☆ | ★★★★★ | ★☆☆☆☆ |
+| Full/Core | ★☆☆☆☆ | ★★★★★ | ★★★☆☆ | ★★★★★ | ★★★☆☆ | ★★★☆☆ |
+| 内部 LOB/TOAST | ★★★☆☆ | ★★★☆☆ | ★★★☆☆ | ★★★★★ | ★★★★★ | ★★★☆☆ |
+| 对象引用 | ★☆☆☆☆ | ★★★★★ | ★☆☆☆☆ | ★☆☆☆☆ | ★★★★★ | ★★★★★ |
 
-表中“低／中／高”是根据各机制的数据组织和读写路径作出的定性判断，并非当前项目
-实测结果。写入开销越低越好，其余能力或效率越高越好。组合方案的实际结果取决于
-数据分布、查询选择性、物化方式和引擎实现。
+星级越高表示该维度的能力或效率越高。表中评分根据各机制的数据组织和读写路径作出，
+属于定性比较，并非当前项目实测结果。组合方案的实际结果取决于数据分布、查询选择性、
+物化方式和引擎实现。
 
 “热点路径读取”与“大字段治理”是两条正交轴。实际方案通常需要从每条轴各选一层，例如“热点列 + residual JSON + Core 投影 + 对象引用”。
 
@@ -244,7 +244,9 @@ Tempo 适合验证“Trace 原生列式布局、热点属性和对象存储 bloc
 
 当前 `events` 使用单宽表保存稳定 Trace/Span 列，并以 `tags`、`input`、`output`、
 `metadata` 四个 JSON 列承载动态属性和模型输入输出。生产 profile 已验证 dstore
-列存 `JSON`，尚未使用 `JSONB`；JSON 路径读取在执行阶段解析。
+列存 `JSON`，尚未使用 `JSONB`；JSON 路径读取在执行阶段解析。dstore 也支持
+`TEXT[]`、`VARCHAR[]` 及其数组操作符，但 Array 与 JSON 在现有布局下都需要扫描整列，
+benchmark 也没有 tag 过滤 workload，因此 `tags` 继续使用 JSON。
 
 exporter 把全部 span/event 属性写入 `metadata`，同时把部分 GenAI 输入输出提升到
 `input`、`output`，尚未定义热点字段与 residual 的互斥或重建契约。默认
@@ -254,7 +256,14 @@ exporter 把全部 span/event 属性写入 `metadata`，同时把部分 GenAI �
 数据库的容量边界。
 
 现有 benchmark workload 包含 JSON 路径过滤、动态属性聚合、文本查询和 light/full
-投影。数据集与报告尚未覆盖以下设计变量：
+投影，并使用查询 type 参数化、参数 catalog 以及 trace 长度、payload 大小等参数分层
+保证查询参数可复现。输入覆盖尚未成为运行门禁。对 `whowhen-pro` text split 的覆盖审计
+显示，6,257 条 trace 都带 `failure.root_span`，只有 232 条投影出 ERROR status，
+`gen_ai.provider.name` 只有 `unknown` 一个值；顺序 `--limit` 还可能只截取单一 framework。
+当前默认输入仍是 text split，多模态 sidecar 契约处于 Draft 状态。因此现有数据不能
+直接作为多字段 JSON、长 payload 和多模态存储的完整基线。
+
+数据集与报告尚未覆盖以下设计变量：
 
 - 50、500、5000 路径的字段数量、稀疏度和类型冲突；
 - JSON null、路径缺失、嵌套结构和同名字段的正确性；
@@ -345,8 +354,8 @@ resolver 应按 project/tenant 鉴权并生成受限下载地址。脱敏、加�
 可复现基线需要同时固定数据集与生成参数、Collector/exporter 版本和配置、schema
 及索引、引擎 build 与 storage profile、查询 workload 和运行环境。每次运行还需保存
 输入 hash、truth manifest、DDL/catalog hash、二进制 hash 和正确性结果。当前
-exporter 写入 28 列，benchmark v4 database catalog 定义 26 列；匹配 schema 前产生
-的结果不能进入性能比较。
+exporter 写入 28 列，benchmark v4 database catalog revision `2026-09-01.6` 仍定义
+26 列；匹配 schema 前产生的结果不能进入性能比较。
 
 现有 database 与 Langfuse backend 的路径分别为：
 
@@ -408,12 +417,17 @@ langfuse: OTLP -> Langfuse ingestion/worker -> ClickHouse/PostgreSQL/MinIO
 
 ### 7.1 本地项目资料
 
-- [Exporter schema 说明](https://github.com/labmemW/exporter_demo/blob/4cc3bf2d21ab9ecd5d014a182e66d6b83b7f446b/docs/SCHEMA.md)
-- [自研引擎验证报告](https://github.com/labmemW/exporter_demo/blob/4cc3bf2d21ab9ecd5d014a182e66d6b83b7f446b/docs/references/engine-verification-2026-08-07.md)
-- [Langfuse v4 schema 字典](https://github.com/labmemW/exporter_demo/blob/4cc3bf2d21ab9ecd5d014a182e66d6b83b7f446b/docs/references/langfuse-v4-events-schema-dictionary-2026-08-24.md)
-- [大 payload 与多模态 Trace 调研](https://github.com/zfwang2021/trace-synthesis/blob/e0b9c83e3bd8bd7bb78d68225f29df0753f5432e/docs/report/large-payload-multimodal-trace.md)
-- [Benchmark v4 database catalog](https://github.com/zfwang2021/trace-synthesis/blob/e0b9c83e3bd8bd7bb78d68225f29df0753f5432e/benchmark/schema/v4/database/catalog.json)
-- [Benchmark v4 Langfuse catalog](https://github.com/zfwang2021/trace-synthesis/blob/e0b9c83e3bd8bd7bb78d68225f29df0753f5432e/benchmark/schema/v4/langfuse/catalog.json)
+- [Exporter schema 说明](https://github.com/labmemW/exporter_demo/blob/a0b3441d473d5cb4fd7c06767d12b9f611521b9e/docs/SCHEMA.md)
+- [自研引擎验证报告](https://github.com/labmemW/exporter_demo/blob/a0b3441d473d5cb4fd7c06767d12b9f611521b9e/docs/references/engine-verification-2026-08-07.md)
+- [Exporter 与 Langfuse v4 字段对照](https://github.com/labmemW/exporter_demo/blob/a0b3441d473d5cb4fd7c06767d12b9f611521b9e/docs/references/langfuse-v4-vs-exporter-demo-field-mapping-2026-08-28.md)
+- [dstore tags Array 探针](https://github.com/labmemW/exporter_demo/blob/a0b3441d473d5cb4fd7c06767d12b9f611521b9e/scripts/perf/probe-tags-array-xstore.sql)
+- [大 payload 与多模态 Trace 调研](https://github.com/zfwang2021/trace-synthesis/blob/3d4ef6235fbc28d1465daba756a26e18d8bf9366/docs/report/large-payload-multimodal-trace.md)
+- [Benchmark v4 database catalog](https://github.com/zfwang2021/trace-synthesis/blob/3d4ef6235fbc28d1465daba756a26e18d8bf9366/benchmark/schema/v4/database/catalog.json)
+- [Benchmark v4 Langfuse catalog](https://github.com/zfwang2021/trace-synthesis/blob/3d4ef6235fbc28d1465daba756a26e18d8bf9366/benchmark/schema/v4/langfuse/catalog.json)
+- [Trace synthesis 架构与决策状态](https://github.com/zfwang2021/trace-synthesis/blob/3d4ef6235fbc28d1465daba756a26e18d8bf9366/docs/architecture.md)
+- [Benchmark query type 参数化 ADR](https://github.com/zfwang2021/trace-synthesis/blob/3d4ef6235fbc28d1465daba756a26e18d8bf9366/docs/adr/0036-benchmark-query-type-parameterization.md)
+- [Benchmark 输入覆盖 Draft ADR](https://github.com/zfwang2021/trace-synthesis/blob/3d4ef6235fbc28d1465daba756a26e18d8bf9366/docs/adr/0037-benchmark-input-coverage-contract.md)
+- [多模态 sidecar Draft ADR](https://github.com/zfwang2021/trace-synthesis/blob/3d4ef6235fbc28d1465daba756a26e18d8bf9366/docs/adr/0031-whowhen-pro-multimodal-sidecar-contract.md)
 
 ### 7.2 官方文档和开放源码
 
