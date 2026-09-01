@@ -1,0 +1,16 @@
+# Agent-generated working documents
+docs/superpowers/
+.superpowers/
+.codex/
+
+# Local temporary files and caches
+.tmp/
+tmp/
+**/__pycache__/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.DS_Store
+*~
+*.swp
+*.swo
