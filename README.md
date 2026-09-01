@@ -9,7 +9,6 @@ JSON/JSONB、长字段和多模态大 payload 的存储方案。
 |---|---|
 | [JSON 存储设计调研](docs/json-storage-design-survey.md) | 代表性系统、论文、现有项目状态、工程结论与遗留问题 |
 | [JSON 存储穿刺与对比实验设计](docs/json-storage-spike-experiment-design.md) | E0–E9 候选、数据、workload、指标、门槛和工作量 |
-| [调研与实验交接 Prompt](docs/agent-trace-json-storage-handoff-prompt.md) | 新会话继续版本同步、基线确认和 P0 实验 |
 | [OTel 与 Langfuse 学习指南](docs/otel-langfuse-study-guide.md) | OTel、Collector、GenAI 语义和 Langfuse 摄入链路 |
 | [蓝区复现指南](docs/trace-ingestion-demo-blue-zone-guide.md) | 历史固定版本的标准 openGauss row profile 复现 |
 | [黄区复现指南](docs/trace-ingestion-demo-yellow-zone-guide.md) | 历史固定版本的 GV xstore 复现 |

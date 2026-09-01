@@ -65,69 +65,11 @@ JSON 内的长字符串在物理层属于大 payload，可与图片、音频和�
 
 统一 asset 层应把 `origin`、`field_path`、`content_type` 和 `encoding` 作为显式元数据。这样可以共享设施，同时保持读取与治理策略独立。
 
-## 3. 当前项目基线
+## 3. 存储设计与代表性实现
 
-### 3.1 代码版本和资料状态
+### 3.1 设计模式
 
-本次检查使用以下本地 checkout：
-
-| 仓库 | 分支 | 本地提交 | 状态 |
-|---|---|---|---|
-| `exporter_demo` | `main` | `4cc3bf2d21ab9ecd5d014a182e66d6b83b7f446b` | 工作树干净 |
-| `trace-synthesis` | `main` | `e0b9c83e3bd8bd7bb78d68225f29df0753f5432e` | 工作树干净 |
-| `langfuse` | `main` | `983c2a6e5bbe9e8f35fe10eb017c9abd6220833b` | 工作树干净 |
-
-2026-09-01 初次对三个仓库执行 `git pull --ff-only` 时，GitHub HTTPS 在 TLS
-握手阶段返回 `OpenSSL SSL_connect: SSL_ERROR_SYSCALL`。后续重试中 Langfuse
-拉取成功，`main` 仍为表中提交，并获取 `v4.25.0`、`v4.26.0` tag；exporter 与
-trace-synthesis 仍未刷新远端引用。后两个提交是本地可复核基线，不代表重新确认的
-远端 HEAD。外部设计事实使用同日访问的官方文档和论文核验。
-
-### 3.2 exporter 的现有行为
-
-当前 `events` 是单宽表，包含稳定 Trace/Span 列以及 `tags`、`input`、`output`、`metadata` 四个 JSON 列。生产 profile 使用自研引擎 dstore 列存，已验证的列存类型为 `JSON`，未包含 `JSONB`。实现见：
-
-- [schema.go](https://github.com/labmemW/exporter_demo/blob/4cc3bf2d21ab9ecd5d014a182e66d6b83b7f446b/schema.go)
-- [convert.go](https://github.com/labmemW/exporter_demo/blob/4cc3bf2d21ab9ecd5d014a182e66d6b83b7f446b/convert.go)
-- [config.go](https://github.com/labmemW/exporter_demo/blob/4cc3bf2d21ab9ecd5d014a182e66d6b83b7f446b/config.go)
-- [引擎验证报告](https://github.com/labmemW/exporter_demo/blob/4cc3bf2d21ab9ecd5d014a182e66d6b83b7f446b/docs/references/engine-verification-2026-08-07.md)
-
-摄入侧行为如下：
-
-1. `attrsToJSON` 把全部 span/event 属性写入 `metadata`，没有排除已经提升为同级列的属性。
-2. generation 的输入、输出又从 `gen_ai.input.messages` 和 `gen_ai.output.messages` 提取到独立 JSON 列。相同内容可能同时出现在 `metadata` 与 `input`/`output`。
-3. 默认 `max_attr_value_length=65536`。字符串按 UTF-8 字节预算截断；bytes 先转 base64 再截断；Map/Slice 先序列化成 JSON 字符串再截断。
-4. 单个 JSON 列整体超过限制时，整列替换为 `{"_truncated":true,"_original_bytes":N}`。
-5. 截断标记没有保留对象引用，原内容无法恢复。
-
-引擎验证覆盖 1 KiB 至 50 MiB JSON、约 1 GiB TEXT、JSON 嵌套和列存 LOB 隔离；JSON 路径读取在执行时解析。该证据说明 exporter 的 64 KiB 限制主要是应用策略，不能代表引擎单字段容量。容量可写也不等于常规查询适合内联读取大值。
-
-### 3.3 exporter 与 benchmark 的版本不一致
-
-exporter 当前 `events` 写入列共 28 个，新增了 `service_name` 和 `service_version`。benchmark v4 database catalog 的 `events` 仍为 26 列，revision 为 `2026-08-31.3`，其 `cleanup_gaussdb.sql` 也会重建 26 列表：
-
-- [exporter schema](https://github.com/labmemW/exporter_demo/blob/4cc3bf2d21ab9ecd5d014a182e66d6b83b7f446b/schema.go)
-- [benchmark catalog](https://github.com/zfwang2021/trace-synthesis/blob/e0b9c83e3bd8bd7bb78d68225f29df0753f5432e/benchmark/schema/v4/database/catalog.json)
-- [benchmark cleanup](https://github.com/zfwang2021/trace-synthesis/blob/e0b9c83e3bd8bd7bb78d68225f29df0753f5432e/benchmark/schema/v4/database/cleanup_gaussdb.sql)
-
-catalog 记录 schema version、revision、catalog hash 和 exporter 名称，但 `source_evidence.files` 为空，也没有 exporter commit。运行报告可以记录 schema/catalog 和运行进程信息；[E2E 版本 manifest](https://github.com/zfwang2021/trace-synthesis/blob/e0b9c83e3bd8bd7bb78d68225f29df0753f5432e/benchmark/e2e-version-manifest.yaml)仍是待填写模板。当前协调机制依赖人工选择精确版本和 preflight schema check，尚未形成 exporter commit 到 catalog revision 的可执行映射。
-
-因此，后续存储实验必须先填写版本矩阵，并使用匹配的 exporter 与 catalog。直接组合上述两个本地 HEAD 会在 schema preflight 或插入阶段失败。
-
-### 3.4 benchmark 的覆盖缺口
-
-现有 v4 workload 已覆盖 JSON 路径过滤、动态 JSON 聚合、文本查询以及 light/full 投影查询，具备扩展基础。当前数据和报告尚未系统覆盖：
-
-- 50、500、5000 路径的字段数量阶梯；
-- 路径稀疏度、类型冲突、JSON null 与缺失值；
-- 单长值与多小值形成同等总大小时的差异；
-- 2 MiB 以上长值、对象存储引用和多模态数据；
-- 主表、索引、residual、Core 表与对象存储的分项空间；
-- 对象上传失败、重复内容、孤儿清理和保留期一致性。
-
-## 4. 设计模式分类
-
-### 4.1 整段 JSON 文本或二进制 JSON
+#### 3.1.1 整段 JSON 文本或二进制 JSON
 
 `JSON` 文本保留输入文本，写入成本低，路径读取需要解析。二进制 JSON/JSONB 在写入时解析为内部结构，读取路径更快，并可配置通用或定向索引。
 
@@ -135,7 +77,7 @@ PostgreSQL 的 `json` 保存原始文本，`jsonb` 保存分解后的二进制�
 
 适用场景：字段数量适中，需要事务读写或灵活路径查询。主要代价是整段存储、写入解析和索引放大。JSONB 没有定义对象存储、媒体、跨层删除和下载协议。
 
-### 4.2 热点强类型列与完整 JSON 并立
+#### 3.1.2 热点强类型列与完整 JSON 并立
 
 同一值同时保留在强类型列和完整 JSON 中。应用双写、生成列、表达式索引或物化列均可实现。
 
@@ -143,7 +85,7 @@ PostgreSQL 的 `json` 保存原始文本，`jsonb` 保存分解后的二进制�
 
 当前 exporter 已经具有这种模式的一部分，但 `metadata` 保留了所有属性，提升规则和重复范围没有显式契约。
 
-### 4.3 热点列与 residual JSON/Map
+#### 3.1.3 热点列与 residual JSON/Map
 
 热点值移动到独立列，剩余动态属性进入 residual。读取完整对象时合并两部分。Tempo dedicated columns、Sinew physical column + column reservoir、Parquet Variant shredding 都体现了该模式。
 
@@ -156,7 +98,7 @@ PostgreSQL 的 `json` 保存原始文本，`jsonb` 保存分解后的二进制�
 
 Parquet Variant 规定 shredded 字段与 residual object 的键集合互斥，reader 负责重建；类型不匹配的值留在通用 `value`。这比应用约定更完整地定义了迁移和重建语义。
 
-### 4.4 自动子列化与稀有路径共享区
+#### 3.1.4 自动子列化与稀有路径共享区
 
 系统自动分析路径，把常见路径变成物理子列，把超出预算或稀有路径放进共享结构。
 
@@ -168,7 +110,7 @@ ClickHouse 原生 JSON 按 data part 管理动态路径，默认最多 1024 个�
 
 Apache Doris Variant 也把叶路径列式化，并将高度稀疏路径重新打包到 JSONB 共享列。该类方案减少人工 schema 管理，代价是写入类型推断、物理元数据、merge/compaction 和整对象重建。路径上限、稀疏阈值和类型冲突必须纳入测试。
 
-### 4.5 Map/KV 与 flattened object
+#### 3.1.5 Map/KV 与 flattened object
 
 动态属性统一存成 Map、键值数组、EAV 子表或搜索引擎 flattened 字段。该模式用一个 schema 容纳大量未知键，避免每个键都进入全局 mapping。
 
@@ -176,21 +118,21 @@ Langfuse 把 metadata 存为 `metadata_names Array(String)` 与 `metadata_values
 
 优势是 schema 稳定、写入简单。限制包括弱类型、键和值配对约束、路径级统计不足、范围比较和聚合能力下降。EAV 子表还会增加行数、join 和批量写入成本。
 
-### 4.6 Full/Core 双层投影
+#### 3.1.6 Full/Core 双层投影
 
 Full 保存完整内容；Core 保存常用列和截断预览。列表、搜索和聚合主要读取 Core，详情读取 Full。
 
 该模式控制结果集和存储读取放大，与热点字段提取相互独立。普通 SQL view 只改变列选择，无法证明物理读取减少；有效实验需要物化 Core 表、列存投影或能提供等价物理裁剪的引擎机制。
 
-Langfuse v4 是当前最直接的实现样本，详见第 5.1 节。
+Langfuse v4 是当前最直接的实现样本，详见第 3.2.1 节。
 
-### 4.7 数据库内部 LOB/TOAST
+#### 3.1.7 数据库内部 LOB/TOAST
 
 数据库把大字段压缩或移到关联的内部表/页，主行保留短指针。PostgreSQL TOAST 通常在行宽约 2 KiB 后触发，out-of-line 值被切成约 2 KiB chunk，主行磁盘指针为 18 字节。读取未选择大值的查询可以保持较小主表工作集。
 
 该方案对应用透明，事务、备份和删除语义统一。它仍位于数据库容量、复制和备份范围内，也不自动提供媒体 MIME、内容去重、预签名下载和跨服务访问。
 
-### 4.8 外部对象引用
+#### 3.1.8 外部对象引用
 
 大字段或媒体进入本地文件系统、S3/MinIO 等对象存储，数据库保存 URI、token 或 asset ID。MongoDB GridFS 使用 `files` 与 `chunks` 集合存储超过 BSON 16 MiB 限制的文件，默认 chunk 为 255 KiB。Langfuse 使用媒体表、对象存储和内联引用 token。
 
@@ -203,9 +145,9 @@ Langfuse v4 是当前最直接的实现样本，详见第 5.1 节。
 - 数据保留、软删除、引用计数和孤儿清理；
 - 备份恢复时数据库与对象的联合一致性。
 
-## 5. 代表性实现对比
+### 3.2 代表性实现与横向比较
 
-### 5.1 Langfuse：热点列、Map、Full/Core 与对象化长字段
+#### 3.2.1 Langfuse：热点列、Map、Full/Core 与对象化长字段
 
 本地 Langfuse v4 的 `events_full` 采用以下组合：
 
@@ -228,7 +170,7 @@ Langfuse v4 是当前最直接的实现样本，详见第 5.1 节。
 
 Langfuse 同时覆盖“JSON 长字段”和“媒体大 payload”，两者共用 media/asset 设施；`contentType` 与 `origin` 区分文本 overflow 和媒体提取。它没有把 input/output 改为 ClickHouse 原生 JSON，也没有通过自动子列化解决数千 metadata 路径问题。Full/Core 与对象化长字段分别控制常规查询读取和极端字段大小。
 
-### 5.2 PostgreSQL/MySQL：JSONB/二进制 JSON 与定向索引
+#### 3.2.2 PostgreSQL/MySQL：JSONB/二进制 JSON 与定向索引
 
 PostgreSQL 提供文本 `json`、二进制 `jsonb`、GIN 以及表达式索引，并由 TOAST 透明处理宽值。MySQL JSON 通过生成列或表达式建立定向索引。两者适合事务型路径查询和少量确定热点路径。
 
@@ -239,13 +181,13 @@ PostgreSQL 提供文本 `json`、二进制 `jsonb`、GIN 以及表达式索引�
 - 强类型独立列更适合排序、聚合、统计信息和跨字段约束；
 - 内部 LOB 保护主行，仍会把大值纳入数据库复制、备份和容量管理。
 
-### 5.3 ClickHouse JSON：逻辑单列、内部自动分层
+#### 3.2.3 ClickHouse JSON：逻辑单列、内部自动分层
 
 ClickHouse 25.3 起把开源 JSON 类型标记为 production ready。它把路径拆为子列，允许 type hint、`SKIP` 和动态路径/类型上限。逻辑上仍是一列，物理上形成热点动态子列与 shared data。
 
 该方案最适合字段形态变化快且有路径分析需求的日志/事件。与手工热点列相比，运维 schema 负担较低；写入、存储和整对象读取成本更高。当前 Langfuse 的 `events_full` 不能代表 ClickHouse 原生 JSON，二者必须作为不同实验候选。
 
-### 5.4 Grafana Tempo：Trace 专用 Parquet 分层
+#### 3.2.4 Grafana Tempo：Trace 专用 Parquet 分层
 
 Tempo 把 Trace 写成对象存储中的 Parquet block。intrinsic 字段为顶层列，其余属性默认在通用 `Attrs` 中；配置的 dedicated attributes 获得独立 Parquet 列。vParquet5 每个 span/resource/event scope 最多支持 20 个 string 和 5 个 int dedicated attributes。文档建议 int 属性在至少 5% 行出现时再提升。
 
@@ -253,7 +195,7 @@ Tempo 把 Trace 写成对象存储中的 Parquet block。intrinsic 字段为顶�
 
 Tempo 适合验证“Trace 原生列式布局、热点属性和对象存储 block”的效果。它不属于当前关系型 Demo 的 SQL drop-in backend。
 
-### 5.5 Elasticsearch、Snowflake、BigQuery、Databricks
+#### 3.2.5 Elasticsearch、Snowflake、BigQuery、Databricks
 
 这些系统展示了多字段 JSON 的不同控制面：
 
@@ -266,7 +208,7 @@ Tempo 适合验证“Trace 原生列式布局、热点属性和对象存储 bloc
 
 共同结论是：已知且高频的过滤/分区键应进入强类型列；动态部分采用专用半结构化类型；极宽 schema 需要路径预算或共享结构。
 
-### 5.6 论文与开放格式
+#### 3.2.6 论文与开放格式
 
 - Dremel 证明嵌套记录的列式 shredding/reassembly 可以在只读分析中减少无关列读取，是 Parquet 嵌套编码的重要基础。
 - Sinew 在 RDBMS 上使用物理列和 column reservoir。catalog 统计路径密度与基数，后台 materializer 在二者间移动值；迁移中的 dirty 列由查询改写同时读取物理列和 reservoir。
@@ -275,26 +217,52 @@ Tempo 适合验证“Trace 原生列式布局、热点属性和对象存储 bloc
 
 这些工作说明“热点列 + residual”可以由应用、存储引擎或文件格式实现。当前项目在应用层原型中应先固定重建语义和 workload，再评估是否值得向引擎能力演进。
 
-## 6. 横向比较
+#### 3.2.7 方案能力比较
 
-| 方向 | 写入成本 | 热点路径读取 | 冷路径读取 | 整对象读取 | schema 演进 | 长字段治理 |
+| 方向 | 写入开销 | 热点路径效率 | 冷路径效率 | 整对象效率 | schema 演进能力 | 长字段治理能力 |
 |---|---:|---:|---:|---:|---:|---:|
-| JSON 文本 | 低 | 差 | 差 | 好 | 好 | 弱 |
-| JSONB + 通用索引 | 中至高 | 中 | 中 | 中 | 好 | 弱 |
-| JSONB + 定向索引/生成列 | 中 | 好 | 中 | 中 | 中 | 弱 |
-| 热点列 + 完整 JSON | 中 | 好 | 中 | 好 | 中 | 弱 |
-| 热点列 + residual | 中至高 | 好 | 中 | 需重建 | 中 | 弱 |
-| 自动子列 + shared data | 高 | 好 | 中 | 需重建 | 好 | 弱 |
-| Map/flattened/EAV | 中 | 中 | 中 | 中 | 好 | 弱 |
-| Full/Core | 写放大 | 好 | 取决于 Full | 好 | 中 | 中 |
-| 内部 LOB/TOAST | 透明至中 | 与 JSON 形态相关 | 与 JSON 形态相关 | 好 | 好 | 中 |
-| 对象引用 | 上传和协调成本 | 依赖摘要/提取列 | 需解析引用 | 需远端读取 | 好 | 强 |
+| JSON 文本 | 低 | 低 | 低 | 高 | 高 | 低 |
+| JSONB + 通用索引 | 高 | 中 | 中 | 中 | 高 | 低 |
+| JSONB + 定向索引/生成列 | 中 | 高 | 中 | 中 | 中 | 低 |
+| 热点列 + 完整 JSON | 中 | 高 | 中 | 高 | 中 | 低 |
+| 热点列 + residual | 高 | 高 | 中 | 中 | 中 | 低 |
+| 自动子列 + shared data | 高 | 高 | 中 | 中 | 高 | 低 |
+| Map/flattened/EAV | 中 | 中 | 中 | 中 | 高 | 低 |
+| Full/Core | 高 | 高 | 中 | 高 | 中 | 中 |
+| 内部 LOB/TOAST | 中 | 中 | 中 | 高 | 高 | 中 |
+| 对象引用 | 高 | 高 | 低 | 低 | 高 | 高 |
+
+表中“低／中／高”是根据各机制的数据组织和读写路径作出的定性判断，并非当前项目
+实测结果。写入开销越低越好，其余能力或效率越高越好。组合方案的实际结果取决于
+数据分布、查询选择性、物化方式和引擎实现。
 
 “热点路径读取”与“大字段治理”是两条正交轴。实际方案通常需要从每条轴各选一层，例如“热点列 + residual JSON + Core 投影 + 对象引用”。
 
-## 7. 面向当前项目的候选设计
+## 4. 面向当前项目的候选设计
 
-### 7.1 建议的逻辑模型
+### 4.1 当前项目 JSON 存储基线
+
+当前 `events` 使用单宽表保存稳定 Trace/Span 列，并以 `tags`、`input`、`output`、
+`metadata` 四个 JSON 列承载动态属性和模型输入输出。生产 profile 已验证 dstore
+列存 `JSON`，尚未使用 `JSONB`；JSON 路径读取在执行阶段解析。
+
+exporter 把全部 span/event 属性写入 `metadata`，同时把部分 GenAI 输入输出提升到
+`input`、`output`，尚未定义热点字段与 residual 的互斥或重建契约。默认
+`max_attr_value_length=65536` 在入库前截断属性；JSON 列整体超限时只保存截断标记，
+没有可恢复引用。现有实现也未提供物化 Core/Full、asset 状态机和多模态对象生命周期。
+引擎验证已覆盖 50 MiB JSON 和更大的 TEXT，因此 64 KiB 是 exporter 策略，不能表示
+数据库的容量边界。
+
+现有 benchmark workload 包含 JSON 路径过滤、动态属性聚合、文本查询和 light/full
+投影。数据集与报告尚未覆盖以下设计变量：
+
+- 50、500、5000 路径的字段数量、稀疏度和类型冲突；
+- JSON null、路径缺失、嵌套结构和同名字段的正确性；
+- 单个长值与多个短值在相同总大小下的差异；
+- 2 MiB 以上长值、对象引用、多模态内容和对象存储故障；
+- 主表、索引、residual、Core 和对象存储的分项空间。
+
+### 4.2 建议的逻辑模型
 
 ```text
 events_core
@@ -312,8 +280,10 @@ event_assets
 ```
 
 该逻辑模型不预设具体引擎实现。`events_core` 可由物化表、物化视图或引擎投影实现；`assets` 可先使用 MinIO/S3 兼容接口验证。
+普通 SQL view 只改变列选择，无法保证减少物理读取和缓存占用；Core 层需要使用独立
+物化表、物化视图或具备等价物理裁剪能力的引擎投影。
 
-### 7.2 热点字段判定
+### 4.3 热点字段判定
 
 热点字段应由实际查询和数据分布共同确定：
 
@@ -326,7 +296,7 @@ event_assets
 
 首批候选包括现有同级列、`provider.name`、模型、token/cost、错误级别、service 信息。Tempo 的 5% 密度和 Sinew 的密度/基数策略可作为实验起点，不能直接作为生产阈值。
 
-### 7.3 residual 契约
+### 4.4 residual 契约
 
 实验需要比较两种规则：
 
@@ -335,7 +305,16 @@ event_assets
 
 若选择 move，契约必须定义路径转义、数组、类型冲突、JSON null、missing、同名字段优先级和 schema version。Parquet Variant 的互斥键与 reader 重建规则可作为参考。
 
-### 7.4 长值引用契约
+schema 引入和迁移阶段可先采用 copy，以完整 JSON 对账并保留回滚能力；稳态空间优化
+再切换为 move。字节级原始输入若用于审计或重放，应单独保存为 raw payload 或 asset，
+不由查询用 residual 同时承担归档职责。
+
+逻辑正确性契约还应规定：object key 顺序不参与业务相等判断，数组顺序保留；路径
+missing、JSON null 与 SQL NULL 分别表示缺失路径、显式空值和整列缺失；数值类型、
+重复键、路径转义和类型冲突进入 truth manifest。嵌套 map/slice 应保持结构化 JSON，
+继续字符串化属于需要单独验证的兼容行为。
+
+### 4.5 长值引用契约
 
 主表建议存结构化引用对象，避免只存裸 URI：
 
@@ -351,47 +330,43 @@ event_assets
 
 该结构支持本地/对象存储迁移、完整性检查和统一 resolver。具体字段名、阈值和事务顺序由穿刺实验确定。
 
-## 8. 工程问题及现有结论
+长文本、JSON 长值和媒体可共用内容寻址、上传、校验、关联和清理设施，并通过
+`content_type`、`encoding`、`field_path` 与 `origin` 区分语义。asset 至少需要
+`pending`、`available`、`failed`、`deleting` 状态。原型可采用 upload-first 并定期
+核对孤儿对象与缺失引用；需要可恢复跨系统写入时再评估事务 outbox。
 
-### 8.1 测试基线由什么组成
+resolver 应按 project/tenant 鉴权并生成受限下载地址。脱敏、加密、访问审计、保留期
+和删除传播需要覆盖 Full、Core、索引、缓存、备份及对象副本。
 
-可复现基线是以下内容的联合身份：
+## 5. 工程验证与决策边界
 
-| 层次 | 必须固定的内容 |
-|---|---|
-| 数据 | 数据集、生成参数、随机 seed、输入文件 hash、truth manifest |
-| 摄入 | Collector 配置、exporter commit、二进制 hash、队列、批次、并发和重试参数 |
-| schema | schema version、catalog revision/hash、DDL、索引、读写表面 |
-| 引擎 | 产品和 build、storage profile、实例资源、关键配置 |
-| 查询 | workload、SQL/TraceQL、参数选择性、cold/warm 状态、ANALYZE/compaction 状态 |
-| 报告 | 完整命令、起止时间、运行 ID、日志和分项资源指标 |
+### 5.1 基线与比较边界
 
-当前 exporter 与 benchmark 不能组成有效的 database 性能基线。exporter 写入
-28 列，benchmark v4 database catalog 和 cleanup 仍定义 26 列；直接组合会先遇到
-schema 错误。基线建立的第一项工作是选择匹配提交或同步 catalog，并填写实际的
-E2E version manifest。只有 schema preflight、发送确认清单、数据库可见性和去重
-结果全部通过后，性能数据才可进入横向比较。
+可复现基线需要同时固定数据集与生成参数、Collector/exporter 版本和配置、schema
+及索引、引擎 build 与 storage profile、查询 workload 和运行环境。每次运行还需保存
+输入 hash、truth manifest、DDL/catalog hash、二进制 hash 和正确性结果。当前
+exporter 写入 28 列，benchmark v4 database catalog 定义 26 列；匹配 schema 前产生
+的结果不能进入性能比较。
 
-### 8.2 当前 benchmark 比较的是数据库还是完整系统
-
-当前两个 backend 的数据路径不同：
+现有 database 与 Langfuse backend 的路径分别为：
 
 ```text
 database: OTLP -> Collector/exporter -> openGauss/GaussDB
 langfuse: OTLP -> Langfuse ingestion/worker -> ClickHouse/PostgreSQL/MinIO
 ```
 
-直接结果属于**系统级比较**，同时包含接收端、队列、批处理、转换、schema、
-存储引擎和查询实现的差异。需要回答“数据库 JSON 能力差异”时，应建立独立
-loader 或采集分段时延、CPU 和 bytes read，把 exporter/Langfuse ingestion 与
-数据库执行分开。系统级结果和引擎级结果分别报告，二者不合并排名。
+端到端结果属于系统级比较，包含接收、队列、转换、schema 和存储实现的共同影响。
+数据库 JSON 能力比较需要使用独立 loader，或采集分段时延、CPU 和 bytes read，拆分
+摄入层与数据库执行。系统级结果与引擎级结果分别报告。
 
-### 8.3 如何定位瓶颈并选择修改层次
+详细数据规格、workload、指标和运行门槛见配套的
+[JSON 存储穿刺与对比实验设计](json-storage-spike-experiment-design.md)。
+
+### 5.2 证据与修改层次
 
 | 观测 | 需要补充的证据 | 优先修改层次 |
 |---|---|---|
 | 数据到达数据库前已截断或无效 | exporter marker 数、原始/写入 hash | exporter 转换和长值策略 |
-| exporter CPU、RSS 或队列等待高，数据库空闲 | 转换、序列化、flush 分段指标 | exporter 批处理、并发和序列化 |
 | JSON 路径过滤读取大量无关字节 | query plan、bytes read、路径密度 | 热点列、定向索引、residual 或自动子列 |
 | light/list 查询受 input/output 长度影响 | light/full bytes read 与延迟曲线 | 物化 Core/Full 分层 |
 | 路径数增加导致元数据或 compaction 急剧增长 | 50/500/5000 路径实验 | Map/shared data、路径预算或专用半结构化类型 |
@@ -401,132 +376,37 @@ loader 或采集分段时延、CPU 和 bytes read，把 exporter/Langfuse ingest
 修改顺序遵循证据所在层次。exporter 截断、schema 版本不一致和查询误读大列
 应在数据库选型之前解决，否则更换引擎后仍会保留相同问题。
 
-### 8.4 JSON 正确性语义如何定义
+### 5.3 Schema 演进与引擎选择
 
-当前 exporter 已经形成以下可观察语义：
+当前 append-only events、批次指纹和 `events_dedup` 的幂等语义应扩展到 Core、KV
+和 asset 表。schema 变更遵循以下顺序：
 
-- 整个 JSON 列缺失时写 SQL `NULL`；JSON 内显式 null 保持 JSON null。
-- OTel attribute map 的键唯一；`attrsToJSON` 生成新的 metadata JSON。
-- metadata 中的嵌套 map/slice 会先序列化，再作为 **JSON 字符串**写入，结构类型
-  不再作为嵌套 JSON 保留。
-- 字符串形式的 input/output 只执行 JSON 合法性检查，合法内容按原始字节写入；
-  map/slice 形式由 `json.Marshal` 生成。
-- 非法 input/output 写 `_invalid_json` 标记；整列超限写 `_truncated` 标记，原始
-  内容无法恢复。
+1. 发布带版本的 schema/catalog，并记录 exporter commit 与 DDL hash。
+2. 增加兼容列或表，通过双写或回填记录迁移水位。
+3. 使用 truth manifest 校验新旧读取结果、计数和 canonical hash。
+4. 切换读取面并保留回滚窗口，稳定后停止旧写入。
 
-长期契约应明确：object key 顺序不属于业务语义，数组顺序属于业务语义；missing、
-JSON null 和 SQL NULL 分别表示缺失路径、显式空值和整列缺失；数值类型、路径转义、
-重复键和类型冲突进入 truth manifest。嵌套 map/slice 的字符串化需要作为兼容行为
-单独测试，再决定保留或迁移为结构化 JSON。
+启动时 schema preflight 应拒绝不兼容组合。关系型引擎仍满足稳定列查询和事务要求时，
+优先调整 schema 与 exporter。完成热点列、residual、Full/Core 和 asset 的单变量验证后，
+若动态路径规模、列式裁剪或 Trace 关系查询仍超出目标，再比较 ClickHouse、Tempo、
+文档/搜索引擎或专用存储。更换或开发数据库的收益还需覆盖迁移、查询改写、运维、
+备份恢复和长期维护成本。
 
-### 8.5 热点字段采用 copy 还是 move
+## 6. 遗留问题
 
-两种形态适用于不同阶段：
+| 优先级 | 尚未确定的问题 | 所需证据或决策 |
+|---|---|---|
+| P0 | 可比较基线采用哪组 exporter 与 schema/catalog，以及 64 KiB 截断是否启用 | 精确提交映射、DDL/catalog hash、schema preflight、原始与入库 hash |
+| P0 | 真实 Trace 的字段数量、稀疏度、类型冲突、Trace 宽度、payload 分布和查询频率 | 脱敏样本或生产统计直方图，以及可复现的查询样本 |
+| P1 | dstore JSON 的解析、压缩、LOB 隔离和路径读取成本 | 路径数量与 payload 阶梯下的执行计划、bytes read、CPU 和分项空间 |
+| P1 | 哪些路径需要提升，以及动态属性采用 Map、自动子列、KV 还是 residual | 路径密度、基数、类型稳定性、读写成本和结构化嵌套兼容性 |
+| P1 | Core 使用物化视图、双写表还是引擎投影 | 三种机制的写放大、可见性、回填、查询读取量和恢复行为 |
+| P1 | asset 的内联阈值、失败回退和跨系统一致性策略 | 长值大小曲线、故障注入、孤儿/缺失引用核对和恢复目标 |
+| P2 | 脱敏、密钥、租户隔离、保留期限和删除传播规则 | 部署安全策略、合规要求及覆盖数据库、缓存、备份和对象副本的验证 |
 
-- schema 引入和迁移阶段使用 copy，保留完整 JSON，同时写热点列，便于回滚和
-  对账；数据库生成列或表达式索引可以降低双写漂移风险。
-- 稳态空间优化使用 move，热点路径从 residual 移除，由 reader 按 schema version
-  重建完整逻辑对象。
-- 字节级原始输入具有审计或重放价值时，单独保存 raw payload 或 asset。raw payload
-  与查询用 residual 分工，避免让查询 JSON 永久承担原文归档职责。
+## 7. 资料来源
 
-当前 exporter 没有 residual 排除清单，也没有重建 reader，现状属于未定义重复范围
-的 copy。E5 应先用已有同级列实现 copy/move 对照，再决定稳态形态。
-
-### 8.6 Full/Core 是否需要物化
-
-需要。普通 view 只改变 SQL 投影，不能证明物理读取、缓存占用和存储布局得到改善。
-有效对比需要独立 Core 表、物化视图或具备等价物理裁剪能力的引擎投影。Core 保存
-常用列、preview、完整长度和引用状态；Full 保存完整 inline 内容或 asset reference。
-列表、搜索和常规分析读 Core，详情、重放和审计读 Full。
-
-### 8.7 写入正确性和 schema 演进如何处理
-
-当前 exporter 采用 append-only events、批次指纹和 `events_dedup`：同一批重发由
-`ingest_batches` 阻止，查询按 `(trace_id, span_id)` 选择最大 `event_version`。
-该语义需要和 JSON schema 一起固定，避免新增 Core、KV 或 asset 表后出现不同去重
-口径。
-
-schema 变更按以下顺序执行：
-
-1. 发布新 schema/catalog，并建立 exporter commit 到 catalog revision 的显式映射。
-2. 先增加兼容列或表，不删除旧读取面。
-3. exporter 双写或后台回填，记录迁移水位和 schema version。
-4. 使用 truth manifest 对比新旧读取结果、计数和 canonical hash。
-5. 切换 benchmark 和服务读取面，保留回滚窗口。
-6. 稳定后停止旧写入，再清理旧数据。
-
-启动时的 schema preflight 应拒绝不兼容组合。运行报告还需记录 exporter commit 和
-二进制 hash，补足当前只记录 catalog 身份的缺口。
-
-### 8.8 长字段和媒体共用 asset 后如何保证一致性
-
-长文本、长 JSON 值和媒体可共用内容寻址、对象存储、校验、关联和清理设施；
-`content_type`、`encoding`、`field_path` 和 `origin` 保持语义可区分。
-
-原型阶段适合使用 upload-first：对象上传成功后写事件引用，并通过 reconcile 查找
-孤儿对象和缺失引用。它的实现范围最小，可以直接验证主表减负和 resolver。生产阶段
-若要求摄入低延迟和可恢复的跨系统状态转换，应评估事务 outbox。任何策略都必须让
-pending、failed、available、deleting 状态可查询，上传失败不得静默变成成功。
-
-对象上传失败时保留原值可以保护数据，但会让主表重新承受极端大值。兜底内联上限、
-死信、告警和重试次数应形成独立配置。
-
-### 8.9 安全与保留的已知要求
-
-input、output、工具参数、检索文档和媒体可能包含凭据、个人信息和业务数据。无论内容
-位于 JSON、LOB 还是对象存储，都需要按 project/tenant 隔离，并使脱敏、加密、访问
-审计、保留期和删除传播覆盖 Full、Core、索引、缓存、备份与对象副本。对象引用不能
-直接暴露永久公开 URI；resolver 应执行访问检查并生成受限下载地址。
-
-具体分类规则、密钥管理、保留期限和合规要求依赖项目部署策略，列入遗留问题。
-
-### 8.10 何时修改 schema，何时更换或开发专用数据库
-
-满足以下条件后再进入数据库替换决策：
-
-1. 已建立正确且稳定的 E0，排除 exporter 截断、版本不一致和错误查询面。
-2. 已完成热点列、residual、Full/Core 和 asset 的单变量实验，确认瓶颈仍位于引擎。
-3. 候选引擎在相同逻辑 workload、正确性和资源预算下产生稳定收益。
-4. 收益覆盖数据迁移、查询改写、运维、备份恢复、监控和人员学习成本。
-
-关系型引擎仍满足稳定列查询和事务要求时，优先调整 schema 与 exporter。动态路径
-规模、列式裁剪或 Trace 关系查询持续超出目标引擎能力时，再评估 ClickHouse、Tempo、
-文档/搜索引擎或新开发的 Trace 专用存储。自行开发数据库还需要现有引擎无法通过扩展
-或组合满足核心 workload 的证据，并单独评估多年维护成本。
-
-### 8.11 性能结论至少需要哪些指标
-
-延迟和 rows/s 只能描述结果，不能定位原因。每个 run 至少记录：
-
-- 摄入 rows/s、MiB/s、p50/p95/p99 和队列等待；
-- 查询 p50/p95/p99、rows scanned、bytes read、bytes returned；
-- exporter、数据库和对象存储的 CPU、RSS、磁盘和网络；
-- Full、Core、residual/shared data、索引、LOB/KV 和对象存储的分项空间；
-- compaction、merge、ANALYZE、索引构建和 schema materialization 成本；
-- 截断、上传、复用、失败、孤儿和 resolver 指标；
-- correctness hash、预期计数和版本 manifest。
-
-## 9. 遗留问题
-
-| 优先级 | 尚未确定的问题 | 所需证据或决策 | 对应实验/动作 |
-|---|---|---|---|
-| P0 | exporter 28 列与 benchmark 26 列采用哪个匹配版本 | 远端更新、提交映射、catalog 和 DDL hash | 先完成版本同步与 schema preflight |
-| P0 | `CONTEXT.md`、旧蓝/黄区指南仍使用三表术语，当前 exporter 已采用 events 单宽表 | 确定历史指南保留方式和当前权威入口 | 更新领域语言与文档状态标记 |
-| P0 | 真实 Trace 的字段数、稀疏度、类型冲突、Trace 宽度和 payload 分布 | 脱敏样本或生产统计直方图 | 固定 W1/L1/M1 数据参数 |
-| P0 | 64 KiB 截断在基线中保留、关闭还是改为引用 | Collector 内存边界和目标引擎容量 | E0 三种策略对照，截断 run 单独标识 |
-| P1 | dstore JSON 的解析、压缩、LOB 和路径读取实际成本 | 目标引擎 plan、bytes read、CPU、分项空间 | E0 xstore + JSON 路径微基准 |
-| P1 | 哪些路径应提升，密度和查询频率阈值是多少 | workload 频率、路径密度、基数和类型稳定性 | E2/E4/E5 的 1%–95% 密度对照 |
-| P1 | nested map/slice 应继续字符串化还是保留结构 | 兼容数据比例、路径查询和重建需求 | C0 correctness 与 E5 residual 实验 |
-| P2 | 目标引擎用何种机制物化 Core | 物化视图、双写和 post-load 的能力与开销 | E6 三阶段验证 |
-| P2 | asset 阈值和跨系统一致性策略 | 64 KiB–20 MiB 曲线、故障注入和恢复目标 | E7 upload-first/outbox 对照 |
-| P2 | 脱敏、密钥、租户隔离和保留期限 | 部署安全策略和合规要求 | 安全评审及删除传播测试 |
-| P3 | Map、自动子列、KV 或 residual 的最终动态属性形态 | 5000 路径下摄入、查询、空间和运维结果 | E2/E5/E8 横向比较 |
-| P3 | 是否更换或开发专用数据库 | 通过正确性门槛的 P3 系统级结果和总成本 | 决策评审，不以单条查询决定 |
-
-## 10. 资料来源
-
-### 10.1 本地项目资料
+### 7.1 本地项目资料
 
 - [Exporter schema 说明](https://github.com/labmemW/exporter_demo/blob/4cc3bf2d21ab9ecd5d014a182e66d6b83b7f446b/docs/SCHEMA.md)
 - [自研引擎验证报告](https://github.com/labmemW/exporter_demo/blob/4cc3bf2d21ab9ecd5d014a182e66d6b83b7f446b/docs/references/engine-verification-2026-08-07.md)
@@ -535,7 +415,7 @@ input、output、工具参数、检索文档和媒体可能包含凭据、个人
 - [Benchmark v4 database catalog](https://github.com/zfwang2021/trace-synthesis/blob/e0b9c83e3bd8bd7bb78d68225f29df0753f5432e/benchmark/schema/v4/database/catalog.json)
 - [Benchmark v4 Langfuse catalog](https://github.com/zfwang2021/trace-synthesis/blob/e0b9c83e3bd8bd7bb78d68225f29df0753f5432e/benchmark/schema/v4/langfuse/catalog.json)
 
-### 10.2 官方文档和开放源码
+### 7.2 官方文档和开放源码
 
 - [ClickHouse JSON data type](https://clickhouse.com/docs/reference/data-types/newjson)
 - [Grafana Tempo dedicated attribute columns](https://grafana.com/docs/tempo/latest/operations/dedicated_columns/)
@@ -554,7 +434,7 @@ input、output、工具参数、检索文档和媒体可能包含凭据、个人
 - [Apache Iceberg Variant](https://iceberg.apache.org/blog/variant-in-apache-iceberg/)
 - [Apache Doris Variant](https://doris.apache.org/blog/variant-in-apache-doris-2.1/)
 
-### 10.3 论文
+### 7.3 论文
 
 - Melnik et al., [Dremel: Interactive Analysis of Web-Scale Datasets](https://research.google/pubs/dremel-interactive-analysis-of-web-scale-datasets/), 2010/2011.
 - Tahara, Diamond, Abadi, [Sinew: A SQL System for Multi-Structured Data](https://www.cs.umd.edu/~abadi/papers/sinew-sigmod14.pdf), SIGMOD 2014.
