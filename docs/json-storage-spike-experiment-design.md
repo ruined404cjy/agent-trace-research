@@ -1,15 +1,16 @@
 # Agent Trace JSON 存储第一阶段穿刺实验设计
 
-> 状态：实验设计草案
-> 日期：2026-09-01
+> 状态：实验执行中；标准 openGauss 6.0.0 JSONB 矩阵已完成，ClickHouse 正确性门禁已启动
+> 日期：2026-09-03
 > 范围：多字段 JSON、Full/Core、JSON 长字段与外部引用
 > 配套调研：[json-storage-design-survey.md](json-storage-design-survey.md)
+> 阶段报告：[json-storage-stage1-report-2026-09-03.md](json-storage-stage1-report-2026-09-03.md)
 
 ## 1. 目标
 
 第一阶段通过小型、可独立执行的实验验证三类存储机制：
 
-1. JSONB 定向索引与 ClickHouse native JSON 动态子列在多字段 JSON 上的差异。
+1. 标准 openGauss JSONB 定向索引与 ClickHouse native JSON 动态子列在多字段 JSON 上的差异。
 2. Full/Core 物理分层对列表查询、预览读取和完整详情读取的影响。
 3. 数据库内联大值与外部 asset 引用在空间、读取和完整性方面的差异。
 
@@ -20,10 +21,16 @@ Langfuse 和 Tempo 用于提供实现证据，不要求直接改造、替换或�
 
 ### 2.1 现有项目状态
 
-当前 exporter 使用单宽表 `events`，以 `tags`、`input`、`output`、`metadata` 四个
-JSON 列保存动态内容。默认 `max_attr_value_length=65536` 在入库前截断属性，不能用于
-验证数据库的大值容量。exporter 写入 28 列，benchmark v4 database catalog revision
-`2026-09-01.6` 仍定义 26 列，当前组合不能形成有效性能基线。
+exporter 的 ADR-0010 在提交 `0c26c9ecf03acf0bd6aa3a3c103ba4e7a78b523a` 冻结 18 列
+最小 OTel 单表，删除 `tags` 等 10 个 Langfuse 导向列及 split 模型；当前 main 为
+`9a49c8a9d6091633112fe793fcf12310859aeb7f`。`input`、`output`、`metadata` 继续保存动态
+内容。默认 `max_attr_value_length=65536` 在入库前截断属性，不能用于验证数据库的大值容量。
+
+trace-synthesis 当前 main `6472d8e1ac6cdb42494b79b28d4d5361919d4776` 的 v4 database
+catalog 仍定义 28 列，因此两仓 main 尚未形成联合冻结。系统级回归继续使用已经验证的
+benchmark `9529c8f389673132757f4da9a96878926f22b94f` 与 exporter
+`54ca553a7ed09ad1751c82adab3aa52c6e9357b1`；机制实验使用明确记录为
+`independent_loader` 的独立路径。两类结果分别报告。
 
 benchmark 已提供查询参数 catalog、查询 type 参数化和 database/Langfuse backend，
 但输入覆盖门禁仍处于候选设计阶段。公开数据的字段分布、ERROR 状态、provider 值域和
@@ -51,6 +58,17 @@ Langfuse 的可复核机制包括 `events_full/events_core`、metadata names/val
 - KV/EAV、Parquet Variant 和 Trace 专用数据库实现。
 
 这些项目仅在第一阶段结果显示明确需要时进入后续设计。
+
+### 2.3 目标工作负载
+
+当前项目按实时分析型、append-heavy OLAP 负载设计：Span/Event 持续分批追加，查询主要在
+project/tenant 和时间范围内过滤少量字段并执行分组、计数、分位数和特征统计。指定
+`trace_id` 的 Trace 回查和完整 payload 读取属于必要的次级路径。批次幂等、可见水位和
+内容校验继续作为摄入正确性门禁。
+
+第一阶段 runner 使用一次性批量载入隔离 JSON 机制，只能回答正确性、索引、路径组织和静态
+空间问题。持续摄入能力需要在第二阶段加入并发查询、part/merge 或 compaction 状态、写入
+字节和可见延迟后单独判断。
 
 ## 3. 公共数据与测量方法
 
@@ -90,6 +108,14 @@ canonical hash 忽略 object key 顺序，保留数组顺序，并区分路径 m
 | 等总大小 | 一个长值与多个短值形成约 512 KiB JSON | 区分字段数量与单值长度 |
 | 长字段 | 64 KiB、512 KiB、2 MiB | 观察 LOB、Full/Core 和外部引用 |
 
+路径数量与密度矩阵用于观察引擎在受控边界上的行为，不表示 Agent Trace 的已测生产分布。
+每个动态路径在每 100 行中分别出现 1、20 或 95 次；同组路径采用相同密度，未模拟长尾或
+Zipf 分布。`whowhen-pro` text split 的原始属性审计只发现 29 个顶层属性，不能支持
+500/5000 路径假设。已下载的 Open-SWE-Traces 是 agent trajectory 数据，顶层及 metadata
+使用固定 Parquet schema，也不能直接校准 OTel span attribute 路径。后续应先统计实际或
+公开 Trace 的叶路径全集、每 span 路径数、逐路径密度、类型冲突、基数、payload 和查询频率，
+再增加混合密度与长尾 profile；当前九组保留为机制边界回归。
+
 媒体只使用少量固定 PNG、短音频和随机二进制验证 hash、MIME 与 resolver。媒体吞吐和
 转码不进入第一阶段性能结果。
 
@@ -108,24 +134,31 @@ canonical hash 忽略 object key 顺序，保留数组顺序，并区分路径 m
 计算 p99。可获取时记录 `EXPLAIN`、rows scanned、bytes read 和缓存状态；引擎不提供的
 指标标为 unavailable，不以估算值代替。
 
+第二阶段把相同逻辑查询改为 project/tenant 与时间范围组合谓词，并在持续分批写入期间执行。
+记录稳态摄入和后台合并后的两组结果；强制 `OPTIMIZE FINAL` 只用于解释物理布局变化，不
+代表在线稳态。
+
 ## 4. 实验一：多字段 JSON 的路径组织
 
 ### 4.1 比较对象
 
-PostgreSQL 使用同一 `jsonb` 列验证三种布局：
+标准 openGauss 6.0.0 使用同一 `jsonb` 列验证三种布局：
 
 1. 无路径索引；
 2. GIN 通用索引；
-3. 两个热点路径的表达式索引或生成列索引。
+3. 一个热点路径的表达式索引或生成列索引。
 
 ClickHouse 使用同一 JSON 文本验证三种布局：
 
 1. `String CODEC(ZSTD)`，查询时使用 JSON 提取函数；
-2. native `JSON`，设置较小动态路径预算，使 500/5000 路径进入 shared data；
-3. native `JSON`，为两个热点路径设置 type hint，并提高动态路径预算。
+2. native `JSON(max_dynamic_paths=100)`，使 500/5000 路径进入 shared data；
+3. native `JSON(max_dynamic_paths=1000, hot.tenant String, hot.region String)`，固定两个热点
+   路径并提高动态路径预算。
 
 数据库版本、image digest、JSON 参数和索引 DDL 在 run manifest 中固定。第一阶段不穷举
-ClickHouse shared data 的所有序列化选项。
+ClickHouse shared data 的所有序列化选项。ClickHouse 25.12.11.4 使用
+`map_with_buckets` 写零层 part，并在多 part 合并后使用 `advanced`；runner 固定上述设置，
+分别记录 merge 前后的 part、空间和 dynamic/shared 路径数。
 
 ### 4.2 测量与判定
 
@@ -135,7 +168,7 @@ ClickHouse shared data 的所有序列化选项。
 - 热点等值过滤和聚合；
 - 冷路径过滤；
 - 整对象读取；
-- PostgreSQL GIN 与定向索引大小；
+- openGauss GIN 与定向索引大小；
 - ClickHouse 动态路径数量、shared data 路径和 merge 前后空间。
 
 该实验区分：
@@ -145,8 +178,15 @@ ClickHouse shared data 的所有序列化选项。
 - native JSON 自动子列对多字段、稀疏路径的收益和路径预算成本；
 - String 整段解析在冷路径和整对象读取中的基线行为。
 
-结果必须按机制分别解释。PostgreSQL 与 ClickHouse 的事务、并发和完整 SQL 能力不进入
+结果必须按机制分别解释。openGauss 与 ClickHouse 的事务、并发和完整 SQL 能力不进入
 本实验结论。
+
+ClickHouse native `JSON` 按叶路径扁平存储，不能称为 PostgreSQL/openGauss 语义的
+`JSONB`。首个 50 路径×20% 密度正式组发现：String 布局的 250,200 条 metadata hash 全部
+一致；两个 native JSON 布局各有 77,562 条不一致。差异行的 `metadata.paths` 为空对象，
+native JSON 重建时省略该空对象。热点和冷路径过滤命中集合仍与 truth 一致。该结果触发
+完整读取 hash 停止条件；在明确“空容器是否属于业务语义”或增加原始 String sidecar 前，
+不扩展 native JSON 九组性能矩阵。
 
 ## 5. 实验二：Full/Core 物理分层
 
@@ -192,7 +232,7 @@ Core 预览必须符合统一的 UTF-8 截断规则，Full 内容 hash 和命中
 
 ### 6.1 比较对象
 
-复用实验一的 PostgreSQL 实例比较：
+复用实验一的 openGauss 实例比较：
 
 1. JSON payload 直接存为 JSONB，由数据库 TOAST 机制管理；
 2. 主表保存结构化引用，payload 写入本地对象目录；
@@ -228,28 +268,44 @@ MIME 和长度，不进入 JSONB 性能比较。本地对象目录用于验证�
 第一阶段不实现 pending/available/failed 状态机，不执行上传失败、删除传播和 orphan
 清理。若外部引用在主表读取或容量上有明确收益，再设计带状态机和故障注入的后续实验。
 
-## 7. 当前项目条件性参照
+## 7. 当前项目系统级参照
 
-现有 exporter 与 benchmark schema 配对完成后，可以把相同数据和三类核心查询运行在
-dstore JSON 上，作为当前项目参照。参照运行必须满足：
+当前项目以蓝区标准开源 openGauss 6.0.0 对标黄区 GaussVector。两端运行同一逻辑数据、
+exporter schema 和 benchmark workload。蓝区标准 openGauss 使用行存，黄区 GaussVector
+使用其目标存储形态；本阶段把两端作为系统环境比较，不把结果解释为受控的行存与列存机制
+差异。
+
+18 列冻结与 trace-synthesis 28 列 catalog 配对完成前，使用 benchmark
+`9529c8f389673132757f4da9a96878926f22b94f` 与 exporter
+`54ca553a7ed09ad1751c82adab3aa52c6e9357b1` 的已验证历史配对，或运行不依赖列数适配的独立
+loader。独立 loader 只形成对应数据库的机制与正确性证据，不形成 exporter、Collector 或
+benchmark 的端到端性能结论。
+
+系统级参照运行必须满足：
 
 - exporter 写入列与 catalog、DDL 完全一致；
 - 关闭 64 KiB 截断，或把截断 run 单独标识为数据丢失对照；
 - schema preflight、输入 hash、写入计数和可见性检查通过；
 - 记录 exporter、Collector 和数据库的分段资源指标。
 
-配对未完成时跳过该参照，不阻塞三个独立机制实验。实验设计不要求为此修改 exporter 或
-benchmark；需要修改时另行评审改动范围。
+使用独立 loader 时，manifest 必须记录 `data_path=independent_loader`、引用的 schema 提交、
+DDL hash 和输入 hash。使用 exporter 与 benchmark 时，报告必须记录两者的精确提交与配对
+校验结果。
+
+蓝区正确性探针与系统级参照的当前运行记录见
+[第一阶段实验基础设施](../experiments/json-storage-stage1/README.md)。
 
 ## 8. 执行顺序与停止条件
 
 1. 检查数据库和容器能力，固定版本与资源限制。
 2. 生成公共数据、truth manifest 和查询参数。
-3. 先运行正确性 profile；失败时停止对应候选。
-4. 运行多字段 JSON 实验。
-5. 复用可用列式实例运行 Full/Core 实验。
-6. 运行长 payload 内联与引用实验。
-7. schema 配对已解决时补充当前项目参照。
+3. 先在蓝区 openGauss 6.0.0 运行当前 JSON schema 的正确性 profile；失败时停止系统级参照。
+4. 黄区可用时使用相同输入和 truth 运行 GaussVector 正确性 profile。
+5. 使用已验证提交配对或完成列数适配的版本运行当前项目系统级 workload。
+6. 运行多字段 JSON 机制实验。
+7. 复用可用列式实例运行 Full/Core 实验。
+8. 运行长 payload 内联与引用实验。
+9. 正确性契约明确后，运行带时间范围查询和持续分批摄入的第二阶段对照。
 
 任一候选出现以下情况时停止扩展：
 
@@ -298,9 +354,16 @@ experiments/json-storage-stage1/
 Tempo dedicated columns、KV/EAV、Parquet Variant、完整 Langfuse 复现和大规模容量实验
 均作为后续选项，不在第一阶段预先排期。
 
+面向目标实时分析负载，下一轮优先比较“强类型列 + String residual”“强类型列 + Map”和
+“强类型列 + 有路径预算的 native JSON”。长字段同时比较同表独立列、独立 payload 表、
+Full/Core 物化和 asset reference。现有九组均匀密度矩阵保留为机制回归，混合热点与长尾
+profile 在真实数据审计后生成。
+
 ## 11. 参考资料
 
 - [JSON 存储设计调研](json-storage-design-survey.md)
+- [Exporter 18 列冻结 ADR-0010](https://github.com/labmemW/exporter_demo/blob/0c26c9ecf03acf0bd6aa3a3c103ba4e7a78b523a/docs/adr/0010-otel-minimal-schema.md)
+- [当前 Benchmark v4 database catalog](https://github.com/zfwang2021/trace-synthesis/blob/6472d8e1ac6cdb42494b79b28d4d5361919d4776/benchmark/schema/v4/database/catalog.json)
 - [Exporter schema](https://github.com/labmemW/exporter_demo/blob/a0b3441d473d5cb4fd7c06767d12b9f611521b9e/docs/SCHEMA.md)
 - [Exporter 引擎验证](https://github.com/labmemW/exporter_demo/blob/a0b3441d473d5cb4fd7c06767d12b9f611521b9e/docs/references/engine-verification-2026-08-07.md)
 - [Benchmark 设计](https://github.com/zfwang2021/trace-synthesis/blob/3d4ef6235fbc28d1465daba756a26e18d8bf9366/benchmark/DESIGN.md)
@@ -310,5 +373,7 @@ Tempo dedicated columns、KV/EAV、Parquet Variant、完整 Langfuse 复现和�
 - [Langfuse events_core materialized view](https://github.com/langfuse/langfuse/blob/add6ca4aceb949905df887b88cac619756e003b7/packages/shared/clickhouse/migrations/clustered/0041_create_events_core_mv.up.sql)
 - [Langfuse field overflow](https://github.com/langfuse/langfuse/blob/add6ca4aceb949905df887b88cac619756e003b7/worker/src/features/observation-field-overflow/processObservationFieldOverflow.ts)
 - [ClickHouse JSON](https://clickhouse.com/docs/reference/data-types/newjson)
+- [ClickHouse PostgreSQL CDC JSON/JSONB 映射](https://clickhouse.com/docs/integrations/clickpipes/postgres/faq#how-are-json-and-jsonb-columns-replicated-from-postgres)
+- [ClickHouse JSONBench](https://github.com/ClickHouse/JSONBench)
 - [PostgreSQL JSON](https://www.postgresql.org/docs/current/datatype-json.html)
 - [PostgreSQL TOAST](https://www.postgresql.org/docs/current/storage-toast.html)

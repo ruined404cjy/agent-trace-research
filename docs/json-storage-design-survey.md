@@ -1,9 +1,10 @@
 # Agent Trace JSON 存储设计调研
 
 > 状态：调研结论，供方案选择和穿刺实验使用
-> 调研日期：2026-09-01
+> 调研日期：2026-09-03
 > 范围：多字段 JSON、JSON 内长值、Trace 大 payload、热点字段、半结构化查询
 > 配套实验设计：[json-storage-spike-experiment-design.md](json-storage-spike-experiment-design.md)
+> 阶段报告：[json-storage-stage1-report-2026-09-03.md](json-storage-stage1-report-2026-09-03.md)
 
 ## 1. 结论
 
@@ -15,15 +16,30 @@ JSON 存储方案需要同时回答三个独立问题：
 
 `JSONB`、热点列和对象存储分别作用于上述不同层次。`JSONB` 主要减少重复解析并支持路径索引；热点列减少常用查询的读取和解析；对象存储控制大值对主表、缓存、网络和保留流程的影响。单独采用其中一项无法覆盖多字段大 JSON 和特定长字段。
 
+### 1.1 目标负载
+
+当前项目面向持续追加写入、按 project/tenant 和时间范围过滤并聚合少量字段的实时分析型
+负载。指定 `trace_id` 的完整 Trace 回查和原始 payload 读取是必要的次级路径。本文使用
+“append-heavy OLAP”描述该负载，避免与 CAP 中的 AP 含义混淆。
+
+OpenTelemetry Span 的 intrinsic 字段、Attributes 与 Agent payload 分属不同逻辑层。
+Attributes 主要承载用于分析的键值属性；模型输入输出、工具参数与结果、消息列表、堆栈和
+多模态内容可能形成嵌套长 JSON。逻辑 schema 应分别表达分析属性、详情 payload 和原始归档，
+避免由一个 `metadata` 列同时承担三种职责。
+
 当前项目适合验证以下分层模型：
 
 - 稳定且高频过滤、排序、聚合的字段使用独立强类型列。
 - 动态属性保留在 residual JSON 或 Map 中；已提升字段从 residual 中移除，读取层按需重建完整对象。
-- 列表页和常规分析使用 Core 投影，完整详情读取 Full 数据。
-- 超过阈值的单个长值和多模态内容进入统一 asset 层，主表保留结构化引用。
+- 分析主表保存 payload preview、长度、hash 和引用；完整详情保存在可独立裁剪的 payload
+  列、payload 表或 asset 层。
+- 极长、二进制、多模态或需要独立生命周期的内容进入 asset 层，主表保留结构化引用。
 - asset 引用携带内容类型、编码、长度、内容哈希、来源字段和状态。长文本与媒体共用物理设施，并保持业务语义可区分。
+- 需要精确审计或重放时单独保存 raw 原文，不要求分析型 residual 同时承担归档职责。
 
-该模型仍需通过实验确定热点字段集合、长值阈值、residual 形态和 Full/Core 的物化方式。当前 exporter 的 64 KiB 截断发生在数据库容量边界之前，会直接丢失内容，不适合作为长期大 payload 方案。
+该模型仍需通过实验确定热点字段集合、长值阈值、residual 形态，以及同表 payload、独立
+payload 表、Full/Core 和对象引用的边界。当前 exporter 的 64 KiB 截断发生在数据库容量
+边界之前，会直接丢失内容，不适合作为长期大 payload 方案。
 
 ## 2. 两类“大 JSON”
 
@@ -102,13 +118,22 @@ Parquet Variant 规定 shredded 字段与 residual object 的键集合互斥，r
 
 系统自动分析路径，把常见路径变成物理子列，把超出预算或稀有路径放进共享结构。
 
-ClickHouse 原生 JSON 按 data part 管理动态路径，默认最多 1024 个动态路径；merge 时优先保留非 null 值较多的路径，稀有路径进入 shared data。shared data 在内存中是路径到二进制值的 `Map(String,String)`，磁盘有三种序列化：
+ClickHouse 没有 PostgreSQL/openGauss 语义的 `JSONB` 类型。其原生类型名为 `JSON`，按
+data part 管理动态路径，默认最多 1024 个动态路径；merge 时优先保留非 null 值较多的路径，
+稀有路径进入 shared data。每个未提示路径是 `Dynamic` 子列，内部按实际类型形成稠密子流；
+type hint 路径始终以指定类型保存。shared data 在内存中是路径到二进制值的
+`Map(String,String)`，磁盘有三种序列化：
 
 - `map`：写入和整段读取较好，单路径读取需要扫描共享 Map；
 - `map_with_buckets`：增加写入成本，单路径只读一个 bucket；
 - `advanced`：单路径读取最好，写入和空间成本最高。
 
 Apache Doris Variant 也把叶路径列式化，并将高度稀疏路径重新打包到 JSONB 共享列。该类方案减少人工 schema 管理，代价是写入类型推断、物理元数据、merge/compaction 和整对象重建。路径上限、稀疏阈值和类型冲突必须纳入测试。
+
+ClickHouse 的路径扁平化与 PostgreSQL/openGauss JSONB 文档存储存在语义差异。ClickHouse
+官方 PostgreSQL CDC 因顶层标量/数组和含点键等不兼容，默认把源端 `json/jsonb` 映射为
+`String`。本地 25.12.11.4 探针还验证了嵌套空对象在 native JSON 重建时被省略；需要保留
+原文或完整容器结构时，应使用 String/raw sidecar，或先明确业务等价规则。
 
 #### 3.1.5 Map/KV 与 flattened object
 
@@ -185,7 +210,9 @@ PostgreSQL 提供文本 `json`、二进制 `jsonb`、GIN 以及表达式索引�
 
 ClickHouse 25.3 起把开源 JSON 类型标记为 production ready。它把路径拆为子列，允许 type hint、`SKIP` 和动态路径/类型上限。逻辑上仍是一列，物理上形成热点动态子列与 shared data。
 
-该方案最适合字段形态变化快且有路径分析需求的日志/事件。与手工热点列相比，运维 schema 负担较低；写入、存储和整对象读取成本更高。当前 Langfuse 的 `events_full` 不能代表 ClickHouse 原生 JSON，二者必须作为不同实验候选。
+该方案最适合字段形态变化快且有路径分析需求的日志/事件。与手工热点列相比，运维 schema 负担较低；写入、存储和整对象读取成本更高。它是列式半结构化分析类型，不是二进制文档
+JSONB 的同名实现。当前 Langfuse 的 `events_full` 不能代表 ClickHouse 原生 JSON，二者必须
+作为不同实验候选。
 
 #### 3.2.4 Grafana Tempo：Trace 专用 Parquet 分层
 
@@ -217,36 +244,43 @@ Tempo 适合验证“Trace 原生列式布局、热点属性和对象存储 bloc
 
 这些工作说明“热点列 + residual”可以由应用、存储引擎或文件格式实现。当前项目在应用层原型中应先固定重建语义和 workload，再评估是否值得向引擎能力演进。
 
+目前没有跨 OLTP、OLAP、搜索和对象归档场景通用的 JSONB/子列最优解。开源实现和论文形成了
+一组较稳定的设计原则：已知且常查路径使用强类型列或 type hint；动态长尾进入 residual、
+Map 或 shared data；路径/字段数量设置预算；保留 missing、JSON null、类型冲突和重建语义；
+使用代表性数据与查询共同决定提升路径。具体机制仍随工作负载变化：PostgreSQL/openGauss
+偏事务文档与索引，ClickHouse/Doris/Snowflake 偏列式分析，Elasticsearch 偏倒排搜索，
+Parquet Variant 偏跨引擎文件交换。
+
 ### 3.3 方案能力比较
 
-| 方向 | 写入效率 | 热点路径效率 | 冷路径效率 | 整对象效率 | schema 演进能力 | 长字段治理能力 |
-|---|---:|---:|---:|---:|---:|---:|
-| JSON 文本 | ★★★★★ | ★☆☆☆☆ | ★☆☆☆☆ | ★★★★★ | ★★★★★ | ★☆☆☆☆ |
-| JSONB + 通用索引 | ★☆☆☆☆ | ★★★☆☆ | ★★★☆☆ | ★★★☆☆ | ★★★★★ | ★☆☆☆☆ |
-| JSONB + 定向索引/生成列 | ★★★☆☆ | ★★★★★ | ★★★☆☆ | ★★★☆☆ | ★★★☆☆ | ★☆☆☆☆ |
-| 热点列 + 完整 JSON | ★★★☆☆ | ★★★★★ | ★★★☆☆ | ★★★★★ | ★★★☆☆ | ★☆☆☆☆ |
-| 热点列 + residual | ★☆☆☆☆ | ★★★★★ | ★★★☆☆ | ★★★☆☆ | ★★★☆☆ | ★☆☆☆☆ |
-| 自动子列 + shared data | ★☆☆☆☆ | ★★★★★ | ★★★☆☆ | ★★★☆☆ | ★★★★★ | ★☆☆☆☆ |
-| Map/flattened/EAV | ★★★☆☆ | ★★★☆☆ | ★★★☆☆ | ★★★☆☆ | ★★★★★ | ★☆☆☆☆ |
-| Full/Core | ★☆☆☆☆ | ★★★★★ | ★★★☆☆ | ★★★★★ | ★★★☆☆ | ★★★☆☆ |
-| 内部 LOB/TOAST | ★★★☆☆ | ★★★☆☆ | ★★★☆☆ | ★★★★★ | ★★★★★ | ★★★☆☆ |
-| 对象引用 | ★☆☆☆☆ | ★★★★★ | ★☆☆☆☆ | ★☆☆☆☆ | ★★★★★ | ★★★★★ |
+固定星级无法反映批次大小、路径分布、查询列数、时间选择性、索引维护和 merge 状态。面向
+当前 append-heavy OLAP 负载，各机制按职责比较：
 
-星级越高表示该维度的能力或效率越高。表中评分根据各机制的数据组织和读写路径作出，
-属于定性比较，并非当前项目实测结果。组合方案的实际结果取决于数据分布、查询选择性、
-物化方式和引擎实现。
+| 方向 | 主要收益 | 主要成本 | 当前角色 |
+|---|---|---|---|
+| JSON 文本 | 摄入和整对象读取路径简单，保留原文 | 字段分析逐行解析 | raw 或极冷 residual |
+| JSONB + 通用索引 | 支持未知路径的包含和存在查询 | 解析、索引空间和持续索引维护 | 行存语义与灵活检索对照 |
+| JSONB + 定向索引/生成列 | 加速少量稳定路径 | schema 与索引维护 | openGauss 热点路径候选 |
+| 强类型列 + residual | 时间过滤、列裁剪和热点聚合稳定 | 字段归属和重建契约 | 目标分析布局 |
+| 自动子列 + shared data | 动态路径获得列式读取 | 类型推断、路径元数据、文件和 merge | ClickHouse residual 候选 |
+| Map/flattened/EAV | 容纳大量未知扁平键 | 嵌套、类型或查询统计受限 | 扁平属性候选 |
+| 同表独立 payload 列 | 列裁剪成立时保持单表 | 详情和分析共享表生命周期 | 长字段最低复杂度基线 |
+| 独立 payload 表或 Full/Core | 隔离详情读取和分析工作集 | 重复写入、回查与一致性 | 需要实测的物理分层 |
+| 内部 LOB/TOAST | 数据库透明管理大值 | 仍占数据库备份和生命周期 | openGauss 长字段基线 |
+| 对象引用 | 隔离极大值并支持独立生命周期 | 上传状态、鉴权、清理和下载 | 极长或多模态内容候选 |
 
-“热点路径读取”与“大字段治理”是两条正交轴。实际方案通常需要从每条轴各选一层，例如“热点列 + residual JSON + Core 投影 + 对象引用”。
+“多字段路径组织”与“大字段治理”是两条正交轴。实际方案从每条轴选择一层，并以相同
+workload 测量组合后的持续摄入、查询读取和空间成本。
 
 ## 4. 面向当前项目的候选设计
 
 ### 4.1 当前项目 JSON 存储基线
 
-当前 `events` 使用单宽表保存稳定 Trace/Span 列，并以 `tags`、`input`、`output`、
-`metadata` 四个 JSON 列承载动态属性和模型输入输出。生产 profile 已验证 dstore
-列存 `JSON`，尚未使用 `JSONB`；JSON 路径读取在执行阶段解析。dstore 也支持
-`TEXT[]`、`VARCHAR[]` 及其数组操作符，但 Array 与 JSON 在现有布局下都需要扫描整列，
-benchmark 也没有 tag 过滤 workload，因此 `tags` 继续使用 JSON。
+exporter 的 ADR-0010 已在 `0c26c9ecf03acf0bd6aa3a3c103ba4e7a78b523a` 冻结 18 列最小
+OTel 单表，`input`、`output`、`metadata` 三个 JSON 列承载动态属性和模型输入输出。生产
+profile 已验证 dstore
+列存 `JSON`，尚未使用 `JSONB`；JSON 路径读取在执行阶段解析。历史 28 列 schema 的
+`tags` 已在 18 列冻结中删除，因此本阶段不再单独比较 tags 的 JSON 与 Array 表示。
 
 exporter 把全部 span/event 属性写入 `metadata`，同时把部分 GenAI 输入输出提升到
 `input`、`output`，尚未定义热点字段与 residual 的互斥或重建契约。默认
@@ -263,6 +297,23 @@ exporter 把全部 span/event 属性写入 `metadata`，同时把部分 GenAI �
 当前默认输入仍是 text split，多模态 sidecar 契约处于 Draft 状态。因此现有数据不能
 直接作为多字段 JSON、长 payload 和多模态存储的完整基线。
 
+现有 50/500/5000 路径与 1%/20%/95% 密度矩阵来自机制边界设计，不来自 Agent Trace
+实测分布。矩阵中每个动态路径在每 100 行内达到同一精确密度，未模拟热点与长尾混合。
+公开数据可以补充校准，但需要先映射到统一的 span/attribute 模型：
+
+| 数据集 | 当前可用证据 | 对路径分布校准的限制 |
+|---|---|---|
+| `whowhen-pro` text | 本地 6,257 traces / 48,534 spans；原始顶层属性审计为 29 个 | 不能支持 500/5000 路径假设 |
+| Exgentic `agent-llm-traces-v2` | 约 10,057 sessions、241,674 chat spans，多框架/模型 | 导出字段较固定，适合测 payload 与密度，不直接代表路径爆炸 |
+| IBM `lmcache-agentic-traces_Otel` | 767 sessions、24,880 spans，属性保留为 JSON | 主要是 LLM spans，覆盖面有限 |
+| `pagarsky/agent-trace` | 1,400 traces，含 spans、LLM steps 和 metadata | 自定义 schema，需要映射到 OTel 路径 |
+| Trace Commons | 多 harness 原始 coding-agent sessions | 公开样本仍小，需核对隐私、许可和采样偏差 |
+| NVIDIA Open-SWE-Traces | 本地约 49 GiB Parquet trajectory | 固定 trajectory/metadata schema，不是 OTel attribute 集合 |
+
+下一轮数据审计应输出叶路径全集、每 span 路径数、逐路径密度、类型集合与冲突、基数、
+payload 分位数和查询频率。当前九组继续作为引擎边界回归，并在审计后增加混合密度和长尾
+profile。
+
 数据集与报告尚未覆盖以下设计变量：
 
 - 50、500、5000 路径的字段数量、稀疏度和类型冲突；
@@ -274,23 +325,23 @@ exporter 把全部 span/event 属性写入 `metadata`，同时把部分 GenAI �
 ### 4.2 建议的逻辑模型
 
 ```text
-events_core
-  trace/span 稳定列 + 常用维度 + input/output preview + 长度/引用状态
+events_analytics
+  trace/span 稳定列 + 常用维度 + promoted attributes
+  + bounded residual + input/output preview + 长度/hash/引用状态
 
-events_full
-  trace/span 稳定列 + residual metadata + input/output inline-or-reference
+event_payloads
+  project_id + trace_id + span_id + field_path
+  + inline content 或 asset_id
 
 assets
   asset_id + project_id + sha256 + content_type + encoding
   + content_length + storage_uri + status + created_at
-
-event_assets
-  project_id + trace_id + span_id + field_path + asset_id + origin
 ```
 
-该逻辑模型不预设具体引擎实现。`events_core` 可由物化表、物化视图或引擎投影实现；`assets` 可先使用 MinIO/S3 兼容接口验证。
-普通 SQL view 只改变列选择，无法保证减少物理读取和缓存占用；Core 层需要使用独立
-物化表、物化视图或具备等价物理裁剪能力的引擎投影。
+该逻辑模型不预设具体引擎实现。`events_analytics` 的 payload 可以先采用同表独立列作为
+最低复杂度基线；列裁剪不足或详情生命周期独立时再使用 `event_payloads`。Full/Core 物化
+双表继续作为实验候选。普通 SQL view 只改变列选择，不能证明物理读取和缓存占用下降。
+`assets` 可先使用 MinIO/S3 兼容接口验证。
 
 ### 4.3 热点字段判定
 
@@ -353,9 +404,11 @@ resolver 应按 project/tenant 鉴权并生成受限下载地址。脱敏、加�
 
 可复现基线需要同时固定数据集与生成参数、Collector/exporter 版本和配置、schema
 及索引、引擎 build 与 storage profile、查询 workload 和运行环境。每次运行还需保存
-输入 hash、truth manifest、DDL/catalog hash、二进制 hash 和正确性结果。当前
-exporter 写入 28 列，benchmark v4 database catalog revision `2026-09-01.6` 仍定义
-26 列；匹配 schema 前产生的结果不能进入性能比较。
+输入 hash、truth manifest、DDL/catalog hash、二进制 hash 和正确性结果。当前 exporter
+main `9a49c8a9d6091633112fe793fcf12310859aeb7f` 写入 18 列；trace-synthesis main
+`6472d8e1ac6cdb42494b79b28d4d5361919d4776` 的 v4 database catalog revision
+`2026-09-02.3` 仍定义 28 列。两仓 main 尚未形成联合冻结，配对完成前的系统级结果不能进入
+新基线比较。独立 loader 的机制实验不依赖该列数配对。
 
 现有 database 与 Langfuse backend 的路径分别为：
 
@@ -417,6 +470,8 @@ langfuse: OTLP -> Langfuse ingestion/worker -> ClickHouse/PostgreSQL/MinIO
 
 ### 7.1 本地项目资料
 
+- [Exporter 18 列冻结 ADR-0010](https://github.com/labmemW/exporter_demo/blob/0c26c9ecf03acf0bd6aa3a3c103ba4e7a78b523a/docs/adr/0010-otel-minimal-schema.md)
+- [当前 Benchmark v4 database catalog](https://github.com/zfwang2021/trace-synthesis/blob/6472d8e1ac6cdb42494b79b28d4d5361919d4776/benchmark/schema/v4/database/catalog.json)
 - [Exporter schema 说明](https://github.com/labmemW/exporter_demo/blob/a0b3441d473d5cb4fd7c06767d12b9f611521b9e/docs/SCHEMA.md)
 - [自研引擎验证报告](https://github.com/labmemW/exporter_demo/blob/a0b3441d473d5cb4fd7c06767d12b9f611521b9e/docs/references/engine-verification-2026-08-07.md)
 - [Exporter 与 Langfuse v4 字段对照](https://github.com/labmemW/exporter_demo/blob/a0b3441d473d5cb4fd7c06767d12b9f611521b9e/docs/references/langfuse-v4-vs-exporter-demo-field-mapping-2026-08-28.md)
@@ -432,6 +487,8 @@ langfuse: OTLP -> Langfuse ingestion/worker -> ClickHouse/PostgreSQL/MinIO
 ### 7.2 官方文档和开放源码
 
 - [ClickHouse JSON data type](https://clickhouse.com/docs/reference/data-types/newjson)
+- [ClickHouse PostgreSQL CDC JSON/JSONB 映射](https://clickhouse.com/docs/integrations/clickpipes/postgres/faq#how-are-json-and-jsonb-columns-replicated-from-postgres)
+- [ClickHouse JSONBench](https://github.com/ClickHouse/JSONBench)
 - [Grafana Tempo dedicated attribute columns](https://grafana.com/docs/tempo/latest/operations/dedicated_columns/)
 - [Grafana Tempo block format](https://grafana.com/docs/tempo/latest/reference-tempo-architecture/block-format/)
 - [PostgreSQL JSON types](https://www.postgresql.org/docs/current/datatype-json.html)
@@ -447,6 +504,10 @@ langfuse: OTLP -> Langfuse ingestion/worker -> ClickHouse/PostgreSQL/MinIO
 - [Apache Parquet Variant shredding](https://parquet.apache.org/docs/file-format/types/variantshredding/)
 - [Apache Iceberg Variant](https://iceberg.apache.org/blog/variant-in-apache-iceberg/)
 - [Apache Doris Variant](https://doris.apache.org/blog/variant-in-apache-doris-2.1/)
+- [Exgentic agent-llm-traces-v2](https://huggingface.co/datasets/Exgentic/agent-llm-traces-v2)
+- [IBM lmcache-agentic-traces_Otel](https://huggingface.co/datasets/ibm-research/lmcache-agentic-traces_Otel)
+- [AgentTrace](https://huggingface.co/datasets/pagarsky/agent-trace)
+- [Trace Commons](https://huggingface.co/datasets/trace-commons/agent-traces)
 
 ### 7.3 论文
 
