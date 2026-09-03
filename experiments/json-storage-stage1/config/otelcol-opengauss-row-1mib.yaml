@@ -1,0 +1,37 @@
+# 标准 openGauss 6.0.0 行存系统级参照配置。
+#
+# 适用于 exporter 54ca553a7ed09ad1751c82adab3aa52c6e9357b1。1 MiB 上限覆盖
+# whowhen-pro text split 当前最大 83,735-byte metadata，避免默认 64 KiB 截断。
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 127.0.0.1:${env:OTLP_GRPC_PORT}
+      http:
+        endpoint: 127.0.0.1:${env:OTLP_HTTP_PORT}
+
+processors:
+  batch:
+
+exporters:
+  opengauss:
+    dsn: ${env:OPENGAUSS_DSN}
+    timeout: 7200s
+    max_attr_value_length: 1048576
+    storage_profile: row
+
+service:
+  telemetry:
+    metrics:
+      level: detailed
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 127.0.0.1
+                port: ${env:METRICS_PORT}
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [opengauss]
