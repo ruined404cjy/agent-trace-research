@@ -4,7 +4,7 @@
 > 日期：2026-09-04
 > 范围：多字段 JSON、Full/Core、JSON 长字段与外部引用
 > 配套调研：[json-storage-design-survey.md](json-storage-design-survey.md)
-> 阶段报告：[json-storage-stage1-report-2026-09-04.md](json-storage-stage1-report-2026-09-04.md)
+> 阶段一报告：[json-storage-stage1-report-2026-09-07.md](json-storage-stage1-report-2026-09-07.md)
 
 ## 1. 目标
 
@@ -146,8 +146,8 @@ ClickHouse 补充矩阵已使用 `start_time` 排序键和 50% 时间范围谓�
 ClickHouse 使用同一 JSON 文本验证三种布局：
 
 1. `String CODEC(ZSTD)`，查询时使用 JSON 提取函数；
-2. native `JSON(max_dynamic_paths=100)` 加压缩 raw sidecar，使 500 路径进入 shared data；
-3. native `JSON(max_dynamic_paths=1000, hot.tenant String, hot.region String)`，固定两个热点路径并提高动态路径预算，同时保存压缩 raw sidecar。
+2. native `JSON(max_dynamic_paths=100)` 加压缩 canonical sidecar（列名 `metadata_raw`），使 500 路径进入 shared data；
+3. native `JSON(max_dynamic_paths=1000, hot.tenant String, hot.region String)`，固定两个热点路径并提高动态路径预算，同时保存压缩 canonical sidecar。
 
 数据库版本、image digest、JSON 参数和索引 DDL 在 run manifest 中固定。第一阶段不穷举 ClickHouse shared data 的所有序列化选项。ClickHouse 25.12.11.4 使用 `map_with_buckets` 写零层 part，并在多 part 合并后使用 `advanced`；runner 固定上述设置，分别记录 merge 前后的 part、空间和 dynamic/shared 路径数。
 
@@ -173,13 +173,13 @@ ClickHouse 使用同一 JSON 文本验证三种布局：
 
 ClickHouse native `JSON` 按叶路径扁平存储，不能称为 PostgreSQL/openGauss 语义的 `JSONB`。首个 50 路径×20% 密度正式组发现两个 native JSON 布局各有 77,562 条完整对象回读差异，均来自空的 `metadata.paths` 被省略；热点和冷路径过滤命中集合仍与 truth 一致。
 
-修正后的门禁区分分析等价和 canonical 文档保真。native JSON 负责路径分析，压缩 raw sidecar 负责 canonical 文档恢复；native JSON 回读差异保留为引擎语义观察。`50×20%` 和 `500×1%` 语义重跑均通过两项门禁。`500×1%` 低预算布局合并后为 100 个 dynamic、402 个 shared 路径，高预算布局为 500 个 dynamic、0 个 shared 路径。
+修正后的门禁区分分析等价和 canonical 文档保真。native JSON 负责路径分析，压缩 canonical sidecar 负责逻辑 metadata 恢复；native JSON 回读差异保留为引擎语义观察。`50×20%` 和 `500×1%` 语义重跑均通过两项门禁。`500×1%` 低预算布局合并后为 100 个 dynamic、402 个 shared 路径，高预算布局为 500 个 dynamic、0 个 shared 路径。
 
 当前 sidecar 由解析后的 metadata 重新序列化，字节级审计和重放需要另存原始输入 bytes。
 
 性能补充实验把正确性 ID 查询与性能查询分离。性能 SQL 使用直接子列语法，在 50% 时间窗口内按热点 region 分组计数；每次使用唯一 query ID，从 `system.query_log` 的 `QueryFinish` 读取最终扫描指标。等宽与混合 profile 分别运行三轮并轮换布局顺序。
 
-预算边界、混合密度和等单行宽度实验达到本阶段目标。limited 布局在 98 条业务路径加两个热点路径时为 100 dynamic / 0 shared，增加一条业务路径后为 100 dynamic / 1 shared。混合密度 profile 让 98 条长尾路径先占满业务路径预算；三轮 merge 均换入 50 条高/中密度路径并换出 50 条长尾路径，排除了按字典序或首次出现顺序保留的解释。最终保留全部 10 条 95% 路径、全部 40 条 20% 路径和 48 条 1% 路径，其余 402 条 1% 路径进入 shared data。固定每行约 50 个动态字段时，路径全集从 50 增至 5000，native merge 中位数从约 0.27–0.29 s 增至约 32 s；直接子列查询显著减少读取量，但完整 native 对象重建比 String 内容读取慢约 65–102 倍，raw sidecar 恢复到 String 同量级。native 载入吞吐和 sidecar 后总空间高于 String。详细数字见 [9 月 4 日阶段报告](json-storage-stage1-report-2026-09-04.md)。
+预算边界、混合密度和等单行宽度实验达到本阶段目标。limited 布局在 98 条业务路径加两个热点路径时为 100 dynamic / 0 shared，增加一条业务路径后为 100 dynamic / 1 shared。混合密度 profile 让 98 条长尾路径先占满业务路径预算；三轮 merge 均换入 50 条高/中密度路径并换出 50 条长尾路径，排除了按字典序或首次出现顺序保留的解释。最终保留全部 10 条 95% 路径、全部 40 条 20% 路径和 48 条 1% 路径，其余 402 条 1% 路径进入 shared data。固定每行约 50 个动态字段时，路径全集从 50 增至 5000，native merge 中位数从约 0.27–0.29 s 增至约 32 s；直接子列查询显著减少读取量，但完整 native 对象重建比 String 内容读取慢约 65–102 倍，canonical sidecar 恢复到 String 同量级。native 载入吞吐和 sidecar 后总空间高于 String。详细数字见 [9 月 7 日阶段一报告](json-storage-stage1-report-2026-09-07.md)。
 
 ## 5. 实验二：Full/Core 物理分层
 

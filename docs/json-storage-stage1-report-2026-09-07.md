@@ -1,21 +1,21 @@
-# Agent Trace JSON 存储阶段调研与实验报告
+# Agent Trace JSON 存储阶段一：语义与引擎内机制报告
 
-> 状态：阶段报告
-> 日期：2026-09-04
-> 变更基线：`2724d21ca5e6310d4962d175fcb7e7c10e26b450`
+> 状态：阶段一报告
+> 日期：2026-09-07
+> 实验与代码基线：`b8a112c0cbf0bd9c87315e60263042ba4810379d`
 > 范围：标准 openGauss 6.0.0、ClickHouse 25.12.11.4、多字段 JSON、长 payload
 
 ## 1. 结论
 
 Agent Trace 存储属于持续追加写入、按时间范围过滤和聚合的实时分析型负载。指定 `trace_id` 的完整 Trace 回查和原始 payload 读取是必要的次级路径。存储设计应优先保证时间裁剪、列裁剪、稳定维度聚合和持续摄入，再独立保证详情读取与原始内容恢复。
 
-本阶段形成以下结论：
+阶段一形成以下结论：
 
 1. JSONB 与 ClickHouse native JSON 解决不同问题。openGauss JSONB 是行内二进制文档，通过 GIN 或表达式索引加速路径查询；ClickHouse native JSON 把叶路径组织成动态子列，超出预算的路径进入 shared data。两者不能按同名类型直接比较。
-2. 面向实时分析的稳定设计原则是“强类型分析列 + 动态 residual + 选择性字段提升 + 长 payload 分层”。开源系统和论文在该架构上具有一致方向，字段提升策略、residual 物理类型和外置阈值仍取决于数据与查询分布。
-3. openGauss JSONB 九组合成边界实验表明，通用 GIN 提供冷路径检索能力，同时增加载入时间和索引空间；固定热点表达式索引在全部九组中被自然采用。该结果支持提升稳定热点字段，不支持为全部动态属性默认建立通用索引。
-4. ClickHouse native JSON 的热点和冷路径查询结果与 truth 一致。目标小字段查询相对 String 解析快约 5–10 倍，完整 native 对象重建则比 String 内容读取慢约 65–102 倍；压缩 raw sidecar 提供与 String 同量级的完整文档读取路径。预算边界、混合密度和等单行宽度实验进一步证明动态路径预算、按非空出现量保留子列以及 path namespace 对 merge 成本的影响。
-5. 多字段与长字段是两条独立设计轴。多字段需要控制路径预算、类型冲突和查询列数；长字段需要控制主表读取、压缩编码、传输和生命周期。对象存储只能处理后者。
+2. openGauss JSONB 九组合成边界实验表明，通用 GIN 提供冷路径检索能力，同时增加载入时间和索引空间；固定热点表达式索引在全部九组中被自然采用。该结果支持提升稳定热点字段，不支持为全部动态属性默认建立通用索引。
+3. ClickHouse native JSON 的热点和冷路径查询结果与 truth 一致。目标小字段查询相对 String 解析快约 5–10 倍，完整 native 对象重建则比 String 内容读取慢约 65–102 倍。动态路径预算限制独立子列数，merge 按非空出现量重新组织路径，全局路径集合会显著放大 merge 成本。
+4. 本实验增加的 `metadata_raw` 是 canonical sidecar，用于逻辑 metadata 对账，不是 ClickHouse 内建功能，也不是摄入原文。分析、逻辑文档恢复和字节级审计应分别选择 native JSON、canonical 文档或原始 bytes，生产布局不默认同时保存三份内容。
+5. 面向实时分析的稳定设计方向是“强类型分析列 + 有预算的动态 residual + 基于 workload 的字段提升 + 长 payload 分层”。具体 residual 类型、路径预算、索引和外置阈值仍需通过统一的 openGauss/ClickHouse workload 横向实验决定。
 
 ## 2. 项目边界与基线
 
@@ -112,6 +112,14 @@ ClickHouse 探针复用同一数据和 truth，建立三种 MergeTree 布局：
 | native limited | `JSON(max_dynamic_paths=100)` + `metadata_raw String CODEC(ZSTD(3))` |
 | native hinted | `JSON(max_dynamic_paths=1000, hot.tenant String, hot.region String)` + `metadata_raw` |
 
+`metadata_raw` 是本实验增加的 canonical sidecar，不是 ClickHouse native JSON 自动生成的原文副本。runner 先把 JSONL 解析为对象，取出 `metadata`，再按对象键排序和紧凑分隔符重新序列化；同一次 INSERT 将该字符串写入 `metadata_raw`，并将对象写入 native `metadata`。它保留键值、数组顺序、空对象和空数组等逻辑结构，不保留结构空白、原始对象键顺序、等价转义形式、数值原始文本及重复键实例，也不包含 metadata 之外的完整事件。该稳定序列化是实验内部的对账约定，未声明符合 RFC 8785 JCS。
+
+这些差异在 OTel Attributes 和常规结构化分析中可以接受。RFC 8259 将结构空白视为无关信息，并指出重复对象成员会产生不可互操作的解析结果；OTel Attribute Collection 要求键唯一，并按与顺序无关的键值集合定义相等性。canonical 表示由此适合跨引擎逻辑对账、确定性 hash 和去重。签名或 HMAC 校验、字节级审计、取证、复现解析器歧义、向外部系统精确重放以及依赖对象成员顺序重新构造 prompt 的流程需要保存摄入时的完整原始 bytes。若业务只查询分析字段，可以只保存 native JSON；若要求逻辑文档恢复，可以保存 canonical String；若要求精确审计或重放，应把原始 bytes 作为事实来源，canonical 表示可由原文重新生成。本实验选择 canonical sidecar 是为了验证 native JSON 的逻辑保真边界并排除无关的文本格式差异，不构成生产布局的默认选择。
+
+本报告统一把从摄入程序读取输入到新数据可查询称为“载入”，把客户端向 ClickHouse 提交一个 block 称为“INSERT”，把 MergeTree 生成的不可变存储单元称为“data part”。载入时序为：摄入程序准备行并发起 INSERT；ClickHouse 解析 JSON、发现叶路径和实际类型；每个 INSERT block 在涉及的分区内生成零层 part，type hint 路径按声明类型存储，预算内未提示路径成为 dynamic path，预算外路径进入 shared data；INSERT 完成后多个 active part 已可共同查询；后台 merge 读取若干源 part 并写出新的目标 part，在目标 part 的预算内重新组织 dynamic path 与 shared data；新 part 生效后旧 part 退出 active 集合。这里的“换入/换出”是同一路径在源 part 与目标 part 之间改变物理组织，不改变 JSON 的逻辑字段。本轮显式执行 `OPTIMIZE TABLE ... FINAL` 以在确定时点强制合并并检查最终组织；生产 MergeTree 会自动后台 merge，首次路径发现不依赖 `OPTIMIZE FINAL`。
+
+canonical sidecar 只在上述时序中增加摄入端重新序列化和同行写入两个步骤。`metadata_raw` 随 data part 作为普通 ZSTD String 列存储和合并，不参与 JSON 路径发现、动态路径预算或换入换出。ClickHouse 25.8 advanced shared data 为提高整列读取和 merge 性能维护的内部 `.copy.*` 表示同样不是原始输入 bytes，不能替代业务审计副本。
+
 相较首次停止的探针，本轮改动如下：
 
 | 项目 | 首次探针 | 本轮探针 |
@@ -124,7 +132,7 @@ ClickHouse 探针复用同一数据和 truth，建立三种 MergeTree 布局：
 
 探针将正确性拆为两个门禁：分析等价门禁使用 native JSON 子列执行路径过滤；文档保真门禁使用 String 布局的 `metadata` 或 native 布局的 `metadata_raw` 对 canonical hash。native JSON 的完整对象回读继续记录为引擎语义观察，不再阻止路径分析。
 
-第一轮语义重跑使用 `50×20%` 的 250,200 行和 `500×1%` 的 291,100 行。两组、三种布局的热点与冷路径 ID 集合均与 truth 一致；两个 raw sidecar 的 canonical hash 差异均为 0。`50×20%` 的两个 native JSON 列各有 77,562 条对象重建差异，均为省略空的 `metadata.paths`；`500×1%` 每行都有路径叶值，native JSON 重建差异为 0。该轮证明了正确性契约和 sidecar 机制，原性能计时包含完整 ID 排序与传输，且统一使用 `getSubcolumn(...)::String` 后没有得到预期列裁剪，因此不进入性能结论。
+第一轮语义重跑使用 `50×20%` 的 250,200 行和 `500×1%` 的 291,100 行。两组、三种布局的热点与冷路径 ID 集合均与 truth 一致；两个 canonical sidecar 的 canonical hash 差异均为 0。`50×20%` 的两个 native JSON 列各有 77,562 条对象重建差异，均为省略空的 `metadata.paths`；`500×1%` 每行都有路径叶值，native JSON 重建差异为 0。该轮证明 native JSON 保持已存叶路径的分析语义，也证明 canonical sidecar 可以恢复本实验定义的逻辑 metadata；它没有证明 native JSON、sidecar 或二者组合可以恢复摄入原始 bytes。原性能计时包含完整 ID 排序与传输，且统一使用 `getSubcolumn(...)::String` 后没有得到预期列裁剪，因此不进入性能结论。
 
 正式性能矩阵改用直接子列语法：动态值读取为 `metadata.path.:String`，type hint 路径直接按名读取。正确性查询单独返回排序 ID；性能查询在 `start_time` 排序键的 50% 时间窗口内执行按 `hot.region` 分组的 `count()`，只返回至多四行。整对象读取使用同一时间窗口，并对实际内容执行 `cityHash64` 聚合：String 直接读取 `metadata`，native 重建使用 `toJSONString(metadata)`，sidecar 使用 `metadata_raw`。该方法强制数据库消费内容并只返回一个标量，排除了 String `sum(length(...))` 仅读取 offset 的优化和网络返回量差异。每次查询使用唯一 query ID，从 `system.query_log` 的 `QueryFinish` 记录读取耗时、`read_rows`、`read_bytes`、内存和 ProfileEvents。所有 profile 固定 50,000 行；等宽和混合组分别运行三轮，并采用三种布局的平衡顺序轮换。完成门禁同时核对合并后行数、缺失/额外/重复 ID、dynamic/shared 路径全集、精确预算和路径保留优先级。
 
@@ -177,15 +185,19 @@ ClickHouse 探针复用同一数据和 truth，建立三种 MergeTree 布局：
 | 500×10% | 39 ms / 25.719 MiB | 3,451 ms / 57.259 MiB | 2,806 ms / 121.631 MiB | 32 ms / 19.647 MiB | 33 ms / 19.615 MiB |
 | 5000×1% | 38 ms / 25.719 MiB | 3,877 ms / 61.521 MiB | 2,466 ms / 250.321 MiB | 33 ms / 19.622 MiB | 16 ms / 19.610 MiB |
 
-14 个正式运行的分析等价与文档保真门禁全部通过，合并后行数、ID 身份、路径全集和整对象 digest 门禁也全部通过。直接子列访问下，native JSON 对目标小列过滤与分组的服务端耗时为 String 解析的约 1/5–1/10，读取量为约 1/19–1/69；完整 native 对象重建则比 String 内容读取慢约 65–102 倍，内存中位数为 29.876–284.807 MiB，而 String 为 16.226–16.912 MiB。raw sidecar 的耗时为 14–33 ms，与 String 的 17–39 ms 同量级，且全部内容 digest 一致。该结果支持“native 用于分析子列、raw/String 用于完整详情”的双路径，不支持用 native 重建承担高频整对象读取。
+14 个正式运行的分析等价与文档保真门禁全部通过，合并后行数、ID 身份、路径全集和整对象 digest 门禁也全部通过。直接子列访问下，native JSON 对目标小列过滤与分组的服务端耗时为 String 解析的约 1/5–1/10，读取量为约 1/19–1/69；完整 native 对象重建则比 String 内容读取慢约 65–102 倍，内存中位数为 29.876–284.807 MiB，而 String 为 16.226–16.912 MiB。canonical sidecar 的耗时为 14–33 ms，与 String 的 17–39 ms 同量级，且全部内容 digest 一致。该结果支持把分析子列与完整逻辑详情分成两条读取路径，不支持用 native 重建承担高频整对象读取；生产布局是否保留 canonical 或原始 bytes 副本取决于详情、审计和重放契约。
 
-native 的载入吞吐低于 String，并承担子列组织和 raw sidecar 空间。固定约 50 个字段/行时，path namespace 从 50 增至 5000，limited 和 hinted 的 merge 中位数分别从 0.288/0.272 s 增至 31.946/31.693 s，证明全局路径基数会独立放大 merge 成本。
+本轮载入指标包含客户端读取、解析、canonical 序列化、传输和 ClickHouse INSERT，不是纯服务端解析时间。98 与 99 条业务路径边界各运行一轮：三种布局的载入吞吐变化均不超过约 1.3%，增加首条 shared path 没有形成可辨认的载入时延突变。500 路径混合组与 98 路径组的输入和单行宽度接近，String、limited、hinted 的载入吞吐分别下降约 4.9%、15.8% 和 47.4%，limited 与 hinted merge 分别放大约 4.2 倍和 6.1 倍；两组仍存在输入字节和每行字段数差异，因此只能支持全局路径集合参与成本，不能把差值全部归因于路径基数。
+
+固定约 50 个字段/行和相近输入字节后，String 在 50、500、5000 路径三组中的载入吞吐保持在 12.45–12.99 千 rows/s。limited 从 8.64 千降到 6.67 千后，在 500 到 5000 路径之间基本持平；该现象与独立动态路径预算固定为 100、其余路径进入 shared data 的机制一致。hinted 随独立动态路径从 50 增至 500 和 1000，载入吞吐从 8.59 千降至 5.06 千和 2.31 千。两种 native 布局的 merge 中位数则从 0.288/0.272 s 增至 31.946/31.693 s。现有结果呈现“单行字段数和输入字节影响逐行处理，全局路径基数与独立子列数影响 native 组织，路径全集持续放大 merge”的分层规律。
+
+现有矩阵通过同步改变路径基数和均匀密度来保持每行宽度，不能独立给出密度与载入时延的函数关系。500 路径混合组也同时改变逐路径密度分布和每行宽度。密度梯度只有在固定总行数、路径基数、值长和 INSERT block，并分别记录输入字节后才可解释；因此 `50/500 × 1%/5%/20%/50%/95%` 仍是待真实数据审计筛选的下一阶段机制矩阵，而不是当前已证实的性能规律。
 
 提高动态路径预算需要针对实际访问路径。`5000×1%` 中从 100 提高到 1000 个动态路径没有改变两个显式查询的数量级，却使 hinted 载入吞吐降至 2,309 rows/s，压缩空间增至 22.230 MiB。稳定热点应使用强类型列或 type hint；预算外长尾留在 shared data。该结论适用于本次合成数据和直接子列查询，不替代真实 Trace 分布审计。
 
-当前 `metadata_raw` 保存解析后重新序列化的 canonical JSON，保证逻辑结构恢复。字节级审计和重放还需要摄入层保存原始输入 bytes，包括原始键顺序、空白和重复键处理规则。详细机制和跨项目设计比较见 [JSON 存储设计调研](json-storage-design-survey.md)。
+当前 `metadata_raw` 只承担实验 canonical 对账和逻辑 metadata 恢复。需要字节级审计和重放时，摄入层应在首次解析前保存完整原始输入 bytes，并记录长度、SHA-256、内容类型、编码和保留策略；原始 bytes 已经存在时通常只需另存 canonical hash，无需再默认复制一份 canonical String。详细机制和跨项目设计比较见 [JSON 存储设计调研](json-storage-design-survey.md)。
 
-## 4. openGauss JSONB 与 ClickHouse JSON 对比
+## 4. 机制差异与阶段一边界
 
 | 维度 | openGauss JSONB | ClickHouse native JSON |
 |---|---|---|
@@ -194,16 +206,16 @@ native 的载入吞吐低于 String，并承担子列组织和 raw sidecar 空�
 | 目标查询 | 文档包含、存在性、定向路径检索 | 大量行中读取、过滤和聚合少量路径 |
 | 写入成本来源 | JSONB 解析、行存写入、索引维护 | 路径解析、类型推断、子列文件及 merge |
 | 路径规模控制 | 选择是否建立通用或定向索引 | `max_dynamic_paths`、shared data serialization、`SKIP` |
-| 整对象读取 | 保持 JSONB 结构语义，格式规范化 | 子列重建遵循叶路径语义；精确恢复使用 raw sidecar |
-| 适合本项目的角色 | 蓝区行存基线、语义对照、少量定向索引 | 分析型 residual 候选 |
+| 整对象读取 | 保持 JSONB 结构语义，格式规范化 | 子列重建遵循叶路径语义并可能省略空容器；逻辑恢复使用 canonical sidecar，字节级恢复使用摄入原文 |
+| 阶段一定位 | 蓝区行存基线、语义对照、少量定向索引 | 分析型 residual 候选 |
 
-当前证据不能回答哪个引擎性能更高。openGauss 使用 JSONB 行表和 GIN/B-tree 索引，ClickHouse 使用 MergeTree 动态子列和 shared data；两侧的物理布局、索引、空间口径和正式矩阵不同。ClickHouse 等宽实验已经包含时间范围裁剪和分组计数，但仍是一次性分批载入。跨引擎比较还需统一行数、查询、正确性契约和 raw 保存范围，并加入持续写入、并发查询及 part/merge 状态。
+该表是机制映射，不是横向性能结果。openGauss 实验比较 JSONB 的无索引、GIN 和表达式索引，ClickHouse 实验比较 String、limited native 和 hinted native；两侧的 schema、数据行数、索引、路径预算、写入方式和空间口径不同。ClickHouse 等宽实验包含时间范围裁剪与分组计数，仍采用一次性分批载入。阶段一证据不能回答哪个引擎性能更高，也不能把 native JSON 与 JSONB 的内部结果按同名查询直接相除。
 
-## 5. 公认设计与未决选择
+## 5. 阶段一设计结论
 
-### 5.1 已形成一致方向的设计
+### 5.1 已形成一致方向的原则
 
-代表性实现和研究形成以下公认架构原则。这里的“公认”表示多类系统和研究反复采用同一分层方向，不表示存在统一的字段选择算法或阈值：
+代表性实现和研究形成以下共同架构方向。这里的“公认”表示多类系统和研究反复采用同一原则，不表示存在统一的字段选择算法或阈值：
 
 1. 稳定且常用于过滤、排序、分组和聚合的字段使用强类型列。
 2. 动态长尾字段进入 residual JSON、Map、Variant 或 shared data。
@@ -211,7 +223,7 @@ native 的载入吞吐低于 String，并承担子列组织和 raw sidecar 空�
 4. 分别定义 missing、JSON null、SQL NULL、类型冲突、数组顺序、路径转义和重建规则。
 5. 长、高基数字段使用适合的压缩编码或独立物理层，控制常规分析的读取量。
 
-Tempo 使用 intrinsic 列、通用 `Attrs` 和少量 dedicated columns；Parquet Variant 支持完整 Variant 与可选 typed shredding；Sinew 使用物理列和 reservoir；ClickHouse 使用 dynamic paths 与 shared data。这些实现体现相同分层思想。
+Tempo 的 intrinsic/dedicated columns、Parquet Variant shredding、Sinew 的物理列与 reservoir、ClickHouse dynamic paths 与 shared data 都体现分层存储。完整项目与论文比较见 [JSON 存储设计调研](json-storage-design-survey.md)。
 
 字段提升的具体信号具有不同证据等级：
 
@@ -224,108 +236,61 @@ Tempo 使用 intrinsic 列、通用 `Attrs` 和少量 dedicated columns；Parque
 
 因此，查询频率参与本项目的 workload 收益评估，但不能单独称为公认的自动提升指标。ClickHouse 当前 merge 按非 null 值数量选择动态路径，并不读取查询日志。各项目的具体机制和来源见 [JSON 存储设计调研](json-storage-design-survey.md)。
 
-### 5.2 没有公认固定答案的部分
+### 5.2 多字段与长字段结论
 
-- residual 使用 String、Map、JSON/Variant 还是 KV/EAV；
-- 提升字段由人工 schema、查询统计还是存储引擎自动决定；
-- workload 收益、密度、类型、基数和值长如何组合，以及各自阈值；
-- dynamic path 数量和稀疏阈值；
-- 热点值在 residual 中 copy 还是 move；
-- 大字段保存在同表独立列、payload 表、LOB 还是对象存储；
-- raw 原文的保存范围和保留周期。
-
-这些选择依赖实际数据分布、查询列数、时间选择性、持续摄入成本和详情读取比例。固定星级或跨引擎总排名无法替代目标 workload 实测。
-
-## 6. 多字段特化设计
-
-多字段 JSON 需要分别定义和测量以下变量：
-
-| 符号 | 变量 | 定义 | 主要影响 |
-|---|---|---|---|
-| `P` | 全局 path 基数 | 指定 tenant/project、Agent/工作流、instrumentation 版本和时间窗口内的不同叶路径总数 | schema、路径元数据、文件数和 merge 成本 |
-| `W` | 单行字段数 | 每行实际出现的叶路径数，报告 p50、p95、p99 和最大值 | 单行解析、序列化、写入大小和内存 |
-| `dᵢ` | 逐 path 密度 | 路径 `i` 出现的行数除以窗口总行数 | 稀疏压缩、子列选择和索引收益 |
-| `cᵢ` | 值基数 | 路径 `i` 的 distinct 值数及其相对行数 | 选择性、字典编码和索引效率 |
-| `Tᵢ` | 类型集合 | 路径 `i` 跨行出现的类型及冲突比例 | typed subcolumn、Dynamic 类型分流和回退策略 |
-| `Lᵢ` | 值长 | 路径 `i` 值长度的分位数 | 压缩、I/O、LOB 和外置策略 |
-| `Aᵢ` | 查询访问 | 路径 `i` 在过滤、排序、分组、聚合和投影中的访问次数 | 人工字段提升与定向索引收益 |
-| `E` | schema epoch | 相邻时间窗口的路径新增、删除、类型变化和稳定集合 | schema 演进、预算和回填范围 |
-
-建议逻辑布局为：
-
-```text
-events_analytics
-  tenant/project + time + trace/span identity
-  + service/type/status/duration/model/token 等强类型列
-  + workload 证明有价值的 promoted attributes
-  + bounded dynamic residual
-  + payload preview/length/hash/reference
-```
-
-稳定字段不进入动态路径竞争。扁平且类型统一的 OTel 属性可比较 Map；嵌套或跨行类型变化的属性比较 native JSON/Variant。冷路径保留在 shared/residual 中。人工提升以查询操作和收益为入口，再检查选择性、密度、类型稳定性、基数和值长；自动组织至少需要密度、类型和明确的路径预算。
-
-九组均匀密度产物保留为机制资产。ClickHouse 首轮使用 `50×20%` 和 `500×1%` 完成语义验证；修正测量口径后增加 98/99 路径预算边界、500 路径混合密度以及 `50×95%`、`500×10%`、`5000×1%` 等单行宽度矩阵。`5000×1%` 只支持引擎压力边界结论，5000 路径高密度组合继续裁剪。下一阶段审计真实 Trace，再决定代表性主矩阵。
-
-后续 profile 分为以下类别：
+多字段实验分别使用全局 path 基数 `P`、单行字段数 `W` 和逐 path 密度 `dᵢ` 描述 JSON，避免用单一“密度”同时指代路径集合和单行宽度。九组均匀矩阵及补充 profile 均为机制数据；公开 Trace 尚未证明 500 或 5000 条 metadata 路径属于代表性生产分布。当前 profile 的证据定位如下：
 
 | 类别 | 组合 | 解释 |
 |---|---|---|
-| 代表性候选 | 50 路径混合密度；有真实数据支持后增加 500 路径混合密度 | 少量高密度稳定字段、中等密度可选字段和低密度长尾字段并存 |
-| 机制梯度 | `50/500 × 1%/5%/20%/50%/95%` | 观察密度变化；这些数值不是字段提升阈值 |
-| 局部细化 | 2% 和 10% | 只在 1%–20% 之间发现计划或性能转折后运行 |
-| 等单行宽度 | `50×95%`、`500×10%`、`5000×1%` | 每行约 50 个动态字段，用于区分全局 namespace 与单行宽度 |
-| 压力边界 | `5000×1%` | 验证路径预算、shared data、GIN 放大和路径元数据 |
-| 当前裁剪 | `5000×20%`、`5000×95%` | 分别约 1000 和 4750 个字段/行，缺少 Agent Trace 场景支持 |
+| 语义与机制 | `50×20%`、`500×1%`、98/99 路径边界、500 路径混合密度 | 验证回读语义、路径预算和 merge 重组 |
+| 等单行宽度 | `50×95%`、`500×10%`、`5000×1%` | 区分全局 path namespace 与每行约 50 个字段的影响 |
+| 压力边界 | `5000×1%` | 验证大量低密度路径下的 shared data、子列预算和 merge 成本 |
+| 保留未运行 | `50/500 × 1%/5%/20%/50%/95%` | 真实 Trace 审计后选择；梯度值不表示字段提升阈值 |
+| 当前裁剪 | `5000×20%`、`5000×95%` | 每行约 1000 和 4750 个字段，缺少场景依据 |
 
-现有公开数据只能支持“50 路径量级更接近已观察样本”的判断，尚不能把任一均匀密度 profile 定义为代表性 workload。代表性结论需要按 tenant/project、Agent/工作流、instrumentation 版本和时间窗口完成真实 Trace 审计。
+多字段的阶段一结论是：稳定分析字段应从动态路径竞争中移出；动态 residual 必须设置预算；人工字段提升以查询用途和收益为入口，再结合密度、类型稳定性、基数和值长；当前数据不能确定通用密度阈值。长字段尚未完成布局性能实验。当前仅形成“分析特征与完整 payload 分层”的候选方向，同表独立列、独立 payload 表、Full/Core 物化双表和 asset reference 留到阶段二统一比较。
 
-## 7. 长字段特化设计
+## 6. 证据边界
 
-长 payload 的决策依据包括长度、访问频率、是否参与 SQL 分析、内容类型和保留周期：
+| 已完成证据 | 可以回答 | 不能回答 |
+|---|---|---|
+| 标准 openGauss JSON 正确性 | 当前 schema 的 JSON 语义和边界输入处理 | exporter 端到端 JSONB 行为与性能 |
+| openGauss JSONB 九组路径实验 | GIN、表达式索引在本机合成数据内的成本和计划 | 与 ClickHouse native JSON 的性能高低 |
+| 蓝区端到端参照 | 已验证 exporter/benchmark 配对的摄入约束 | 当前两仓 main 的联合基线、完整查询基线 |
+| ClickHouse String/native 三布局 | dynamic/shared 组织、子列查询、整对象重建和 merge 成本 | 持续写入、后台 merge 和并发查询尾延迟 |
 
-| 数据形态 | 建议候选 |
-|---|---|
-| 长字段很少读取，所在列可被可靠裁剪 | 同表独立 payload 列 |
-| 详情读取独立于时间范围分析 | `event_payloads` 表，按 event/span ID 回查 |
-| 极长、二进制、多模态或需要独立生命周期 | asset/object storage |
-| 需要字段级分析的长 JSON | 提取分析特征；完整内容留在 payload/raw 层 |
-| 需要精确审计和重放 | raw String 或原始对象，保存长度和 SHA-256 |
+所有数据库实验均为单机固定版本，路径数据主要为确定性合成数据。公开数据只支持 50 路径量级更接近已观察样本，尚不能把任一均匀密度 profile 定义为代表性 workload。当前 ClickHouse 载入指标还包含客户端解析、canonical 序列化和传输。结论适用于机制筛选，不能直接外推到生产容量或跨引擎选型。
 
-分析主表只保存预览、原始长度、内容哈希、内容类型和引用状态。对象引用采用结构化对象，包含 tenant/project、来源字段、MIME、encoding、长度、SHA-256、storage URI 和状态。
+## 7. 阶段二实验与报告边界
 
-Full/Core 双表是候选机制，不是既定设计。列存引擎能够裁剪未选择的大列时，单分析表加独立 payload 列或 payload 表可能以更小写放大达到相同效果。下一实验应直接比较以下布局：
+阶段二在真实 Trace 窗口审计和联合基线冻结后执行。审计按 tenant/project、Agent/工作流、instrumentation 版本和时间窗口统计 `P/W/dᵢ/cᵢ/Tᵢ/Lᵢ/E`，并据此确定代表性混合 profile。横向实验统一行数、输入字节、INSERT block、时间窗口、查询选择性、返回内容、正确性门禁和原文保存范围；openGauss 比较强类型列加 JSONB residual 及定向/通用索引，ClickHouse 比较强类型列加 String、Map 和有预算的 native JSON。
 
-1. 单一宽表，payload 是独立列；
-2. `events_analytics` + `event_payloads`；
-3. Full/Core 物化双表；
-4. `events_analytics` + asset reference。
+阶段二同时加入持续分批写入、后台维护和并发查询，记录写入吞吐与 p95/p99 延迟、索引维护、active part、merge backlog、查询尾延迟、压缩空间和整对象读取。长 payload 比较同表独立列、`events_analytics + event_payloads`、Full/Core 物化双表和 `events_analytics + asset reference`，再决定 payload 与分析字段的物理分层。
 
-## 8. 下一步实验
+阶段二结果单独形成 `json-storage-stage2-cross-engine-report-YYYY-MM-DD.md`。该报告引用本报告和 [JSON 存储设计调研](json-storage-design-survey.md)，只记录基线增量、统一实验、横向结果和最终建议，不重复阶段一的完整背景与单引擎机制过程。实验完成前，方案和门禁继续维护在 [JSON 存储穿刺实验设计](json-storage-spike-experiment-design.md)，不预先填写结果报告。
 
-1. 审计可映射到统一 Span/Attribute 模型的公开和实际数据，按 tenant/project、Agent/工作流、版本和时间窗口统计 `P/W/dᵢ/cᵢ/Tᵢ/Lᵢ/E`，据此定义代表性混合 profile 和 schema epoch。
-2. 使用时间范围谓词持续分批写入，并发运行过滤与聚合查询，比较“强类型列 + String residual”“强类型列 + Map”“强类型列 + 有预算 native JSON”；记录 part 数、merge backlog、写入延迟和查询尾延迟。
-3. 根据真实审计结果运行 `50/500 × 1%/5%/20%/50%/95%` 中得到数据支持的组合；只有在 1%–20% 间出现转折时增加 2% 和 10% 局部梯度。
-4. 明确 native JSON 的业务等价规则、canonical sidecar 保留周期和字节级原文要求；当前 sidecar 已通过 canonical 重建门禁。
-5. 完成长 payload 四种布局对照，再决定 Full/Core、payload 表和对象存储的采用范围。
-
-## 9. 发布范围
+## 8. 发布范围
 
 本阶段提交确定性生成器、openGauss/ClickHouse runner、对应测试、运行配置和文档化结果。生成数据、外部数据集、容器状态、运行 manifest、结果 JSON、缓存和凭据保持在 gitignored 目录。早期 PostgreSQL 容器探针已由项目指定的标准 openGauss 6.0.0 探针替代，不进入发布代码或结论。
 
-## 10. 资料来源
+## 9. 资料来源
 
-### 10.1 本地证据
+### 9.1 本地证据
 
 - [第一阶段实验基础设施与结果](../experiments/json-storage-stage1/README.md)
 - [JSON 存储设计调研](json-storage-design-survey.md)
 - [第一阶段穿刺实验设计](json-storage-spike-experiment-design.md)
 
-### 10.2 官方资料与论文
+### 9.2 官方资料与论文
 
 - [OpenTelemetry Traces](https://opentelemetry.io/docs/concepts/signals/traces/)
+- [OpenTelemetry Common Specification](https://opentelemetry.io/docs/specs/otel/common/)
+- [RFC 8259: The JavaScript Object Notation Data Interchange Format](https://www.rfc-editor.org/rfc/rfc8259)
+- [RFC 8785: JSON Canonicalization Scheme](https://www.rfc-editor.org/rfc/rfc8785)
 - [openGauss JSON/JSONB Functions and Operators](https://docs.opengauss.org/en/docs/latest-lite/sql_reference/json-jsonb-functions-and-operators.html)
 - [ClickHouse JSON Data Type](https://clickhouse.com/docs/reference/data-types/newjson)
 - [ClickHouse JSON shared data serialization](https://clickhouse.com/blog/json-data-type-gets-even-better)
+- [ClickHouse OPTIMIZE FINAL and data parts](https://clickhouse.com/resources/engineering/clickhouse-optimize-table-final)
 - [Grafana Tempo block format](https://grafana.com/docs/tempo/latest/reference-tempo-architecture/block-format/)
 - [Grafana Tempo dedicated attribute columns](https://grafana.com/docs/tempo/latest/operations/dedicated_columns/)
 - [Apache Parquet Variant shredding](https://parquet.apache.org/docs/file-format/types/variantshredding/)

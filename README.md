@@ -12,7 +12,7 @@ Agent Trace 的公开调研、复现指南和实验设计。仓库当前重点�
 
 | 文档 | 状态与用途 |
 |---|---|
-| [JSON 存储阶段报告](docs/json-storage-stage1-report-2026-09-04.md) | 汇总本阶段调研、openGauss/ClickHouse 实测、设计取舍和后续实验 |
+| [JSON 存储阶段一机制报告](docs/json-storage-stage1-report-2026-09-07.md) | 汇总阶段一背景与基线、openGauss/ClickHouse 引擎内实测、机制结论和阶段二入口 |
 | [JSON 存储设计调研](docs/json-storage-design-survey.md) | 代表性系统、论文、现有项目状态、工程结论与遗留问题 |
 | [JSON 存储穿刺与对比实验设计](docs/json-storage-spike-experiment-design.md) | 多字段、Full/Core 与长 payload 实验的数据、workload、指标和门槛 |
 | [OTel 与 Langfuse 学习指南](docs/otel-langfuse-study-guide.md) | OTel、Collector、GenAI 语义和 Langfuse 摄入链路 |
@@ -21,7 +21,7 @@ Agent Trace 的公开调研、复现指南和实验设计。仓库当前重点�
 
 ## 当前状态
 
-- 资料基线日期：2026-09-04。
+- 资料基线日期：2026-09-07。
 - exporter main：`9a49c8a9d6091633112fe793fcf12310859aeb7f`；18 列 schema 冻结：`0c26c9ecf03acf0bd6aa3a3c103ba4e7a78b523a`。
 - trace-synthesis main：`6472d8e1ac6cdb42494b79b28d4d5361919d4776`。
 - 已验证历史配对：benchmark `9529c8f389673132757f4da9a96878926f22b94f`、exporter `54ca553a7ed09ad1751c82adab3aa52c6e9357b1`。

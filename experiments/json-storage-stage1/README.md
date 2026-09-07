@@ -259,7 +259,7 @@ runner SHA-256 为 `74f5151f9316fe72f8e0614b97e6c567aedbcf71650bb73c47cb59503b0d
 
 当前环境固定 ClickHouse `25.12.11.4`，镜像 digest `sha256:8a790dd3468db22b1d4e7b18a176f378ff5ff6053b9c48dd4ea1fa71a24c5ba6`。每张表分四个 INSERT part 载入；零层 part 使用 `map_with_buckets`，`OPTIMIZE FINAL` 后使用 `advanced`。runner 记录 merge 前后空间、dynamic/shared 路径数、热点/冷路径查询、整对象读取和 metadata canonical hash，并在结束时删除临时数据库。分析等价门禁使用 `metadata`；canonical 文档门禁在 String 布局使用 `metadata`，在 native 布局使用 `metadata_raw`。native JSON 自身的完整对象回读单独记录引擎语义差异。
 
-500 路径×20% 密度、200 行和包含空对象的 50 路径×20% 密度、100 行集成测试均通过。首轮正式语义矩阵使用 `50×20%` 与 `500×1%`，验证了查询 truth、raw sidecar、路径预算、shared data 和 type hint。`50×20%` 的两个 native JSON 列各有 77,562 条回读差异，均来自空 `metadata.paths` 被省略；raw sidecar 的 canonical hash 差异为 0。
+500 路径×20% 密度、200 行和包含空对象的 50 路径×20% 密度、100 行集成测试均通过。首轮正式语义矩阵使用 `50×20%` 与 `500×1%`，验证了查询 truth、canonical sidecar、路径预算、shared data 和 type hint。`50×20%` 的两个 native JSON 列各有 77,562 条回读差异，均来自空 `metadata.paths` 被省略；canonical sidecar 的 hash 差异为 0。
 
 性能补充实验做出以下修正：
 
@@ -275,7 +275,7 @@ runner SHA-256 为 `74f5151f9316fe72f8e0614b97e6c567aedbcf71650bb73c47cb59503b0d
 
 预算边界各运行一轮。limited 布局在 98 条业务路径加两个热点路径时为 100 dynamic / 0 shared；增加第 99 条业务路径后为 100 dynamic / 1 shared。混合密度运行三轮，每轮 merge 都换入 50 条高/中密度路径并换出 50 条先出现的长尾路径；换入路径最少出现 10,000 次，换出路径最多出现 500 次。最终保留 10 条 95% 路径、40 条 20% 路径和 48 条 1% 路径，其余 402 条 1% 路径进入 shared data。runner 的完成门禁核对合并后行数、缺失/额外/重复 ID、dynamic/shared 路径全集、精确预算、路径保留优先级和严格密度换入。
 
-等单行宽度三组各运行三轮。下表的载入速率与 merge 为三轮中位数，查询耗时和读取量为三轮共 15 个 QueryFinish 样本的中位数；压缩空间包含 native 布局的 raw sidecar。
+等单行宽度三组各运行三轮。下表的载入速率与 merge 为三轮中位数，查询耗时和读取量为三轮共 15 个 QueryFinish 样本的中位数；压缩空间包含 native 布局的 canonical sidecar。
 
 | profile | 布局 | load rows/s | merge | 压缩空间 | dynamic/shared | 热点耗时/read | 冷路径耗时/read |
 |---|---|---:|---:|---:|---:|---:|---:|
@@ -289,11 +289,11 @@ runner SHA-256 为 `74f5151f9316fe72f8e0614b97e6c567aedbcf71650bb73c47cb59503b0d
 | 5000×1% | native limited | 6,612 | 31.946 s | 9.632 MiB | 100 / 4902 | 8 ms / 1.180 MiB | 9 ms / 0.940 MiB |
 | 5000×1% | native hinted | 2,309 | 31.693 s | 22.230 MiB | 1000 / 4000 | 6 ms / 0.791 MiB | 8 ms / 0.374 MiB |
 
-整对象内容读取使用同一 50% 时间窗口，对实际 JSON 内容执行 `cityHash64` 聚合并读取 QueryFinish 指标。String 内容读取中位数为 17–39 ms；native `toJSONString` 重建为 1,362–3,877 ms，约慢 65–102 倍；native raw sidecar 为 14–33 ms，与 String 同量级。14 个正式运行中，sidecar digest 均与 String 一致。该测量只覆盖服务端内容读取与重建，不包含把 25,000 份 JSON 返回客户端的网络传输。
+整对象内容读取使用同一 50% 时间窗口，对实际 JSON 内容执行 `cityHash64` 聚合并读取 QueryFinish 指标。String 内容读取中位数为 17–39 ms；native `toJSONString` 重建为 1,362–3,877 ms，约慢 65–102 倍；native canonical sidecar 为 14–33 ms，与 String 同量级。14 个正式运行中，sidecar digest 均与 String 一致。该测量只覆盖服务端内容读取与重建，不包含把 25,000 份 JSON 返回客户端的网络传输。
 
 14 个正式运行均为 `complete`，分析等价、文档保真、合并后行数、ID 身份、路径清单和整对象 digest 门禁全部通过，临时数据库均已删除。原始结果位于 gitignored 的 `docs/temp/json-storage-stage1/clickhouse-json-path-followup-direct-20260904/`。热点查询选择性在等宽三组中相同；冷路径选择性随密度变化，冷路径数字只用于组内布局比较。
 
-该矩阵形成以下阶段结论：直接子列查询显著减少扫描量和查询耗时；完整详情读取应走 String/raw sidecar，避免从 native 子列重建；native JSON 的载入吞吐低于 String，并承担子列组织和 raw sidecar 空间；固定每行约 50 个字段时，全局路径数从 50 增至 5000 会把 native merge 中位数从约 0.27–0.29 s 放大到约 32 s；把预算从 100 提高到 1000 对两个已知查询的收益有限，却显著增加 `5000×1%` 的载入和空间成本。5000 路径仍是压力边界，不能作为 Agent Trace 代表性分布。
+该矩阵形成以下阶段结论：直接子列查询显著减少扫描量和查询耗时；完整逻辑详情读取应走 String/canonical sidecar，避免从 native 子列重建；native JSON 的载入吞吐低于 String，并承担子列组织和 canonical sidecar 空间；固定每行约 50 个字段时，全局路径数从 50 增至 5000 会把 native merge 中位数从约 0.27–0.29 s 放大到约 32 s；把预算从 100 提高到 1000 对两个已知查询的收益有限，却显著增加 `5000×1%` 的载入和空间成本。5000 路径仍是压力边界，不能作为 Agent Trace 代表性分布。
 
 `metadata_raw` 是解析后重新序列化的 canonical JSON，不保留原始空白、键顺序或重复键文本。字节级审计和重放需要在摄入层另存原始输入 bytes。下一步先审计真实 Trace 的 `P/W/dᵢ/cᵢ/Tᵢ/Lᵢ/E`，再选择密度梯度，并运行持续写入、后台 merge、并发查询以及长 payload 四布局实验。
 

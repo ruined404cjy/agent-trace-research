@@ -4,7 +4,7 @@
 > 调研日期：2026-09-04
 > 范围：多字段 JSON、JSON 内长值、Trace 大 payload、热点字段、半结构化查询
 > 配套实验设计：[json-storage-spike-experiment-design.md](json-storage-spike-experiment-design.md)
-> 阶段报告：[json-storage-stage1-report-2026-09-04.md](json-storage-stage1-report-2026-09-04.md)
+> 阶段一报告：[json-storage-stage1-report-2026-09-07.md](json-storage-stage1-report-2026-09-07.md)
 
 ## 1. 结论
 
@@ -118,7 +118,7 @@ ClickHouse 没有 PostgreSQL/openGauss 语义的 `JSONB` 类型。其原生类�
 
 Apache Doris Variant 也把叶路径列式化，并将高度稀疏路径重新打包到 JSONB 共享列。该类方案减少人工 schema 管理，代价是写入类型推断、物理元数据、merge/compaction 和整对象重建。路径上限、稀疏阈值和类型冲突必须纳入测试。
 
-ClickHouse 的路径扁平化与 PostgreSQL/openGauss JSONB 文档存储存在语义差异。ClickHouse 把路径表达为扁平叶路径，读取时将 JSON null 与路径缺失按同一空值语义处理；含点键需要专门的转义设置。官方 PostgreSQL CDC 因顶层标量/数组和含点键等不兼容，默认把源端 `json/jsonb` 映射为 `String`。本地 25.12.11.4 探针验证了嵌套空对象在 native JSON 重建时被省略。正式探针把 native JSON 作为分析来源，并增加 ZSTD 压缩的 raw String sidecar 承担 canonical 文档保真；14 个补充运行均通过查询 truth 与 raw hash 门禁。该布局明确计入 sidecar 的空间和写入成本。
+ClickHouse 的路径扁平化与 PostgreSQL/openGauss JSONB 文档存储存在语义差异。ClickHouse 把路径表达为扁平叶路径，读取时将 JSON null 与路径缺失按同一空值语义处理；含点键需要专门的转义设置。官方 PostgreSQL CDC 因顶层标量/数组和含点键等不兼容，默认把源端 `json/jsonb` 映射为 `String`。本地 25.12.11.4 探针验证了嵌套空对象在 native JSON 重建时被省略。正式探针把 native JSON 作为分析来源，并增加 ZSTD 压缩的 canonical sidecar（列名 `metadata_raw`）承担逻辑文档对账；14 个补充运行均通过查询 truth 与 canonical hash 门禁。该布局明确计入 sidecar 的空间和写入成本。
 
 查询必须使用能够触发物理子列裁剪的表达式。ClickHouse 官方同时支持 `getSubcolumn(json, 'a.b')` 和 `json.a.b.:Type`；本地 25.12.11.4 在当前 `getSubcolumn(...)::String` 过滤与分组形态下读取量明显放大，改用动态路径的 `metadata.path.:String` 和 type hint 路径的直接名称后，等宽三组的 native 查询中位读取量降至 0.35–1.31 MiB，String 解析为 24.55–25.72 MiB。该差异说明 SQL 访问形式属于实验和生产查询的必要门禁，不能只按列 DDL 判断子列收益。
 
@@ -201,12 +201,12 @@ ClickHouse 25.3 起把开源 JSON 类型标记为 production ready。它把路�
 
 | Profile | 低预算 merge 后路径 | 高预算 merge 后路径 | 分析与保真结果 |
 |---|---:|---:|---|
-| 50 路径×20%，250,200 行 | 52 dynamic / 0 shared | 50 dynamic / 0 shared | 三布局查询匹配；raw hash 全匹配；native 各有 77,562 条空容器重建差异 |
-| 500 路径×1%，291,100 行 | 100 dynamic / 402 shared | 500 dynamic / 0 shared | 三布局查询及 raw hash 全匹配；native 重建差异为 0 |
+| 50 路径×20%，250,200 行 | 52 dynamic / 0 shared | 50 dynamic / 0 shared | 三布局查询匹配；canonical hash 全匹配；native 各有 77,562 条空容器重建差异 |
+| 500 路径×1%，291,100 行 | 100 dynamic / 402 shared | 500 dynamic / 0 shared | 三布局查询及 canonical hash 全匹配；native 重建差异为 0 |
 
 首轮性能 SQL 返回并排序全部命中 ID，且当前 `getSubcolumn(...)::String` 形态没有形成目标列裁剪，因此旧计时不进入性能结论。修正后的矩阵固定 50,000 行，分离 ID truth 与性能聚合，使用 50% 时间范围、直接子列语法、QueryFinish 指标和三轮布局顺序轮换。
 
-98/99 路径边界精确验证 limited 布局在总路径数 100 时全部动态化、101 时第一条进入 shared data。`10×95% + 40×20% + 450×1%` 混合 profile 让 98 条长尾路径先占满业务路径预算；三轮 merge 均换入 50 条高/中密度路径并换出 50 条长尾路径，排除了按字典序或首次出现顺序保留的解释。固定每行约 50 个字段时，路径全集从 50 增至 5000，limited/hinted 的 merge 中位数从 0.288/0.272 s 增至 31.946/31.693 s。直接子列查询的中位读取量为 0.37–1.31 MiB、耗时为 6–9 ms；String 解析为 24.55–25.72 MiB、37–64 ms。完整 native 对象重建为 1,362–3,877 ms，String 内容读取为 17–39 ms，raw sidecar 为 14–33 ms。native 载入吞吐较低，压缩空间包含 raw sidecar；提高路径预算还会放大高基数压力组的载入和空间成本。完整数字见 [9 月 4 日阶段报告](json-storage-stage1-report-2026-09-04.md)。
+98/99 路径边界精确验证 limited 布局在总路径数 100 时全部动态化、101 时第一条进入 shared data。`10×95% + 40×20% + 450×1%` 混合 profile 让 98 条长尾路径先占满业务路径预算；三轮 merge 均换入 50 条高/中密度路径并换出 50 条长尾路径，排除了按字典序或首次出现顺序保留的解释。固定每行约 50 个字段时，路径全集从 50 增至 5000，limited/hinted 的 merge 中位数从 0.288/0.272 s 增至 31.946/31.693 s。直接子列查询的中位读取量为 0.37–1.31 MiB、耗时为 6–9 ms；String 解析为 24.55–25.72 MiB、37–64 ms。完整 native 对象重建为 1,362–3,877 ms，String 内容读取为 17–39 ms，canonical sidecar 为 14–33 ms。native 载入吞吐较低，压缩空间包含 canonical sidecar；提高路径预算还会放大高基数压力组的载入和空间成本。完整数字见 [9 月 7 日阶段一报告](json-storage-stage1-report-2026-09-07.md)。
 
 该方案最适合字段形态变化快且有路径分析需求的日志/事件。与手工热点列相比，运维 schema 负担较低；写入、存储和整对象读取成本更高。它是列式半结构化分析类型，不是二进制文档 JSONB 的同名实现。当前 Langfuse 的 `events_full` 不能代表 ClickHouse 原生 JSON，二者必须作为不同实验候选。
 
@@ -247,7 +247,7 @@ Tempo 适合验证“Trace 原生列式布局、热点属性和对象存储 bloc
 | 系统或格式 | residual 与子列组织 | 自动选择 | 手工选择或 workload 输入 | 重建与保真边界 |
 |---|---|---|---|---|
 | PostgreSQL/openGauss JSONB | 分解的二进制文档；GIN 覆盖文档，表达式索引覆盖指定路径 | 不自动提升字段 | DBA 按常用查询建立表达式索引或生成列 | 保持 JSON 文档语义并规范化格式，不保存原始文本格式 |
-| ClickHouse JSON | 叶路径为 `Dynamic`/typed 子列，预算外路径进入 shared data | part 写入受路径预算限制；merge 按非 null 数量选择路径 | type hint 固定类型和子列，`SKIP` 排除路径 | 叶路径重建；null/missing、含点键和空容器语义与 JSONB 不同；canonical 保真使用 raw sidecar |
+| ClickHouse JSON | 叶路径为 `Dynamic`/typed 子列，预算外路径进入 shared data | part 写入受路径预算限制；merge 按非 null 数量选择路径 | type hint 固定类型和子列，`SKIP` 排除路径 | 叶路径重建；null/missing、含点键和空容器语义与 JSONB 不同；逻辑对账使用 canonical sidecar，字节级恢复使用摄入原文 |
 | Apache Doris Variant | 常见叶路径为稀疏子列，稀有路径回落到 JSONB shared column | 按非 null 比例等统计选择并受路径数限制 | schema template 可固定目标路径 | 逻辑 Variant 保留剩余值，具体规则由引擎定义 |
 | StarRocks Flat JSON | JSON 列内抽取 common fields，其他字段保留在原 JSON 结构 | 依据字段公共性、稀疏度和类型一致性抽取并限制数量 | 支持配置抽取阈值和路径 | 查询仍通过 JSON 逻辑列，抽取列是物理加速层 |
 | Databricks Variant | Variant 使用内部列式编码，常见字段可获得专用编码 | 摄入时识别经常出现的字段 | 对频繁查询字段建议显式抽取或生成列 | Variant 保留逻辑值；内部选择算法不是跨格式契约 |

@@ -307,7 +307,7 @@ class ClickHousePathOrganizationIntegrationTest(unittest.TestCase):
     """验证 ClickHouse String、动态子列和 shared data 的实验门禁。"""
 
     def test_raw_sidecar_preserves_empty_objects_without_blocking_path_analysis(self):
-        """native JSON 可继续分析，raw sidecar 必须保持完整文档。"""
+        """native JSON 可继续分析，canonical sidecar 必须保持完整文档。"""
         database = f"json_empty_object_test_{os.getpid()}"
         with tempfile.TemporaryDirectory() as parent:
             parent_path = Path(parent)
