@@ -223,6 +223,45 @@ class PathProfileGeneratorTest(unittest.TestCase):
                 self.assertEqual(len(occurrences), path_count)
                 self.assertEqual(set(occurrences.values()), {density})
 
+    def test_mixed_profile_has_stable_optional_and_tail_density_groups(self):
+        """捕获混合 profile 退化为单一平均密度的错误。"""
+        generator = load_generator_module()
+        records = [
+            generator.build_record(
+                row_index,
+                500,
+                None,
+                20260902,
+                density_profile="mixed",
+            )
+            for row_index in range(generator.DENSITY_PERIOD)
+        ]
+        occurrences = Counter(
+            path
+            for record in records
+            for path in record["metadata"]["paths"]
+        )
+        first_seen = list(dict.fromkeys(
+            path
+            for record in records
+            for path in record["metadata"]["paths"]
+        ))
+
+        self.assertEqual(Counter(occurrences.values()), {95: 10, 20: 40, 1: 450})
+        self.assertEqual(occurrences["p00499"], 95)
+        self.assertEqual(occurrences["p00039"], 20)
+        self.assertEqual(occurrences["p00000"], 1)
+        self.assertEqual(len(first_seen[:98]), 98)
+        self.assertEqual({occurrences[path] for path in first_seen[:98]}, {1})
+        self.assertNotIn("p00499", first_seen[:98])
+
+    def test_uniform_profiles_include_budget_boundary_and_equal_width_inputs(self):
+        """捕获无法生成 100/101 路径边界或 500×10% 对照的错误。"""
+        generator = load_generator_module()
+
+        self.assertTrue({50, 98, 99, 500, 5000}.issubset(generator.SUPPORTED_PATH_COUNTS))
+        self.assertIn(10, generator.SUPPORTED_DENSITIES)
+
 
 if __name__ == "__main__":
     unittest.main()

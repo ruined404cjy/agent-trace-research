@@ -2,6 +2,7 @@
 """在 ClickHouse 25.12 上运行 JSON 路径组织对照实验。"""
 
 import argparse
+from collections import Counter
 import hashlib
 import json
 import math
@@ -12,7 +13,9 @@ import subprocess
 import sys
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
+import uuid
 from pathlib import Path
 
 
@@ -25,6 +28,10 @@ EXPECTED_REPO_DIGEST = "clickhouse/clickhouse-server@sha256:8a790dd3468db22b1d4e
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 LAYOUTS = ("string", "native_limited", "native_hinted")
 DYNAMIC_PATH_BUDGETS = {"native_limited": 100, "native_hinted": 1000}
+HINTED_PATHS = {
+    "native_limited": set(),
+    "native_hinted": {"hot.region", "hot.tenant"},
+}
 TABLE_SETTINGS = (
     "min_bytes_for_wide_part=0,"
     "min_rows_for_wide_part=0,"
@@ -106,10 +113,12 @@ def inspect_database(container_name):
     }
 
 
-def http_query(host, port, statement):
+def http_query(host, port, statement, *, query_id=None):
     """通过本机 HTTP 接口执行 SQL，返回响应、服务端摘要和客户端耗时。"""
+    query_string = urllib.parse.urlencode({"query_id": query_id}) if query_id else ""
+    url = f"http://{host}:{port}/" + (f"?{query_string}" if query_string else "")
     request = urllib.request.Request(
-        f"http://{host}:{port}/",
+        url,
         data=statement.encode("utf-8"),
         method="POST",
     )
@@ -142,18 +151,24 @@ def verify_input(input_dir):
 
 def create_table_ddls(database_name):
     """返回 String、低预算 JSON 和热点提示 JSON 三种表定义。"""
-    column_types = {
-        "string": "String CODEC(ZSTD(3))",
-        "native_limited": "JSON(max_dynamic_paths=100)",
-        "native_hinted": "JSON(max_dynamic_paths=1000, hot.tenant String, hot.region String)",
+    column_definitions = {
+        "string": "metadata String CODEC(ZSTD(3))",
+        "native_limited": (
+            "metadata JSON(max_dynamic_paths=100), "
+            "metadata_raw String CODEC(ZSTD(3))"
+        ),
+        "native_hinted": (
+            "metadata JSON(max_dynamic_paths=1000, hot.tenant String, hot.region String), "
+            "metadata_raw String CODEC(ZSTD(3))"
+        ),
     }
     return {
         layout: (
             f"CREATE TABLE {database_name}.events_{layout} ("
-            f"event_id String, metadata {column_type}) "
-            f"ENGINE=MergeTree ORDER BY event_id SETTINGS {TABLE_SETTINGS}"
+            f"event_id String, start_time DateTime64(3, 'UTC'), {column_definition}) "
+            f"ENGINE=MergeTree ORDER BY (start_time,event_id) SETTINGS {TABLE_SETTINGS}"
         )
-        for layout, column_type in column_types.items()
+        for layout, column_definition in column_definitions.items()
     }
 
 
@@ -163,15 +178,99 @@ def query_spec(layout, query):
     if query["query_id"] == "hot_tenant_equals":
         if layout == "string":
             return f"JSONExtractString(metadata, 'hot', 'tenant') = '{value}'"
-        return f"getSubcolumn(metadata, 'hot.tenant')::String = '{value}'"
+        if layout == "native_hinted":
+            return f"metadata.hot.tenant = '{value}'"
+        return f"metadata.hot.tenant.:String = '{value}'"
     if query["query_id"] == "cold_path_equals":
         path = query["parameters"]["path"]
         if not re.fullmatch(r"p[0-9]{5}", path):
             raise ValueError(f"unsupported cold path: {path}")
         if layout == "string":
             return f"JSONExtractString(metadata, 'paths', '{path}') = '{value}'"
-        return f"getSubcolumn(metadata, 'paths.{path}')::String = '{value}'"
+        return f"metadata.paths.{path}.:String = '{value}'"
     raise ValueError(f"unsupported query: {query['query_id']}")
+
+
+def parse_layout_order(value):
+    """解析跨轮布局顺序，并要求三个布局各出现一次。"""
+    layouts = tuple(item.strip() for item in value.split(",") if item.strip())
+    if len(layouts) != len(LAYOUTS) or set(layouts) != set(LAYOUTS):
+        raise ValueError(f"layout-order must contain each of {LAYOUTS} exactly once")
+    return layouts
+
+
+def timestamp_literal(value):
+    """把生成器 UTC 时间转换为固定精度的 ClickHouse 时间字面量。"""
+    if not re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z", value):
+        raise ValueError(f"unsupported timestamp: {value}")
+    return value.replace("T", " ").removesuffix("Z")
+
+
+def time_predicate(window):
+    """构造左闭右开的 DateTime64 时间范围谓词。"""
+    start = timestamp_literal(window["start_inclusive"])
+    end = timestamp_literal(window["end_exclusive"])
+    return (
+        f"start_time >= toDateTime64('{start}', 3, 'UTC') AND "
+        f"start_time < toDateTime64('{end}', 3, 'UTC')"
+    )
+
+
+def region_expression(layout):
+    """返回 String 或 native JSON 布局的 region 分组表达式。"""
+    if layout == "string":
+        return "JSONExtractString(metadata, 'hot', 'region')"
+    if layout == "native_hinted":
+        return "metadata.hot.region"
+    return "metadata.hot.region.:String"
+
+
+def correctness_statement(layout, table, query, window):
+    """构造一次性 ID truth 校验 SQL。"""
+    predicate = query_spec(layout, query)
+    return (
+        f"SELECT event_id FROM {table} WHERE {time_predicate(window)} AND {predicate} "
+        "ORDER BY event_id FORMAT TSVRaw"
+    )
+
+
+def performance_statement(layout, table, query, window):
+    """构造时间范围内的小结果分组计数 SQL。"""
+    predicate = query_spec(layout, query)
+    region = region_expression(layout)
+    return (
+        f"SELECT {region} AS group_key, count() AS rows FROM {table} "
+        f"WHERE {time_predicate(window)} AND {predicate} "
+        "GROUP BY group_key ORDER BY group_key FORMAT JSONEachRow"
+    )
+
+
+def full_object_statement(layout, table, window, source):
+    """构造强制读取 JSON 内容的时间范围 hash 聚合。"""
+    if source == "storage":
+        expression = "metadata" if layout == "string" else "toJSONString(metadata)"
+    elif source == "fidelity" and layout != "string":
+        expression = "metadata_raw"
+    else:
+        raise ValueError(f"unsupported full object source: {layout}/{source}")
+    return (
+        f"SELECT sum(cityHash64({expression})) AS content_digest FROM {table} "
+        f"WHERE {time_predicate(window)} FORMAT TSVRaw"
+    )
+
+
+def query_log_statement(query_id):
+    """构造已完成查询的服务端资源指标读取 SQL。"""
+    if not re.fullmatch(r"[a-zA-Z0-9_-]+", query_id):
+        raise ValueError("query id contains unsupported characters")
+    return (
+        "SELECT query_duration_ms, read_rows, read_bytes, memory_usage, result_rows, result_bytes, "
+        "ProfileEvents['SelectedRows'] AS selected_rows, "
+        "ProfileEvents['SelectedBytes'] AS selected_bytes "
+        "FROM system.query_log "
+        f"WHERE query_id = '{query_id}' AND type = 'QueryFinish' "
+        "ORDER BY event_time_microseconds DESC LIMIT 1 FORMAT JSONEachRow"
+    )
 
 
 def iter_records(dataset_path):
@@ -211,8 +310,15 @@ def insert_layout(container_name, database_name, layout, dataset_path, record_co
                     stderr=subprocess.PIPE,
                 )
             metadata = record["metadata"]
-            value = metadata if layout != "string" else canonical_bytes(metadata).decode("utf-8")
-            process.stdin.write(canonical_bytes({"event_id": record["event_id"], "metadata": value}) + b"\n")
+            metadata_raw = canonical_bytes(metadata).decode("utf-8")
+            row = {
+                "event_id": record["event_id"],
+                "start_time": timestamp_literal(record["start_time"]),
+                "metadata": metadata if layout != "string" else metadata_raw,
+            }
+            if layout != "string":
+                row["metadata_raw"] = metadata_raw
+            process.stdin.write(canonical_bytes(row) + b"\n")
             inserted += 1
     finally:
         if process is not None and process.stdin and not process.stdin.closed:
@@ -251,9 +357,11 @@ def collect_parts(host, port, database_name, layout):
 def path_inventory_statement(table):
     """构造跨行去重后的 dynamic/shared 路径全集统计 SQL。"""
     return (
-        "SELECT length(arrayDistinct(arrayFlatten(groupArray(JSONDynamicPaths(metadata))))) AS dynamic, "
-        "length(arrayDistinct(arrayFlatten(groupArray(JSONSharedDataPaths(metadata))))) AS shared "
-        f"FROM {table} FORMAT JSONEachRow"
+        "SELECT length(dynamic_paths) AS dynamic, length(shared_paths) AS shared, "
+        "dynamic_paths, shared_paths FROM (SELECT "
+        "arraySort(arrayDistinct(arrayFlatten(groupArray(JSONDynamicPaths(metadata))))) AS dynamic_paths, "
+        "arraySort(arrayDistinct(arrayFlatten(groupArray(JSONSharedDataPaths(metadata))))) AS shared_paths "
+        f"FROM {table}) FORMAT JSONEachRow"
     )
 
 
@@ -280,35 +388,252 @@ def collect_hot_types(host, port, database_name, layout):
     return {"hot.region": row["region"], "hot.tenant": row["tenant"]}
 
 
-def run_filter_query(host, port, statement, expected_ids, measurements):
-    """预热一次并测量过滤查询，校验排序后的 event_id。"""
-    http_query(host, port, statement)
-    samples = []
-    summaries = []
-    actual_ids = []
-    for _ in range(measurements):
-        body, summary, elapsed = http_query(host, port, statement)
-        actual_ids = body.splitlines()
-        samples.append(elapsed * 1000)
-        summaries.append(summary)
+def build_workload(dataset_path, truth):
+    """从已校验输入构造固定 50% 时间窗口及其查询 truth。"""
+    records = list(iter_records(dataset_path))
+    if len(records) != truth["record_count"]:
+        raise ValueError("dataset record count does not match truth manifest")
+    lower = len(records) // 4
+    upper = len(records) * 3 // 4
+    window = {
+        "end_exclusive": records[upper]["start_time"],
+        "start_inclusive": records[lower]["start_time"],
+    }
+    selected = records[lower:upper]
+    path_occurrences = Counter()
+    path_first_seen_order = []
+    seen_paths = set()
+    for record in records:
+        row_paths = [
+            "hot.region",
+            "hot.tenant",
+            *(f"paths.{path}" for path in record["metadata"]["paths"]),
+        ]
+        path_occurrences.update(row_paths)
+        for path in row_paths:
+            if path not in seen_paths:
+                seen_paths.add(path)
+                path_first_seen_order.append(path)
+    queries = {}
+    for query in truth["queries"]:
+        expected = set(query["expected_event_ids"])
+        matched = [record for record in selected if record["event_id"] in expected]
+        groups = Counter(record["metadata"]["hot"]["region"] for record in matched)
+        queries[query["query_id"]] = {
+            "expected_event_ids": sorted(record["event_id"] for record in matched),
+            "expected_groups": [
+                {"group_key": group_key, "rows": rows}
+                for group_key, rows in sorted(groups.items())
+            ],
+        }
     return {
-        "actual_row_count": len(actual_ids),
-        "expected_row_count": len(expected_ids),
-        "latency": {
-            "max_ms": max(samples),
-            "median_ms": statistics.median(samples),
-            "min_ms": min(samples),
-            "samples_ms": samples,
-        },
-        "matches_truth": actual_ids == expected_ids,
-        "server_summaries": summaries,
+        "input_bytes": dataset_path.stat().st_size,
+        "path_first_seen_order": path_first_seen_order,
+        "path_occurrences": dict(sorted(path_occurrences.items())),
+        "queries": queries,
+        "selected_rows": len(selected),
+        "time_fraction": len(selected) / len(records),
+        "time_window": window,
+        "total_rows": len(records),
     }
 
 
-def verify_roundtrip(container_name, database_name, layout, truth):
-    """流式回读完整 metadata，并按 event_id 校验 canonical hash。"""
+def validate_path_inventory(
+    layout,
+    inventory,
+    occurrences,
+    *,
+    first_seen_order=None,
+    require_strict_uplift=False,
+):
+    """校验 native JSON 路径预算、全集覆盖与按出现次数保留的优先级。"""
+    hinted = HINTED_PATHS[layout]
+    candidate_paths = set(occurrences) - hinted
+    dynamic_paths = set(inventory["dynamic_paths"])
+    shared_paths = set(inventory["shared_paths"])
+    budget = DYNAMIC_PATH_BUDGETS[layout]
+    expected_dynamic = min(budget, len(candidate_paths))
+    expected_shared = len(candidate_paths) - expected_dynamic
+    min_dynamic = min((occurrences[path] for path in dynamic_paths), default=None)
+    max_shared = max((occurrences[path] for path in shared_paths), default=None)
+    priority_passed = (
+        not dynamic_paths
+        or not shared_paths
+        or min_dynamic >= max_shared
+    )
+    first_seen_candidates = [
+        path
+        for path in (first_seen_order or [])
+        if path in candidate_paths
+    ]
+    first_seen_complete = (
+        first_seen_order is None
+        or (
+            len(first_seen_candidates) == len(candidate_paths)
+            and set(first_seen_candidates) == candidate_paths
+        )
+    )
+    initial_dynamic = set(first_seen_candidates[:budget])
+    entered_dynamic = dynamic_paths - initial_dynamic
+    exited_dynamic = initial_dynamic - dynamic_paths
+    min_entered = min((occurrences[path] for path in entered_dynamic), default=None)
+    max_exited = max((occurrences[path] for path in exited_dynamic), default=None)
+    strict_uplift_passed = (
+        bool(entered_dynamic)
+        and bool(exited_dynamic)
+        and min_entered > max_exited
+    )
+    passed = (
+        inventory["dynamic"] == len(dynamic_paths) == expected_dynamic
+        and inventory["shared"] == len(shared_paths) == expected_shared
+        and not dynamic_paths.intersection(shared_paths)
+        and dynamic_paths.union(shared_paths) == candidate_paths
+        and priority_passed
+        and first_seen_complete
+        and (not require_strict_uplift or strict_uplift_passed)
+    )
+    return {
+        "entered_dynamic_count": len(entered_dynamic),
+        "expected_dynamic": expected_dynamic,
+        "expected_shared": expected_shared,
+        "exited_dynamic_count": len(exited_dynamic),
+        "first_seen_complete": first_seen_complete,
+        "max_exited_occurrences": max_exited,
+        "max_shared_occurrences": max_shared,
+        "min_entered_occurrences": min_entered,
+        "min_dynamic_occurrences": min_dynamic,
+        "passed": passed,
+        "priority_passed": priority_passed,
+        "strict_uplift_passed": strict_uplift_passed,
+        "strict_uplift_required": require_strict_uplift,
+    }
+
+
+def run_correctness_query(host, port, statement, expected_ids):
+    """执行一次 ID truth 查询，避免把结果传输计入性能样本。"""
+    body, _, elapsed = http_query(host, port, statement)
+    actual_ids = body.splitlines()
+    return {
+        "actual_row_count": len(actual_ids),
+        "client_elapsed_ms": elapsed * 1000,
+        "expected_row_count": len(expected_ids),
+        "matches_truth": actual_ids == expected_ids,
+    }
+
+
+def summarize_samples(samples):
+    """汇总各次 QueryFinish 的服务端指标。"""
+    metrics = {}
+    for key in samples[0]:
+        values = [sample[key] for sample in samples]
+        metrics[key] = {
+            "max": max(values),
+            "median": statistics.median(values),
+            "min": min(values),
+            "samples": values,
+        }
+    return metrics
+
+
+def collect_query_log(host, port, query_id):
+    """刷新查询日志并读取唯一 QueryFinish 记录。"""
+    rows = []
+    for attempt in range(20):
+        http_query(host, port, "SYSTEM FLUSH LOGS")
+        body, _, _ = http_query(host, port, query_log_statement(query_id))
+        rows = parse_json_each_row(body)
+        if len(rows) == 1:
+            return {key: int(value) for key, value in rows[0].items()}
+        if attempt < 19:
+            time.sleep(0.05)
+    raise RuntimeError(f"expected one QueryFinish row for {query_id}, got {len(rows)}")
+
+
+def run_performance_query(host, port, statement, expected_groups, measurements):
+    """预热后测量小结果聚合，并从 query_log 读取完整服务端指标。"""
+    http_query(host, port, statement)
+    client_samples = []
+    server_samples = []
+    actual_groups = []
+    for _ in range(measurements):
+        query_id = f"json_stage1_{uuid.uuid4().hex}"
+        body, _, elapsed = http_query(host, port, statement, query_id=query_id)
+        actual_groups = parse_json_each_row(body)
+        client_samples.append(elapsed * 1000)
+        server_samples.append(collect_query_log(host, port, query_id))
+    return {
+        "actual_groups": actual_groups,
+        "client_latency_ms": {
+            "max": max(client_samples),
+            "median": statistics.median(client_samples),
+            "min": min(client_samples),
+            "samples": client_samples,
+        },
+        "expected_groups": expected_groups,
+        "matches_truth": actual_groups == expected_groups,
+        "server_metrics": summarize_samples(server_samples),
+    }
+
+
+def run_scalar_performance_query(host, port, statement, measurements):
+    """预热并测量强制内容读取的标量查询，校验多次结果稳定。"""
+    http_query(host, port, statement)
+    client_samples = []
+    server_samples = []
+    results = []
+    for _ in range(measurements):
+        query_id = f"json_stage1_{uuid.uuid4().hex}"
+        body, _, elapsed = http_query(host, port, statement, query_id=query_id)
+        results.append(body.strip())
+        client_samples.append(elapsed * 1000)
+        server_samples.append(collect_query_log(host, port, query_id))
+    return {
+        "client_latency_ms": {
+            "max": max(client_samples),
+            "median": statistics.median(client_samples),
+            "min": min(client_samples),
+            "samples": client_samples,
+        },
+        "result_sha256": hashlib.sha256(results[0].encode("utf-8")).hexdigest(),
+        "server_metrics": summarize_samples(server_samples),
+        "stable_result": len(set(results)) == 1,
+    }
+
+
+def audit_identities(returned_ids, expected_ids):
+    """校验回读 ID 的缺失、额外与重复情况。"""
+    counts = Counter(returned_ids)
+    expected = set(expected_ids)
+    duplicates = sorted(identifier for identifier, count in counts.items() if count > 1)
+    extras = sorted(set(counts) - expected)
+    missing = sorted(expected - set(counts))
+    return {
+        "duplicate_count": sum(counts[identifier] - 1 for identifier in duplicates),
+        "duplicate_sample": duplicates[:10],
+        "extra_count": len(extras),
+        "extra_sample": extras[:10],
+        "missing_count": len(missing),
+        "missing_sample": missing[:10],
+    }
+
+
+def identity_audit_passed(roundtrip):
+    """判断一次回读是否覆盖且仅覆盖预期 ID，并保持一行一个 ID。"""
+    return all(
+        roundtrip[key] == 0
+        for key in ("duplicate_count", "extra_count", "missing_count")
+    )
+
+
+def verify_roundtrip(container_name, database_name, layout, truth, source_column):
+    """流式回读指定来源，并按 event_id 校验 metadata canonical hash。"""
     expected = {row["event_id"]: row["metadata_canonical_sha256"] for row in truth["rows"]}
-    metadata_expression = "metadata" if layout == "string" else "toJSONString(metadata)"
+    if source_column == "metadata_raw":
+        metadata_expression = "metadata_raw"
+    elif layout == "string":
+        metadata_expression = "metadata"
+    else:
+        metadata_expression = "toJSONString(metadata)"
     process = subprocess.Popen(
         [
             "docker",
@@ -323,29 +648,44 @@ def verify_roundtrip(container_name, database_name, layout, truth):
         stderr=subprocess.PIPE,
         text=True,
     )
-    mismatches = []
+    mismatch_count = 0
+    mismatch_sample = []
     checked = 0
+    returned_ids = []
     for line in process.stdout:
         row = json.loads(line)
+        returned_ids.append(row["event_id"])
         actual = hashlib.sha256(canonical_bytes(json.loads(row["metadata_json"]))).hexdigest()
         if actual != expected.get(row["event_id"]):
-            mismatches.append(row["event_id"])
+            mismatch_count += 1
+            if len(mismatch_sample) < 10:
+                mismatch_sample.append(row["event_id"])
         checked += 1
     stderr = process.stderr.read()
     if process.wait() != 0:
         raise RuntimeError(f"ClickHouse roundtrip query failed: {stderr.strip()}")
-    return {"checked": checked, "hash_mismatches": mismatches}
+    return {
+        "checked": checked,
+        "hash_mismatch_count": mismatch_count,
+        "hash_mismatch_sample": mismatch_sample,
+        "source_column": source_column,
+        **audit_identities(returned_ids, expected),
+    }
 
 
 def execute(args):
     """执行三布局对照并写结果与完成 manifest。"""
+    output_dir = args.output.resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    manifest_path = output_dir / "manifest.json"
+    manifest_path.unlink(missing_ok=True)
     if not IDENTIFIER.fullmatch(args.database_name):
         raise ValueError("database name must match ^[a-z][a-z0-9_]{0,62}$")
     if args.measurements < 5 or args.insert_chunks < 2:
         raise ValueError("measurements must be at least 5 and insert-chunks at least 2")
     input_dir = args.input.resolve()
-    output_dir = args.output.resolve()
     input_manifest, truth = verify_input(input_dir)
+    workload = build_workload(input_dir / "dataset.jsonl", truth)
     database = inspect_database(args.container_name)
     if not database["server_version"].startswith("25.12."):
         raise RuntimeError("server version must be ClickHouse 25.12")
@@ -357,9 +697,6 @@ def execute(args):
     }:
         raise RuntimeError("host and HTTP port do not match the container's published port")
 
-    output_dir.mkdir(parents=True, exist_ok=True)
-    manifest_path = output_dir / "manifest.json"
-    manifest_path.unlink(missing_ok=True)
     database_created = False
     result = None
     manifest = None
@@ -370,12 +707,10 @@ def execute(args):
         for ddl in ddls.values():
             http_query(args.host, args.http_port, ddl)
 
-        expected_by_query = {
-            query["query_id"]: query["expected_event_ids"] for query in truth["queries"]
-        }
         layouts = {}
-        all_passed = True
-        for layout in LAYOUTS:
+        analysis_passed = True
+        fidelity_passed = True
+        for layout in args.layout_order:
             table = f"{args.database_name}.events_{layout}"
             load = insert_layout(
                 args.container_name,
@@ -392,81 +727,193 @@ def execute(args):
             merge_seconds = time.perf_counter() - merge_started
             parts_after = collect_parts(args.host, args.http_port, args.database_name, layout)
             paths_after = collect_paths(args.host, args.http_port, args.database_name, layout)
+            inventory_validation = (
+                None
+                if layout == "string"
+                else validate_path_inventory(
+                    layout,
+                    paths_after,
+                    workload["path_occurrences"],
+                    first_seen_order=workload["path_first_seen_order"],
+                    require_strict_uplift=(
+                        layout == "native_limited"
+                        and input_manifest.get("density_profile", {}).get("kind") == "mixed"
+                    ),
+                )
+            )
             hot_types = collect_hot_types(args.host, args.http_port, args.database_name, layout)
 
             queries = []
             plans = {}
             for query in truth["queries"]:
-                predicate = query_spec(layout, query)
-                statement = f"SELECT event_id FROM {table} WHERE {predicate} ORDER BY event_id FORMAT TSVRaw"
-                measured = run_filter_query(
+                expected = workload["queries"][query["query_id"]]
+                correctness_sql = correctness_statement(
+                    layout,
+                    table,
+                    query,
+                    workload["time_window"],
+                )
+                performance_sql = performance_statement(
+                    layout,
+                    table,
+                    query,
+                    workload["time_window"],
+                )
+                correctness = run_correctness_query(
                     args.host,
                     args.http_port,
-                    statement,
-                    expected_by_query[query["query_id"]],
+                    correctness_sql,
+                    expected["expected_event_ids"],
+                )
+                performance = run_performance_query(
+                    args.host,
+                    args.http_port,
+                    performance_sql,
+                    expected["expected_groups"],
                     args.measurements,
                 )
-                measured.update(
+                queries.append(
                     {
-                        "predicate_family": "string_parse" if layout == "string" else "native_subcolumn",
+                        "correctness": correctness,
+                        "correctness_statement_sha256": hashlib.sha256(
+                            correctness_sql.encode("utf-8")
+                        ).hexdigest(),
+                        "performance": performance,
+                        "performance_statement_sha256": hashlib.sha256(
+                            performance_sql.encode("utf-8")
+                        ).hexdigest(),
+                        "predicate_family": (
+                            "string_parse" if layout == "string" else "native_subcolumn"
+                        ),
                         "query_id": query["query_id"],
-                        "statement_sha256": hashlib.sha256(statement.encode("utf-8")).hexdigest(),
                     }
                 )
-                queries.append(measured)
                 plan_body, _, _ = http_query(
                     args.host,
                     args.http_port,
-                    f"EXPLAIN PIPELINE {statement.rsplit(' FORMAT ', 1)[0]}",
+                    f"EXPLAIN PIPELINE {performance_sql.rsplit(' FORMAT ', 1)[0]}",
                 )
                 plans[query["query_id"]] = plan_body
 
-            full_expression = "metadata" if layout == "string" else "toJSONString(metadata)"
-            full_statement = f"SELECT sum(length({full_expression})) FROM {table} FORMAT TSVRaw"
-            _, full_summary, full_elapsed = http_query(args.host, args.http_port, full_statement)
-            roundtrip = verify_roundtrip(args.container_name, args.database_name, layout, truth)
-            layout_passed = (
+            full_object_read = {}
+            for source in ("storage", "fidelity"):
+                if source == "fidelity" and layout == "string":
+                    full_object_read[source] = None
+                    continue
+                statement = full_object_statement(
+                    layout,
+                    table,
+                    workload["time_window"],
+                    source,
+                )
+                measurement = run_scalar_performance_query(
+                    args.host,
+                    args.http_port,
+                    statement,
+                    args.measurements,
+                )
+                measurement["statement_sha256"] = hashlib.sha256(
+                    statement.encode("utf-8")
+                ).hexdigest()
+                full_object_read[source] = measurement
+            storage_roundtrip = verify_roundtrip(
+                args.container_name,
+                args.database_name,
+                layout,
+                truth,
+                "metadata",
+            )
+            fidelity_roundtrip = (
+                dict(storage_roundtrip)
+                if layout == "string"
+                else verify_roundtrip(
+                    args.container_name,
+                    args.database_name,
+                    layout,
+                    truth,
+                    "metadata_raw",
+                )
+            )
+            layout_analysis_passed = (
                 load["rows"] == truth["record_count"]
                 and parts_before["part_count"] >= 2
                 and parts_after["part_count"] == 1
-                and all(query["matches_truth"] for query in queries)
-                and roundtrip["checked"] == truth["record_count"]
-                and not roundtrip["hash_mismatches"]
+                and parts_after["rows"] == truth["record_count"]
+                and all(
+                    query["correctness"]["matches_truth"]
+                    and query["performance"]["matches_truth"]
+                    for query in queries
+                )
+                and storage_roundtrip["checked"] == truth["record_count"]
+                and identity_audit_passed(storage_roundtrip)
+                and (inventory_validation is None or inventory_validation["passed"])
+                and full_object_read["storage"]["stable_result"]
             )
-            all_passed = all_passed and layout_passed
+            layout_fidelity_passed = (
+                fidelity_roundtrip["checked"] == truth["record_count"]
+                and fidelity_roundtrip["hash_mismatch_count"] == 0
+                and identity_audit_passed(fidelity_roundtrip)
+                and (
+                    full_object_read["fidelity"] is None
+                    or full_object_read["fidelity"]["stable_result"]
+                )
+            )
+            analysis_passed = analysis_passed and layout_analysis_passed
+            fidelity_passed = fidelity_passed and layout_fidelity_passed
             layouts[layout] = {
-                "full_object_read": {
-                    "client_elapsed_ms": full_elapsed * 1000,
-                    "server_summary": full_summary,
+                "fidelity_roundtrip": fidelity_roundtrip,
+                "full_object_read": full_object_read,
+                "gates": {
+                    "analysis_equivalence": "pass" if layout_analysis_passed else "fail",
+                    "document_fidelity": "pass" if layout_fidelity_passed else "fail",
                 },
                 "hot_path_types": hot_types,
                 "load": load,
                 "merge_wall_seconds": merge_seconds,
+                "path_inventory_validation": inventory_validation,
                 "parts_after_merge": parts_after,
                 "parts_before_merge": parts_before,
                 "paths_after_merge": paths_after,
                 "paths_before_merge": paths_before,
                 "plans": plans,
                 "queries": queries,
-                "roundtrip": roundtrip,
+                "storage_roundtrip": storage_roundtrip,
             }
 
-        limited = layouts["native_limited"]["paths_after_merge"]
-        if truth["path_count"] > DYNAMIC_PATH_BUDGETS["native_limited"]:
-            all_passed = all_passed and limited["shared"] > 0
-        if truth["path_count"] <= DYNAMIC_PATH_BUDGETS["native_hinted"]:
-            all_passed = all_passed and layouts["native_hinted"]["paths_after_merge"]["shared"] == 0
-        all_passed = all_passed and layouts["native_hinted"]["hot_path_types"] == {
+        string_full_digest = layouts["string"]["full_object_read"]["storage"]["result_sha256"]
+        for layout in ("native_limited", "native_hinted"):
+            fidelity_read = layouts[layout]["full_object_read"]["fidelity"]
+            fidelity_read["matches_string_storage"] = (
+                fidelity_read["result_sha256"] == string_full_digest
+            )
+            if not fidelity_read["matches_string_storage"]:
+                layouts[layout]["gates"]["document_fidelity"] = "fail"
+                fidelity_passed = False
+        analysis_passed = analysis_passed and layouts["native_hinted"]["hot_path_types"] == {
             "hot.region": "String",
             "hot.tenant": "String",
         }
+        all_passed = analysis_passed and fidelity_passed
         result = {
+            "correctness_contract": {
+                "analysis_source": "metadata",
+                "document_fidelity_source": {
+                    "native_hinted": "metadata_raw",
+                    "native_limited": "metadata_raw",
+                    "string": "metadata",
+                },
+                "native_storage_roundtrip": "observed_engine_semantics",
+            },
             "database": database,
+            "gates": {
+                "analysis_equivalence": "pass" if analysis_passed else "fail",
+                "document_fidelity": "pass" if fidelity_passed else "fail",
+            },
             "layouts": layouts,
             "process_peak_rss_bytes": resource.getrusage(resource.RUSAGE_SELF).ru_maxrss * 1024,
-            "roundtrip_scope": "metadata",
             "status": "pass" if all_passed else "fail",
             "storage": {"engine": "MergeTree", "json_type": "JSON"},
+            "workload": workload,
         }
         ddl_text = ";\n".join(ddls.values()) + ";"
         manifest = {
@@ -483,13 +930,19 @@ def execute(args):
             "dynamic_path_budgets": DYNAMIC_PATH_BUDGETS,
             "input": {
                 "dataset_sha256": input_manifest["artifacts"]["dataset.jsonl"]["sha256"],
-                "density_percent": input_manifest["density_percent"],
+                "density_percent": input_manifest.get("density_percent"),
+                "density_profile": input_manifest.get(
+                    "density_profile",
+                    {"density_percent": input_manifest.get("density_percent"), "kind": "uniform"},
+                ),
                 "path_count": input_manifest["path_count"],
                 "record_count": input_manifest["record_count"],
                 "truth_sha256": input_manifest["artifacts"]["truth-manifest.json"]["sha256"],
             },
             "insert_chunks": args.insert_chunks,
+            "layout_order": list(args.layout_order),
             "measurements": args.measurements,
+            "correctness_contract": result["correctness_contract"],
             "runner_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             "shared_data_serialization": {"merged_parts": "advanced", "zero_level_parts": "map_with_buckets"},
             "status": "complete" if all_passed else "failed",
@@ -522,6 +975,12 @@ def parse_args():
     parser.add_argument("--http-port", default=18123, type=int, help="HTTP 监听端口")
     parser.add_argument("--measurements", default=5, type=int, help="每个查询的正式测量次数")
     parser.add_argument("--insert-chunks", default=4, type=int, help="每张表的 INSERT 块数")
+    parser.add_argument(
+        "--layout-order",
+        default=LAYOUTS,
+        type=parse_layout_order,
+        help="三个布局的逗号分隔执行顺序，用于跨轮轮换",
+    )
     return parser.parse_args()
 
 

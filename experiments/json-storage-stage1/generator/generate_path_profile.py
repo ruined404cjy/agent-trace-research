@@ -8,9 +8,30 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 
-FORMAT_VERSION = 1
-SUPPORTED_PATH_COUNTS = (50, 500, 5000)
-SUPPORTED_DENSITIES = (1, 20, 95)
+FORMAT_VERSION = 2
+SUPPORTED_PATH_COUNTS = (50, 98, 99, 500, 5000)
+SUPPORTED_DENSITIES = (1, 2, 5, 10, 20, 50, 95)
+SUPPORTED_DENSITY_PROFILES = ("uniform", "mixed")
+MIXED_DENSITY_GROUPS = (
+    {
+        "count": 10,
+        "density_percent": 95,
+        "label": "stable",
+        "path_index_modulo_50": [49],
+    },
+    {
+        "count": 40,
+        "density_percent": 20,
+        "label": "optional",
+        "path_index_modulo_50": [9, 19, 29, 39],
+    },
+    {
+        "count": 450,
+        "density_percent": 1,
+        "label": "tail",
+        "path_index_modulo_50": "all_other_values",
+    },
+)
 DENSITY_PERIOD = 100
 DENSITY_STEP = 37
 DEFAULT_TARGET_BYTES = 128 * 1024 * 1024
@@ -56,14 +77,78 @@ def path_is_present(row_index, path_index, density_percent, seed):
     return position % DENSITY_PERIOD < density_percent
 
 
-def build_record(index, path_count, density_percent, seed):
+def path_density(path_index, density_percent, density_profile):
+    """返回指定路径的密度；混合 profile 交错编号以排除字典序偏差。"""
+    if density_profile == "uniform":
+        return density_percent
+    residue = path_index % 50
+    if residue == 49:
+        return 95
+    if residue in {9, 19, 29, 39}:
+        return 20
+    return 1
+
+
+def mixed_tail_rank(path_index):
+    """返回混合 profile 中低密度路径的连续序号。"""
+    promoted_residues = {9, 19, 29, 39, 49}
+    block, residue = divmod(path_index, 50)
+    tails_before_residue = sum(
+        candidate not in promoted_residues
+        for candidate in range(residue)
+    )
+    return block * 45 + tails_before_residue
+
+
+def mixed_path_is_present(row_index, path_index):
+    """让低密度路径先占预算，再延迟出现高、中密度路径。"""
+    row_in_period = row_index % DENSITY_PERIOD
+    density = path_density(path_index, None, "mixed")
+    if density == 95:
+        return row_in_period >= 5
+    if density == 20:
+        return 5 <= row_in_period < 25
+    return row_in_period == mixed_tail_rank(path_index) // 98
+
+
+def validate_profile(path_count, density_percent, density_profile):
+    """验证均匀或混合密度 profile 的参数组合。"""
+    if path_count not in SUPPORTED_PATH_COUNTS:
+        raise ValueError(f"path-count must be one of {SUPPORTED_PATH_COUNTS}")
+    if density_profile not in SUPPORTED_DENSITY_PROFILES:
+        raise ValueError(f"density-profile must be one of {SUPPORTED_DENSITY_PROFILES}")
+    if density_profile == "uniform" and density_percent not in SUPPORTED_DENSITIES:
+        raise ValueError(f"density-percent must be one of {SUPPORTED_DENSITIES}")
+    if density_profile == "mixed" and (path_count != 500 or density_percent is not None):
+        raise ValueError("mixed density profile requires path-count 500 and no density-percent")
+
+
+def density_descriptor(density_percent, density_profile):
+    """返回可写入 manifest 的路径密度定义。"""
+    if density_profile == "uniform":
+        return {"density_percent": density_percent, "kind": "uniform"}
+    return {
+        "appearance_schedule": (
+            "98 tail paths per row occupy rows 0-3, 58 occupy row 4; "
+            "stable and optional paths begin at row 5"
+        ),
+        "groups": list(MIXED_DENSITY_GROUPS),
+        "kind": "mixed",
+    }
+
+
+def build_record(index, path_count, density_percent, seed, *, density_profile="uniform"):
     """生成一条包含固定热点和稀疏动态路径的逻辑记录。"""
     trace_index = index // 5
     span_position = index % 5
     metadata_paths = {
         f"p{path_index:05d}": f"v{(index + path_index) % 17:02d}"
         for path_index in range(path_count)
-        if path_is_present(index, path_index, density_percent, seed)
+        if (
+            mixed_path_is_present(index, path_index)
+            if density_profile == "mixed"
+            else path_is_present(index, path_index, density_percent, seed)
+        )
     }
     record = {
         "end_time": (
@@ -95,17 +180,20 @@ def build_record(index, path_count, density_percent, seed):
     return record
 
 
-def build_profile(count, path_count, density_percent, seed):
+def build_profile(count, path_count, density_percent, seed, *, density_profile="uniform"):
     """生成指定规模的 dataset bytes 与 truth manifest。"""
     if count <= 0 or count % DENSITY_PERIOD != 0:
         raise ValueError(f"count must be a positive multiple of {DENSITY_PERIOD}")
-    if path_count not in SUPPORTED_PATH_COUNTS:
-        raise ValueError(f"path-count must be one of {SUPPORTED_PATH_COUNTS}")
-    if density_percent not in SUPPORTED_DENSITIES:
-        raise ValueError(f"density-percent must be one of {SUPPORTED_DENSITIES}")
+    validate_profile(path_count, density_percent, density_profile)
 
     records = [
-        build_record(index, path_count, density_percent, seed)
+        build_record(
+            index,
+            path_count,
+            density_percent,
+            seed,
+            density_profile=density_profile,
+        )
         for index in range(count)
     ]
     dataset = b"".join(canonical_bytes(record, newline=True) for record in records)
@@ -151,6 +239,7 @@ def build_profile(count, path_count, density_percent, seed):
             "object_key_order": "ignored",
         },
         "density_definition": {
+            "profile": density_descriptor(density_percent, density_profile),
             "period_rows": DENSITY_PERIOD,
             "scope": "dynamic_paths",
         },
@@ -167,14 +256,27 @@ def build_profile(count, path_count, density_percent, seed):
     return dataset, canonical_bytes(truth_manifest, newline=True)
 
 
-def select_record_count(target_bytes, path_count, density_percent, seed):
+def select_record_count(
+    target_bytes,
+    path_count,
+    density_percent,
+    seed,
+    *,
+    density_profile="uniform",
+):
     """按一个密度周期的平均行宽估算最接近目标大小的记录数。"""
     if target_bytes <= 0:
         raise ValueError("target-bytes must be positive")
     calibration_bytes = sum(
         len(
             canonical_bytes(
-                build_record(index, path_count, density_percent, seed),
+                build_record(
+                    index,
+                    path_count,
+                    density_percent,
+                    seed,
+                    density_profile=density_profile,
+                ),
                 newline=True,
             )
         )
@@ -191,14 +293,22 @@ def write_profile(
     density_percent,
     seed,
     *,
+    density_profile="uniform",
     target_bytes=None,
 ):
     """流式写入 profile，并在所有数据完成后原子发布 run manifest。"""
     output_dir.mkdir(parents=True, exist_ok=True)
     run_manifest_path = output_dir / "run-manifest.json"
     run_manifest_path.unlink(missing_ok=True)
+    validate_profile(path_count, density_percent, density_profile)
     if count is None:
-        count = select_record_count(target_bytes, path_count, density_percent, seed)
+        count = select_record_count(
+            target_bytes,
+            path_count,
+            density_percent,
+            seed,
+            density_profile=density_profile,
+        )
     if count <= 0 or count % DENSITY_PERIOD != 0:
         raise ValueError(f"count must be a positive multiple of {DENSITY_PERIOD}")
 
@@ -215,7 +325,13 @@ def write_profile(
     try:
         with dataset_temp.open("wb") as dataset_file, rows_temp.open("wb") as rows_file:
             for index in range(count):
-                record = build_record(index, path_count, density_percent, seed)
+                record = build_record(
+                    index,
+                    path_count,
+                    density_percent,
+                    seed,
+                    density_profile=density_profile,
+                )
                 record_bytes = canonical_bytes(record)
                 dataset_file.write(record_bytes + b"\n")
                 row = {
@@ -252,6 +368,7 @@ def write_profile(
                 "object_key_order": "ignored",
             },
             "density_definition": {
+                "profile": density_descriptor(density_percent, density_profile),
                 "period_rows": DENSITY_PERIOD,
                 "scope": "dynamic_paths",
             },
@@ -289,6 +406,7 @@ def write_profile(
     run_manifest = {
         "artifacts": dict(sorted(artifacts.items())),
         "density_percent": density_percent,
+        "density_profile": density_descriptor(density_percent, density_profile),
         "format": "agent-trace-json-storage-run",
         "format_version": FORMAT_VERSION,
         "generator": {
@@ -326,10 +444,15 @@ def parse_args():
     )
     parser.add_argument(
         "--density-percent",
-        required=True,
         type=int,
         choices=SUPPORTED_DENSITIES,
         help="每个动态路径在记录中出现的百分比",
+    )
+    parser.add_argument(
+        "--density-profile",
+        choices=SUPPORTED_DENSITY_PROFILES,
+        default="uniform",
+        help="uniform 使用统一密度；mixed 使用 10×95% + 40×20% + 450×1%",
     )
     parser.add_argument("--seed", default=20260902, type=int, help="确定性 seed")
     return parser.parse_args()
@@ -345,6 +468,7 @@ def main():
             args.path_count,
             args.density_percent,
             args.seed,
+            density_profile=args.density_profile,
             target_bytes=args.target_bytes,
         )
     except ValueError as error:
