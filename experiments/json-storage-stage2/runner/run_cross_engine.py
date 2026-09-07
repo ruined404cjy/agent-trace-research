@@ -92,9 +92,28 @@ def _sample(adapter, connection, query_id, params, watermark, expected_digest, p
     }
     if "query_log" in actual:
         sample["query_log"] = actual["query_log"]
+    if "query_log_id" in actual:
+        sample["query_log_id"] = actual["query_log_id"]
     if not matches_truth:
         raise RuntimeError(f"truth mismatch: {query_id} watermark {watermark}")
     return sample
+
+
+def _backfill_query_logs(adapter, samples):
+    """在阶段摘要生成前批量核对日志身份，并恢复最终样本的 query_log 字段。"""
+    collect = getattr(adapter, "collect_query_logs", None)
+    if not callable(collect):
+        return
+    query_ids = [sample.get("query_log_id") for sample in samples]
+    if any(not isinstance(query_id, str) or not query_id for query_id in query_ids) or len(set(query_ids)) != len(query_ids):
+        raise RuntimeError("missing or duplicate phase query log IDs")
+    metrics = collect(query_ids)
+    if not isinstance(metrics, dict) or set(metrics) != set(query_ids) or any(
+        not isinstance(value, dict) or not value for value in metrics.values()
+    ):
+        raise RuntimeError("incomplete phase query log metrics")
+    for sample in samples:
+        sample["query_log"] = metrics[sample.pop("query_log_id")]
 
 
 def _summaries(samples):
@@ -215,6 +234,7 @@ def run_ingest_with_queries(adapter, blocks, truth, query_workers):
     missing = sorted(set(CONCURRENT_QUERY_IDS) - observed)
     if missing:
         raise RuntimeError("missing concurrent samples: " + ",".join(missing))
+    _backfill_query_logs(adapter, samples)
     return {
         "block_summary": common.summarize_samples([
             {"ok": True, "latency_ms": metric["wall_time_ms"] or sys.float_info.min}
@@ -250,16 +270,18 @@ def run_static_queries(adapter, layout, truth, measurements, watermark=None):
             raise ValueError("static watermark is required") from error
     connection = adapter.connect_worker()
     samples = []
+    warmups = []
     plans = {}
     try:
         for query_id in QUERY_IDS:
             params, expected = _static_expected(truth, query_id, watermark)
-            _sample(adapter, connection, query_id, params, watermark, expected, "warmup")
+            warmups.append(_sample(adapter, connection, query_id, params, watermark, expected, "warmup"))
             for _ in range(measurements):
                 samples.append(_sample(adapter, connection, query_id, params, watermark, expected, "static"))
             plans[query_id] = adapter.collect_plan(query_id, params, watermark)
     finally:
         _close_connection(connection)
+    _backfill_query_logs(adapter, warmups + samples)
     return {"plans": plans, "samples": samples, "summary": _summaries(samples), "watermark": watermark}
 
 
@@ -269,6 +291,9 @@ class _LayoutSession:
     def __init__(self, adapter, layout):
         self.adapter = adapter
         self.layout = layout
+        collect = getattr(adapter, "collect_query_logs", None)
+        if callable(collect):
+            self.collect_query_logs = collect
 
     def insert_block(self, rows):
         """写入当前 layout 的一个 block。"""

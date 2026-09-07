@@ -28,7 +28,7 @@ python3 experiments/json-storage-stage2/generator/generate_cross_engine.py \
 /home/omm/work/agent-trace/trace-synthesis/.venv/bin/python \
   experiments/json-storage-stage2/runner/run_cross_engine.py \
   --input docs/temp/json-storage-stage2/cross-engine-input-20260907 \
-  --output docs/temp/json-storage-stage2/formal-20260907-retry-1/opengauss-round-1 \
+  --output docs/temp/json-storage-stage2/formal-20260907-retry-2/opengauss-round-1 \
   --engine opengauss --container-name agent-trace-opengauss-v6 \
   --namespace json_s2_og_r1 --round 1 \
   --layout-order og_jsonb,og_jsonb_hot,og_jsonb_gin \
@@ -45,7 +45,7 @@ python3 experiments/json-storage-stage2/generator/generate_cross_engine.py \
 
 openGauss 6.0.0 的 `jsonb_ops` GIN 写入递归空字符串时触发 `jsonb_gin.cpp:519` 错误。`og_jsonb_gin` 使用 `jsonb_hash_ops`，Q05 保持 JSONB `@>` 包含查询；DDL、GIN 空间、自然计划与禁用顺扫计划均记录该布局。回归测试同时验证空字符串的 Q04、analysis 和 raw 恢复。源码依据见 [v6.0.0](https://gitee.com/opengauss/openGauss-server/blob/v6.0.0/src/common/backend/utils/adt/jsonb_gin.cpp) 与 [v6.0.2](https://gitee.com/opengauss/openGauss-server/blob/v6.0.2/src/common/backend/utils/adt/jsonb_gin.cpp)。
 
-`formal-20260907/` 只保留首次失败轮次 `opengauss-r1-04ca47c0b0d8487db41e2d255efb3875` 的诊断，整轮排除统计。openGauss 与 ClickHouse 各三轮的六个完整重试 run 全部写入新根 `docs/temp/json-storage-stage2/formal-20260907-retry-1/`，后续汇总使用该新根。每次重试选择新的输出目录与 run ID。
+`formal-20260907/` 保留首次失败轮次 `opengauss-r1-04ca47c0b0d8487db41e2d255efb3875` 的诊断；`formal-20260907-retry-1/` 保留 ClickHouse 第三轮 `clickhouse-r3-83bd945702b64f2291febfa4c6ee5b82` 的 server-total memory limit 诊断及同批次产物。失败整轮排除统计。openGauss 与 ClickHouse 各三轮的六个完整重试 run 全部写入新根 `docs/temp/json-storage-stage2/formal-20260907-retry-2/`，最终汇总仅使用该新根。每次重试选择新的输出目录与 run ID。
 
 ## 产物与门禁
 
@@ -55,9 +55,13 @@ openGauss 6.0.0 的 `jsonb_ops` GIN 写入递归空字符串时触发 `jsonb_gin
 
 ClickHouse 的 analytics 与 raw 写入是独立请求。analytics 成功而 raw 失败时 runner 不推进共享 watermark，并停止查询 worker。`ch_native` 使用 `fidelity_values` 保留 null、空对象和空数组的 canonical 值；`ch_map` 与 `ch_native` 的 analysis 校验按 `key_map` 恢复 nested analysis，raw 表仅用于原文恢复。
 
+ClickHouse 每条测量请求使用唯一 query ID，完整响应读取后结束 latency。并发阶段与静态阶段各执行一次 `SYSTEM FLUSH LOGS query_log`，批量采集该阶段全部 ID 的唯一 `QueryFinish`；静态预热 ID 同时核对。日志采集与轮询位于 latency 之外。最终样本保留完整 `query_log` 指标；缺失、重复、异常终态或无效指标使阶段失败，全部回填与 truth 门禁通过后生成摘要。
+
+HTTP 参数固定为测量请求 `log_queries=1`，管理请求 `log_queries=0`；两类请求均设置 `log_processors_profiles=0`、`memory_profiler_step=0`、`log_query_settings=0`。管理请求包含 DDL、INSERT、日志 flush/查询、EXPLAIN、空间、merge 和 cleanup。业务查询参数使用 `param_*`。这些设置减少 system logs 的观测扰动，并随 runner 源码摘要冻结。
+
 运行后检查完成状态与临时对象清理：
 
 ```bash
-find docs/temp/json-storage-stage2/formal-20260907-retry-1 -name run-manifest.json -print0 \
+find docs/temp/json-storage-stage2/formal-20260907-retry-2 -name run-manifest.json -print0 \
   | xargs -0 -n1 jq -r '[.status,.engine,.round,.gates.correctness,.gates.raw_recovery,.gates.cleanup] | @tsv'
 ```

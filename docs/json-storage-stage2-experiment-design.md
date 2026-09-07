@@ -162,6 +162,12 @@ openGauss 6.0.0 的 `jsonb_ops` GIN 在写入空字符串时触发 `jsonb_gin.cp
 
 缓存状态固定为 `query_warmup_1_no_os_cache_drop`。实验不清理宿主机页缓存。两引擎顺序执行，另一个容器保持空闲；manifest 记录宿主 CPU、内存、磁盘和容器资源配置。并发与静态查询均遵循 `json-storage-cross-engine-v1` 的连接、阶段屏障、计时和成功样本规则。
 
+ClickHouse 每条测量查询使用唯一 query ID，HTTP 响应完整读取后结束延迟计时。每个写入并发阶段和静态阶段结束后，各执行一次 `SYSTEM FLUSH LOGS query_log`，随后批量读取本阶段全部 query ID 的 `QueryFinish`；静态阶段同时核对预热查询日志。采集和轮询均在延迟计时外，最终样本保留 `query_log` 的 duration、read rows/bytes、memory、result rows/bytes 和 SelectedRows/SelectedBytes。缺失或重复终态、异常状态、缺失或无效指标均使阶段失败；全部日志回填并通过 truth 后生成摘要。
+
+测量请求通过 HTTP 参数设置 `log_queries=1`、`log_processors_profiles=0`、`memory_profiler_step=0`、`log_query_settings=0`。DDL、INSERT、日志采集、计划、空间、merge 和清理等管理请求使用相同观测开关，并设置 `log_queries=0`。业务参数继续通过 `param_*` 绑定。该配置限制观测日志引入的后台写入与 merge。
+
+`formal-20260907-retry-1/` 中的 ClickHouse 第三轮 `clickhouse-r3-83bd945702b64f2291febfa4c6ee5b82` 触发 server-total memory limit。逐查询全局日志 flush 产生的 system log part 与 merge 构成本次观测扰动。该根保留诊断产物，失败整轮排除；全部六轮在 `formal-20260907-retry-2/` 使用上述批量日志采集配置和新 run ID 完整运行，最终统计仅消费该新根。
+
 ## 6. Manifest 与停止条件
 
 run manifest 至少记录：

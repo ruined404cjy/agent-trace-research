@@ -107,6 +107,26 @@ class FakeEngineAdapter:
         return query_id
 
 
+class DeferredLogAdapter(FakeAdapter):
+    """模拟仅在阶段末提供服务端指标的 adapter。"""
+
+    def __init__(self, missing=False):
+        super().__init__()
+        self.log_ids = []
+        self.batches = []
+        self.missing = missing
+
+    def execute_query(self, connection, query_id, params, watermark):
+        result = super().execute_query(connection, query_id, params, watermark)
+        log_id = str(id(result)) + "_" + str(threading.get_ident()) + "_" + str(len(self.log_ids))
+        self.log_ids.append(log_id)
+        return {**result, "query_log_id": log_id}
+
+    def collect_query_logs(self, query_ids):
+        self.batches.append(list(query_ids))
+        return {} if self.missing else {query_id: {"read_rows": 3} for query_id in query_ids}
+
+
 class CrossEngineRunnerTest(unittest.TestCase):
     """验证写入期并发、静态查询与失败可见性契约。"""
 
@@ -232,6 +252,26 @@ class CrossEngineRunnerTest(unittest.TestCase):
         self.assertEqual(len(result["samples"]), 10)
         self.assertEqual(len(adapter.query_calls), 15)
         self.assertEqual(set(result["plans"]), {"Q01", "Q02", "Q03", "Q04", "Q05"})
+
+    def test_concurrent_and_static_samples_are_backfilled_once_before_summary(self):
+        """阻止阶段指标未回填、预热日志漏验或内部 ID 泄入最终样本。"""
+        adapter = DeferredLogAdapter()
+        concurrent = runner.run_ingest_with_queries(adapter, self.blocks(), self.concurrent_truth(), 2)
+        self.assertEqual(len(adapter.batches), 1)
+        self.assertEqual(set(adapter.batches[0]), set(adapter.log_ids))
+        truth = {"parameters": {query_id: {} for query_id in runner.QUERY_IDS},
+                 "queries": {query_id: {"1024": {"result_sha256": "digest-ok"}} for query_id in runner.QUERY_IDS}}
+        static = runner.run_static_queries(adapter, "ignored", truth, 2, 1024)
+        self.assertEqual(len(adapter.batches), 2)
+        self.assertEqual(len(adapter.batches[1]), 15)
+        for sample in concurrent["samples"] + static["samples"]:
+            self.assertEqual(sample["query_log"], {"read_rows": 3})
+            self.assertNotIn("query_log_id", sample)
+
+    def test_missing_batch_metrics_stop_phase_before_summary(self):
+        """阻止 adapter 返回缺失指标时仍发布成功阶段摘要。"""
+        with self.assertRaises(RuntimeError):
+            runner.run_ingest_with_queries(DeferredLogAdapter(missing=True), self.blocks(), self.concurrent_truth(), 2)
 
     def test_execute_publishes_failed_manifest_after_cleanup(self):
         """阻止 raw 部分失败留下 complete manifest 或跳过已创建 layout 清理。"""

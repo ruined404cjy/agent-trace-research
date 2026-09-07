@@ -14,6 +14,10 @@ IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 QUERY_LOG_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 LAYOUTS = ("ch_string", "ch_map", "ch_native")
 QUERY_IDS = ("Q01", "Q02", "Q03", "Q04", "Q05")
+QUERY_LOG_METRICS = (
+    "query_duration_ms", "read_rows", "read_bytes", "memory_usage",
+    "result_rows", "result_bytes", "selected_rows", "selected_bytes",
+)
 
 
 def canonical_bytes(value):
@@ -195,7 +199,12 @@ class ClickHouseAdapter:
         """发送 SQL 并完整读取响应；调用方决定 latency 计时边界。"""
         if query_id is not None and not QUERY_LOG_ID.fullmatch(query_id):
             raise ValueError("query_id contains unsupported characters")
-        query = {}
+        query = {
+            "log_queries": 1 if query_id is not None else 0,
+            "log_processors_profiles": 0,
+            "memory_profiler_step": 0,
+            "log_query_settings": 0,
+        }
         if query_id is not None:
             query["query_id"] = query_id
         if parameters:
@@ -487,30 +496,58 @@ class ClickHouseAdapter:
             "identity_sha256": hashlib.sha256(canonical_bytes(event_ids)).hexdigest(),
         }
 
-    def _collect_query_log(self, connection, query_id, attempts=20):
-        """在完整响应读取后轮询唯一 QueryFinish 的服务端指标。"""
-        if not QUERY_LOG_ID.fullmatch(query_id):
-            raise ValueError("query_id contains unsupported characters")
-        if not isinstance(attempts, int) or attempts <= 0:
+    def collect_query_logs(self, query_ids, attempts=20):
+        """阶段结束时单次 flush query_log，返回每个唯一 ID 的完整 QueryFinish 指标。"""
+        if not isinstance(query_ids, list) or any(
+            not isinstance(query_id, str) or not QUERY_LOG_ID.fullmatch(query_id)
+            for query_id in query_ids
+        ) or len(set(query_ids)) != len(query_ids):
+            raise ValueError("query_ids must contain unique valid IDs")
+        if not isinstance(attempts, int) or isinstance(attempts, bool) or attempts <= 0:
             raise ValueError("attempts must be positive")
+        if not query_ids:
+            return {}
         statement = (
-            "SELECT query_duration_ms, read_rows, read_bytes, memory_usage, result_rows, result_bytes, "
+            "SELECT query_id, type, exception_code, query_duration_ms, read_rows, read_bytes, memory_usage, result_rows, result_bytes, "
             "ProfileEvents['SelectedRows'] AS selected_rows, "
             "ProfileEvents['SelectedBytes'] AS selected_bytes "
-            "FROM system.query_log WHERE query_id = {target_query_id:String} "
-            "AND type = 'QueryFinish' ORDER BY event_time_microseconds DESC LIMIT 1 FORMAT JSONEachRow"
+            "FROM system.query_log WHERE query_id IN {target_query_ids:Array(String)} "
+            "AND type != 'QueryStart' FORMAT JSONEachRow"
         )
-        for attempt in range(attempts):
-            self._request(connection, "SYSTEM FLUSH LOGS")
-            rows = self._json_rows(self._request(connection, statement, parameters={"target_query_id": query_id}))
-            if len(rows) == 1:
-                return {key: int(value) for key, value in rows[0].items()}
-            if attempt < attempts - 1:
-                time.sleep(0.05)
-        raise RuntimeError(f"expected one QueryFinish row for {query_id}")
+        parameters = {"target_query_ids": "[" + ",".join("'" + query_id + "'" for query_id in query_ids) + "]"}
+        expected = set(query_ids)
+        connection = self.connect_worker()
+        try:
+            self._request(connection, "SYSTEM FLUSH LOGS query_log")
+            for attempt in range(attempts):
+                rows = self._json_rows(self._request(connection, statement, parameters=parameters))
+                metrics = {}
+                for row in rows:
+                    query_id = row.get("query_id")
+                    if query_id not in expected or query_id in metrics:
+                        raise RuntimeError(f"unexpected or duplicate query log ID: {query_id}")
+                    if row.get("type") != "QueryFinish" or row.get("exception_code") != 0:
+                        raise RuntimeError(f"invalid QueryFinish status for {query_id}")
+                    values = {}
+                    for field in QUERY_LOG_METRICS:
+                        value = row.get(field)
+                        if isinstance(value, bool) or not (
+                            isinstance(value, int) and value >= 0
+                            or isinstance(value, str) and re.fullmatch(r"[0-9]+", value)
+                        ):
+                            raise RuntimeError(f"invalid QueryFinish {field} for {query_id}")
+                        values[field] = int(value)
+                    metrics[query_id] = values
+                if set(metrics) == expected:
+                    return metrics
+                if attempt < attempts - 1:
+                    time.sleep(0.05)
+            raise RuntimeError("missing QueryFinish rows: " + ",".join(sorted(expected - set(metrics))))
+        finally:
+            connection.close()
 
     def execute_query(self, connection, layout, query_id, params, watermark):
-        """执行并完整读取查询，随后返回公共结果、hash 与 query-log 指标。"""
+        """执行并完整读取查询，返回公共结果、hash 与待批量采集的 query ID。"""
         validate_layout(layout)
         statement = self._statement(layout, query_id)
         query_parameters = self._query_parameters(query_id, params, watermark)
@@ -526,7 +563,7 @@ class ClickHouseAdapter:
             "result": result,
             "result_sha256": hashlib.sha256(canonical_bytes(result)).hexdigest(),
             "row_count": row_count,
-            "query_log": self._collect_query_log(connection, server_query_id),
+            "query_log_id": server_query_id,
         }
 
     def collect_plan(self, layout, query_id, params, watermark):

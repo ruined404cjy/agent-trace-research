@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import unittest
+import urllib.parse
 import uuid
 from pathlib import Path
 from unittest import mock
@@ -12,6 +13,35 @@ STAGE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(STAGE_DIR / "runner"))
 
 import clickhouse
+
+
+class FakeHTTPConnection:
+    """记录真实 adapter 发出的 HTTP 请求，并提供明确的服务端响应。"""
+
+    def __init__(self, responses):
+        self.responses = iter(responses)
+        self.requests = []
+
+    def request(self, method, path, body, headers):
+        self.requests.append((path, body.decode("utf-8")))
+
+    def getresponse(self):
+        response = mock.Mock(status=200)
+        response.read.return_value = next(self.responses).encode("utf-8")
+        return response
+
+    def close(self):
+        pass
+
+
+def query_log_row(query_id, **overrides):
+    """返回完整 QueryFinish fixture，覆盖指标缺失或异常测试。"""
+    return {
+        "query_id": query_id, "type": "QueryFinish", "exception_code": 0,
+        "query_duration_ms": 7, "read_rows": 3, "read_bytes": 30,
+        "memory_usage": 100, "result_rows": 1, "result_bytes": 10,
+        "selected_rows": 3, "selected_bytes": 30, **overrides,
+    }
 
 
 class ClickHouseAdapterUnitTest(unittest.TestCase):
@@ -76,22 +106,56 @@ class ClickHouseAdapterUnitTest(unittest.TestCase):
         self.assertIsNot(first, second)
         self.assertEqual(constructor.call_count, 2)
 
-    def test_query_log_collection_polls_until_query_finish_after_complete_body_read(self):
-        """捕获 query log 异步发布时将空结果误当成最终指标的回归。"""
+    def test_measurement_defers_logs_and_management_requests_disable_observer_logs(self):
+        """阻止测量逐条 flush 或管理请求继续放大 system logs。"""
         adapter = clickhouse.ClickHouseAdapter("127.0.0.1", 18123, "unused", "json_s2_test")
-        responses = [
-            "",
-            "",
-            "",
-            '{"query_duration_ms":"7","read_rows":"3"}\n',
-        ]
-        with mock.patch.object(adapter, "_request", side_effect=responses), mock.patch.object(
-            clickhouse.time, "sleep"
-        ) as sleep:
-            metrics = adapter._collect_query_log(object(), "stage2_delayed", attempts=2)
+        connection = FakeHTTPConnection(['{"span_type":"tool","count":3}\n', "", '{"query_duration_ms":7,"read_rows":3}\n', ""])
+        params = {"project_id": "project", "start_time": "2030-01-01T00:00:00.000Z", "end_time": "2030-01-02T00:00:00.000Z"}
+        actual = adapter.execute_query(connection, "ch_string", "Q01", params, 512)
+        self.assertEqual(actual["result"], [["tool", 3]])
+        self.assertIn("query_log_id", actual)
+        self.assertNotIn("query_log", actual)
+        self.assertEqual(len(connection.requests), 1)
+        adapter._request(connection, "SELECT 1")
+        for index, (path, statement) in enumerate(connection.requests):
+            settings = urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)
+            self.assertEqual(settings["log_queries"], ["1" if index == 0 else "0"])
+            for setting in ("log_processors_profiles", "memory_profiler_step", "log_query_settings"):
+                self.assertEqual(settings[setting], ["0"])
+            self.assertNotIn("SETTINGS", statement)
+        self.assertEqual(urllib.parse.parse_qs(urllib.parse.urlsplit(connection.requests[0][0]).query)["param_project_id"], ["project"])
 
-        self.assertEqual(metrics, {"query_duration_ms": 7, "read_rows": 3})
-        sleep.assert_called_once()
+    def test_batch_query_logs_flush_once_and_poll_missing_finish(self):
+        """阻止批量两样本按查询或按轮询重复 flush。"""
+        adapter = clickhouse.ClickHouseAdapter("127.0.0.1", 18123, "unused", "json_s2_test")
+        connection = FakeHTTPConnection(["", "", "\n".join(json.dumps(query_log_row(query_id)) for query_id in ("first", "second"))])
+        self.assertTrue(callable(getattr(adapter, "collect_query_logs", None)))
+        with mock.patch.object(adapter, "connect_worker", return_value=connection), mock.patch.object(clickhouse.time, "sleep"):
+            actual = adapter.collect_query_logs(["first", "second"], attempts=2)
+        self.assertEqual(set(actual), {"first", "second"})
+        self.assertEqual(actual["first"]["read_rows"], 3)
+        self.assertEqual([statement for _path, statement in connection.requests if statement.startswith("SYSTEM")], ["SYSTEM FLUSH LOGS query_log"])
+        self.assertTrue(all(urllib.parse.parse_qs(urllib.parse.urlsplit(path).query)["log_queries"] == ["0"] for path, _statement in connection.requests))
+
+    def test_batch_query_logs_reject_missing_duplicate_and_invalid_finish(self):
+        """阻止缺失、重复、异常结束或坏指标静默进入统计。"""
+        cases = [[], [query_log_row("first"), query_log_row("first")],
+                 [query_log_row("first", type="ExceptionWhileProcessing")],
+                 [query_log_row("first", exception_code=241)],
+                 [query_log_row("first", read_rows=-1)],
+                 [query_log_row("first", memory_usage="bad")],
+                 [query_log_row("first", selected_bytes=None)],
+                 [query_log_row("first", result_rows=True)],
+                 [query_log_row("first", result_rows=1.5)],
+                 [{key: value for key, value in query_log_row("first").items() if key != "read_bytes"}]]
+        for rows in cases:
+            with self.subTest(rows=rows):
+                adapter = clickhouse.ClickHouseAdapter("127.0.0.1", 18123, "unused", "json_s2_test")
+                self.assertTrue(callable(getattr(adapter, "collect_query_logs", None)))
+                connection = FakeHTTPConnection(["", "\n".join(json.dumps(row) for row in rows)])
+                with mock.patch.object(adapter, "connect_worker", return_value=connection):
+                    with self.assertRaises(RuntimeError):
+                        adapter.collect_query_logs(["first"], attempts=1)
 
     def test_finish_maintenance_requires_three_consecutive_zero_backlogs(self):
         """捕获中间出现 merge 后仍把零 backlog 计为连续完成的回归。"""
@@ -253,6 +317,7 @@ class ClickHouseAdapterIntegrationTest(unittest.TestCase):
                 self.assertTrue(maintenance["completed"])
 
                 connection = self.adapter.connect_worker()
+                query_ids = []
                 try:
                     for query_id in clickhouse.QUERY_IDS:
                         params = {**self.truth["parameters"][query_id], "key_map": self.truth["key_map"]}
@@ -261,9 +326,12 @@ class ClickHouseAdapterIntegrationTest(unittest.TestCase):
                         self.assertEqual(actual["result_sha256"], expected["result_sha256"])
                         self.assertEqual(actual["row_count"], expected["row_count"])
                         self.assertGreaterEqual(actual["latency_ms"], 0.0)
-                        self.assertIn("query_log", actual)
+                        query_ids.append(actual["query_log_id"])
                 finally:
                     connection.close()
+                metrics = self.adapter.collect_query_logs(query_ids)
+                self.assertEqual(set(metrics), set(query_ids))
+                self.assertTrue(all(set(value) == set(clickhouse.QUERY_LOG_METRICS) for value in metrics.values()))
 
                 self.assertTrue(self.adapter.verify_raw(layout, self.truth)["ok"])
                 self.assertTrue(self.adapter.verify_analysis(layout, self.truth)["ok"])
@@ -283,6 +351,49 @@ class ClickHouseAdapterIntegrationTest(unittest.TestCase):
                     self.assertIsNone(storage["paths"])
                 self.adapter.cleanup(layout)
                 self.assertFalse(self.adapter.database_exists(layout))
+
+    def test_live_static_stress_collects_all_105_query_logs_in_one_batch(self):
+        """阻止 100 次正式查询扩大为逐请求日志 flush，并验证真实 QueryFinish 完整性。"""
+        import run_cross_engine
+
+        layout = "ch_string"
+        before = self._system_log_snapshot()
+        self.adapter.create_layout(layout, 32)
+        self.adapter.insert_block(layout, self.rows)
+        with mock.patch.object(self.adapter, "_request", wraps=self.adapter._request) as request, mock.patch.object(
+            self.adapter, "collect_query_logs", wraps=self.adapter.collect_query_logs
+        ) as collect:
+            result = run_cross_engine.run_static_queries(
+                run_cross_engine._LayoutSession(self.adapter, layout), layout,
+                self.truth, measurements=20, watermark=512,
+            )
+        self.assertEqual(len(result["samples"]), 100)
+        self.assertEqual(collect.call_count, 1)
+        self.assertEqual(len(collect.call_args.args[0]), 105)
+        flushes = [call.args[1] for call in request.call_args_list if call.args[1].startswith("SYSTEM")]
+        self.assertEqual(flushes, ["SYSTEM FLUSH LOGS query_log"])
+        self.assertTrue(all(sample["ok"] and set(sample["query_log"]) == set(clickhouse.QUERY_LOG_METRICS) for sample in result["samples"]))
+        self.adapter.cleanup(layout)
+        self.assertFalse(self.adapter.database_exists(layout))
+        after = self._system_log_snapshot()
+        print("STAGE2_QUERY_LOG_STRESS " + json.dumps({
+            "before": before, "after": after, "measurement_count": 100,
+            "query_finish_count": 105, "targeted_flush_count": len(flushes),
+            "cleanup": True,
+        }, sort_keys=True), flush=True)
+
+    def _system_log_snapshot(self):
+        """读取压力测试前后的 system log active part、字节与 merge/memory 状态。"""
+        connection = self.adapter.connect_worker()
+        try:
+            statements = {
+                "parts": "SELECT table, count() AS parts, sum(bytes_on_disk) AS bytes FROM system.parts WHERE active AND database = 'system' GROUP BY table ORDER BY table FORMAT JSONEachRow",
+                "metrics": "SELECT metric, value FROM system.metrics WHERE metric IN ('QueriesMemoryUsage','MergesMutationsMemoryTracking','Merge') ORDER BY metric FORMAT JSONEachRow",
+                "memory": "SELECT metric, value FROM system.asynchronous_metrics WHERE metric IN ('MemoryResident','MemoryTracking') ORDER BY metric FORMAT JSONEachRow",
+            }
+            return {name: self.adapter._json_rows(self.adapter._request(connection, statement)) for name, statement in statements.items()}
+        finally:
+            connection.close()
 
     def test_raw_failure_leaves_visible_partial_write_and_raises(self):
         """捕获 raw 写入失败时 adapter 误报整块成功或掩盖部分写入的回归。"""
