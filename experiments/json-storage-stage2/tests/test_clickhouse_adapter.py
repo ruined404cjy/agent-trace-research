@@ -190,6 +190,33 @@ class ClickHouseAdapterUnitTest(unittest.TestCase):
             "plain": '"safe"',
         })
 
+    def test_verify_analysis_restores_map_values_and_reports_tampering(self):
+        """阻止 Map analytics 篡改或 identity 偏差绕过 canonical analysis 门禁。"""
+        adapter = clickhouse.ClickHouseAdapter("127.0.0.1", 18123, "unused", "json_s2_test")
+        expected = {"a": {"b": 1}}
+        truth = {
+            "key_map": {"a.b": "a.b"},
+            "records": [{
+                "event_id": "event-1",
+                "analysis_sha256": hashlib.sha256(clickhouse.canonical_bytes(expected)).hexdigest(),
+            }],
+        }
+        connection = mock.MagicMock()
+        with mock.patch.object(adapter, "connect_worker", return_value=connection), mock.patch.object(
+            adapter, "_request", return_value='{"event_id":"event-1","attributes":{"a.b":"1"}}\n'
+        ):
+            passing = adapter.verify_analysis("ch_map", truth)
+        self.assertTrue(passing["ok"])
+        self.assertEqual(passing["analysis_sha256_mismatches"], [])
+
+        with mock.patch.object(adapter, "connect_worker", return_value=connection), mock.patch.object(
+            adapter, "_request", return_value='{"event_id":"event-1","attributes":{"a.b":"2"}}\n{"event_id":"extra","attributes":{"a.b":"1"}}\n'
+        ):
+            tampered = adapter.verify_analysis("ch_map", truth)
+        self.assertFalse(tampered["ok"])
+        self.assertEqual(tampered["extra"], ["extra"])
+        self.assertEqual(tampered["analysis_sha256_mismatches"], ["event-1"])
+
 
 @unittest.skipUnless(os.environ.get("RUN_CLICKHOUSE_INTEGRATION") == "1", "set RUN_CLICKHOUSE_INTEGRATION=1")
 class ClickHouseAdapterIntegrationTest(unittest.TestCase):
@@ -239,6 +266,7 @@ class ClickHouseAdapterIntegrationTest(unittest.TestCase):
                     connection.close()
 
                 self.assertTrue(self.adapter.verify_raw(layout, self.truth)["ok"])
+                self.assertTrue(self.adapter.verify_analysis(layout, self.truth)["ok"])
                 storage = self.adapter.collect_storage(layout)
                 self.assertEqual(set(storage["tables"]), {"analytics", "raw"})
                 self.assertGreater(storage["tables"]["analytics"]["compressed_bytes"], 0)

@@ -641,6 +641,101 @@ class ClickHouseAdapter:
         diagnostics["ok"] = not any(diagnostics[name] for name in ("duplicates", "extra", "missing", "raw_sha256_mismatches")) and diagnostics["actual_count"] == diagnostics["expected_count"]
         return diagnostics
 
+    @staticmethod
+    def _analysis_from_values(values, key_map):
+        """按 key_map 将原始键的 canonical 值重建为 nested analysis 对象。"""
+        if not isinstance(values, dict) or not isinstance(key_map, dict):
+            raise ValueError("analysis values and key_map must be objects")
+        inverse_map = {original: path for path, original in key_map.items()}
+        analysis = {}
+        for original_key, canonical_value in values.items():
+            if original_key not in inverse_map:
+                raise ValueError(f"unknown analysis attribute key: {original_key}")
+            if not isinstance(canonical_value, str):
+                raise ValueError("analysis attribute value must be canonical JSON")
+            try:
+                value = json.loads(canonical_value)
+            except json.JSONDecodeError as error:
+                raise ValueError("analysis attribute value must be canonical JSON") from error
+            if canonical_bytes(value).decode("utf-8") != canonical_value:
+                raise ValueError("analysis attribute value must be canonical JSON")
+            current = analysis
+            parts = inverse_map[original_key].split(".")
+            for index, part in enumerate(parts):
+                if not part:
+                    raise ValueError("invalid analysis key_map path")
+                if index == len(parts) - 1:
+                    if part in current:
+                        raise ValueError("duplicate analysis key_map path")
+                    current[part] = value
+                else:
+                    nested = current.setdefault(part, {})
+                    if not isinstance(nested, dict):
+                        raise ValueError("analysis key_map prefix conflict")
+                    current = nested
+        return analysis
+
+    def verify_analysis(self, layout, truth):
+        """验证 analytics identity 与 canonical analysis SHA-256，不读取 raw 表。"""
+        validate_layout(layout)
+        try:
+            expected_hashes = {
+                record["event_id"]: record["analysis_sha256"] for record in truth["records"]
+            }
+            key_map = truth["key_map"]
+        except (KeyError, TypeError) as error:
+            raise ValueError("invalid analysis truth records") from error
+        fields = "event_id, attributes"
+        if layout == "ch_native":
+            fields += ", fidelity_values"
+        connection = self.connect_worker()
+        try:
+            rows = self._json_rows(self._request(
+                connection,
+                "SELECT " + fields + " FROM " + self._analytics(layout)
+                + " ORDER BY event_id FORMAT JSONEachRow",
+            ))
+        finally:
+            connection.close()
+        actual_ids = [row["event_id"] for row in rows]
+        actual_set = set(actual_ids)
+        expected_set = set(expected_hashes)
+        duplicates = sorted(event_id for event_id, count in Counter(actual_ids).items() if count > 1)
+        mismatches = []
+        for row in rows:
+            event_id = row["event_id"]
+            if event_id not in expected_hashes:
+                continue
+            if layout == "ch_string":
+                attributes = row["attributes"]
+                analysis = json.loads(attributes) if isinstance(attributes, str) else attributes
+            elif layout == "ch_map":
+                analysis = self._analysis_from_values(
+                    self._restore_map_attributes(row["attributes"], key_map), key_map
+                )
+            else:
+                restored = self._restore_attributes(row["attributes"], key_map)
+                restored = self._merge_native_special_values(
+                    restored, row.get("fidelity_values", {}), key_map
+                )
+                analysis = self._analysis_from_values(restored, key_map)
+            if hashlib.sha256(canonical_bytes(analysis)).hexdigest() != expected_hashes[event_id]:
+                mismatches.append(event_id)
+        diagnostics = {
+            "actual_count": len(actual_ids),
+            "duplicate_count": len(duplicates),
+            "duplicates": duplicates,
+            "expected_count": len(expected_set),
+            "extra": sorted(actual_set - expected_set),
+            "missing": sorted(expected_set - actual_set),
+            "analysis_sha256_mismatches": sorted(set(mismatches)),
+        }
+        diagnostics["ok"] = not any(
+            diagnostics[name]
+            for name in ("duplicates", "extra", "missing", "analysis_sha256_mismatches")
+        ) and diagnostics["actual_count"] == diagnostics["expected_count"]
+        return diagnostics
+
     def cleanup(self, layout):
         """删除一个 layout database，并确认没有同名 database 残留。"""
         database = self._database(layout)

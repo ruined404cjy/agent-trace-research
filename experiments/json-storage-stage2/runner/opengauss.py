@@ -451,6 +451,48 @@ class OpenGaussAdapter:
         ) and diagnostics["actual_count"] == diagnostics["expected_count"]
         return diagnostics
 
+    def verify_analysis(self, layout, truth):
+        """验证 analytics identity 与 canonical analysis SHA-256，不读取 raw 表。"""
+        validate_layout(layout)
+        try:
+            expected_hashes = {
+                record["event_id"]: record["analysis_sha256"] for record in truth["records"]
+            }
+        except (KeyError, TypeError) as error:
+            raise ValueError("invalid analysis truth records") from error
+        connection = self.connect_worker()
+        try:
+            rows = connection.execute(
+                "SELECT event_id, attributes FROM " + self._analytics(layout) + " ORDER BY event_id"
+            ).fetchall()
+        finally:
+            connection.close()
+        actual_ids = [row[0] for row in rows]
+        actual_set = set(actual_ids)
+        expected_set = set(expected_hashes)
+        duplicates = sorted(event_id for event_id, count in Counter(actual_ids).items() if count > 1)
+        mismatches = sorted({
+            event_id for event_id, attributes in rows
+            if event_id in expected_hashes
+            and hashlib.sha256(canonical_bytes(
+                json.loads(attributes) if isinstance(attributes, str) else attributes
+            )).hexdigest() != expected_hashes[event_id]
+        })
+        diagnostics = {
+            "actual_count": len(actual_ids),
+            "duplicate_count": len(duplicates),
+            "duplicates": duplicates,
+            "expected_count": len(expected_set),
+            "extra": sorted(actual_set - expected_set),
+            "missing": sorted(expected_set - actual_set),
+            "analysis_sha256_mismatches": mismatches,
+        }
+        diagnostics["ok"] = not any(
+            diagnostics[name]
+            for name in ("duplicates", "extra", "missing", "analysis_sha256_mismatches")
+        ) and diagnostics["actual_count"] == diagnostics["expected_count"]
+        return diagnostics
+
     def cleanup(self, layout):
         """删除一个 layout schema，并确认没有同名 schema 残留。"""
         schema = self._schema(layout)
