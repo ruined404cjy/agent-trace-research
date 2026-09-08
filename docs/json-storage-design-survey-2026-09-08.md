@@ -1,10 +1,10 @@
 # Agent Trace JSON 存储设计调研
 
 > 状态：调研结论，供方案选择和穿刺实验使用
-> 调研日期：2026-09-04
+> 调研日期：2026-09-04；文档修订日期：2026-09-08
 > 范围：多字段 JSON、JSON 内长值、Trace 大 payload、热点字段、半结构化查询
-> 阶段一实验设计：[json-storage-stage1-experiment-design.md](json-storage-stage1-experiment-design.md)
-> 阶段一报告：[json-storage-stage1-report-2026-09-07.md](json-storage-stage1-report-2026-09-07.md)
+> 阶段一实验设计：[json-storage-stage1-experiment-design-2026-09-08.md](json-storage-stage1-experiment-design-2026-09-08.md)
+> 阶段一报告：[json-storage-stage1-report-2026-09-08.md](json-storage-stage1-report-2026-09-08.md)
 
 ## 1. 结论
 
@@ -206,7 +206,7 @@ ClickHouse 25.3 起把开源 JSON 类型标记为 production ready。它把路�
 
 首轮性能 SQL 返回并排序全部命中 ID，且当前 `getSubcolumn(...)::String` 形态没有形成目标列裁剪，因此旧计时不进入性能结论。修正后的矩阵固定 50,000 行，分离 ID truth 与性能聚合，使用 50% 时间范围、直接子列语法、QueryFinish 指标和三轮布局顺序轮换。
 
-98/99 路径边界精确验证 limited 布局在总路径数 100 时全部动态化、101 时第一条进入 shared data。`10×95% + 40×20% + 450×1%` 混合 profile 让 98 条长尾路径先占满业务路径预算；三轮 merge 均换入 50 条高/中密度路径并换出 50 条长尾路径，排除了按字典序或首次出现顺序保留的解释。固定每行约 50 个字段时，路径全集从 50 增至 5000，limited/hinted 的 merge 中位数从 0.288/0.272 s 增至 31.946/31.693 s。直接子列查询的中位读取量为 0.37–1.31 MiB、耗时为 6–9 ms；String 解析为 24.55–25.72 MiB、37–64 ms。完整 native 对象重建为 1,362–3,877 ms，String 内容读取为 17–39 ms，canonical sidecar 为 14–33 ms。native 载入吞吐较低，压缩空间包含 canonical sidecar；提高路径预算还会放大高基数压力组的载入和空间成本。完整数字见 [9 月 7 日阶段一报告](json-storage-stage1-report-2026-09-07.md)。
+98/99 路径边界精确验证 limited 布局在总路径数 100 时全部动态化、101 时第一条进入 shared data。`10×95% + 40×20% + 450×1%` 混合 profile 让 98 条长尾路径先占满业务路径预算；三轮 merge 均换入 50 条高/中密度路径并换出 50 条长尾路径，排除了按字典序或首次出现顺序保留的解释。固定每行约 50 个字段时，路径全集从 50 增至 5000，limited/hinted 的 merge 中位数从 0.288/0.272 s 增至 31.946/31.693 s。直接子列查询的中位读取量为 0.37–1.31 MiB、耗时为 6–9 ms；String 解析为 24.55–25.72 MiB、37–64 ms。完整 native 对象重建为 1,362–3,877 ms，String 内容读取为 17–39 ms，canonical sidecar 为 14–33 ms。native 载入吞吐较低，压缩空间包含 canonical sidecar；提高路径预算还会放大高基数压力组的载入和空间成本。完整数字见 [9 月 7 日阶段一报告](json-storage-stage1-report-2026-09-08.md)。
 
 该方案最适合字段形态变化快且有路径分析需求的日志/事件。与手工热点列相比，运维 schema 负担较低；写入、存储和整对象读取成本更高。它是列式半结构化分析类型，不是二进制文档 JSONB 的同名实现。当前 Langfuse 的 `events_full` 不能代表 ClickHouse 原生 JSON，二者必须作为不同实验候选。
 
@@ -392,7 +392,7 @@ langfuse: OTLP -> Langfuse ingestion/worker -> ClickHouse/PostgreSQL/MinIO
 
 端到端结果属于系统级比较，包含接收、队列、转换、schema 和存储实现的共同影响。数据库 JSON 能力比较需要使用独立 loader，或采集分段时延、CPU 和 bytes read，拆分摄入层与数据库执行。系统级结果与引擎级结果分别报告。
 
-阶段一数据规格、workload、指标和运行门槛见 [JSON 存储阶段一实验设计](json-storage-stage1-experiment-design.md)；residual 统一横向契约见 [JSON 存储阶段二实验设计](json-storage-stage2-experiment-design.md)；Full/Core、长 payload 和 asset reference 见 [阶段三实验设计](json-storage-stage3-experiment-design.md)。
+阶段一数据规格、workload、指标和运行门槛见 [JSON 存储阶段一实验设计](json-storage-stage1-experiment-design-2026-09-08.md)；residual 统一横向契约见 [JSON 存储阶段二实验设计](json-storage-stage2-experiment-design-2026-09-08.md)；Full/Core、长 payload 和 asset reference 见 [阶段三实验设计](json-storage-stage3-experiment-design-2026-09-08.md)。
 
 ### 5.2 证据与修改层次
 

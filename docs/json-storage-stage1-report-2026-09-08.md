@@ -1,7 +1,7 @@
 # Agent Trace JSON 存储阶段一：语义与引擎内机制报告
 
 > 状态：阶段一报告
-> 日期：2026-09-07
+> 实验完成日期：2026-09-07；文档修订日期：2026-09-08
 > 实验与代码基线：`b8a112c0cbf0bd9c87315e60263042ba4810379d`
 > 范围：标准 openGauss 6.0.0、ClickHouse 25.12.11.4、多字段 JSON、长 payload
 
@@ -195,7 +195,7 @@ canonical sidecar 只在上述时序中增加摄入端重新序列化和同行�
 
 提高动态路径预算需要针对实际访问路径。`5000×1%` 中从 100 提高到 1000 个动态路径没有改变两个显式查询的数量级，却使 hinted 载入吞吐降至 2,309 rows/s，压缩空间增至 22.230 MiB。稳定热点应使用强类型列或 type hint；预算外长尾留在 shared data。该结论适用于本次合成数据和直接子列查询，不替代真实 Trace 分布审计。
 
-当前 `metadata_raw` 只承担实验 canonical 对账和逻辑 metadata 恢复。需要字节级审计和重放时，摄入层应在首次解析前保存完整原始输入 bytes，并记录长度、SHA-256、内容类型、编码和保留策略；原始 bytes 已经存在时通常只需另存 canonical hash，无需再默认复制一份 canonical String。详细机制和跨项目设计比较见 [JSON 存储设计调研](json-storage-design-survey.md)。
+当前 `metadata_raw` 只承担实验 canonical 对账和逻辑 metadata 恢复。需要字节级审计和重放时，摄入层应在首次解析前保存完整原始输入 bytes，并记录长度、SHA-256、内容类型、编码和保留策略；原始 bytes 已经存在时通常只需另存 canonical hash，无需再默认复制一份 canonical String。详细机制和跨项目设计比较见 [JSON 存储设计调研](json-storage-design-survey-2026-09-08.md)。
 
 ## 4. 机制差异与阶段一边界
 
@@ -223,7 +223,7 @@ canonical sidecar 只在上述时序中增加摄入端重新序列化和同行�
 4. 分别定义 missing、JSON null、SQL NULL、类型冲突、数组顺序、路径转义和重建规则。
 5. 长、高基数字段使用适合的压缩编码或独立物理层，控制常规分析的读取量。
 
-Tempo 的 intrinsic/dedicated columns、Parquet Variant shredding、Sinew 的物理列与 reservoir、ClickHouse dynamic paths 与 shared data 都体现分层存储。完整项目与论文比较见 [JSON 存储设计调研](json-storage-design-survey.md)。
+Tempo 的 intrinsic/dedicated columns、Parquet Variant shredding、Sinew 的物理列与 reservoir、ClickHouse dynamic paths 与 shared data 都体现分层存储。完整项目与论文比较见 [JSON 存储设计调研](json-storage-design-survey-2026-09-08.md)。
 
 字段提升的具体信号具有不同证据等级：
 
@@ -234,7 +234,7 @@ Tempo 的 intrinsic/dedicated columns、Parquet Variant shredding、Sinew 的物
 | 类型稳定性 | typed column、type hint 和 Variant shredding 都需要类型契约；冲突值通常回落到动态或 residual 表示 |
 | 基数和值长 | Sinew、Tempo 等用其判断列化、字典编码和 blob 编码成本；具体阈值属于实现与 workload 参数 |
 
-因此，查询频率参与本项目的 workload 收益评估，但不能单独称为公认的自动提升指标。ClickHouse 当前 merge 按非 null 值数量选择动态路径，并不读取查询日志。各项目的具体机制和来源见 [JSON 存储设计调研](json-storage-design-survey.md)。
+因此，查询频率参与本项目的 workload 收益评估，但不能单独称为公认的自动提升指标。ClickHouse 当前 merge 按非 null 值数量选择动态路径，并不读取查询日志。各项目的具体机制和来源见 [JSON 存储设计调研](json-storage-design-survey-2026-09-08.md)。
 
 ### 5.2 多字段与长字段结论
 
@@ -267,9 +267,9 @@ Tempo 的 intrinsic/dedicated columns、Parquet Variant shredding、Sinew 的物
 
 阶段二同时加入持续分批写入、后台维护和并发查询，记录写入吞吐与 p95/p99 延迟、索引维护、active part、merge backlog、查询尾延迟、压缩空间和整对象读取。每个 worker 在阶段内复用独立连接；延迟覆盖请求到结果完整读取，正确性校验位于计时区间外；正式统计只使用全部成功的轮次。QPS 作为请求等价速率报告。
 
-阶段二结果单独形成 `json-storage-stage2-cross-engine-report-YYYY-MM-DD.md`。该报告引用本报告和 [JSON 存储设计调研](json-storage-design-survey.md)，只记录基线增量、统一实验、横向结果和最终建议，不重复阶段一的完整背景与单引擎机制过程。实验完成前，方案和门禁维护在 [JSON 存储阶段二实验设计](json-storage-stage2-experiment-design.md)，不预先填写结果报告。
+阶段二结果单独形成 `json-storage-stage2-report-YYYY-MM-DD.md`。该报告引用本报告和 [JSON 存储设计调研](json-storage-design-survey-2026-09-08.md)，只记录基线增量、统一实验、横向结果和最终建议，不重复阶段一的完整背景与单引擎机制过程。实验完成前，方案和门禁维护在 [JSON 存储阶段二实验设计](json-storage-stage2-experiment-design-2026-09-08.md)，不预先填写结果报告。
 
-Full/Core、长 payload 和 asset reference 在 [阶段三实验设计](json-storage-stage3-experiment-design.md)中统一比较。阶段三独立记录写放大、空间、列表与详情读取、原文恢复和 asset 故障结果，不与阶段二 residual 指标合并排名。
+Full/Core、长 payload 和 asset reference 在 [阶段三实验设计](json-storage-stage3-experiment-design-2026-09-08.md)中统一比较。阶段三独立记录写放大、空间、列表与详情读取、原文恢复和 asset 故障结果，不与阶段二 residual 指标合并排名。
 
 ## 8. 发布范围
 
@@ -280,10 +280,10 @@ Full/Core、长 payload 和 asset reference 在 [阶段三实验设计](json-sto
 ### 9.1 本地证据
 
 - [第一阶段实验基础设施与结果](../experiments/json-storage-stage1/README.md)
-- [JSON 存储设计调研](json-storage-design-survey.md)
-- [阶段一实验设计](json-storage-stage1-experiment-design.md)
-- [阶段二实验设计](json-storage-stage2-experiment-design.md)
-- [阶段三实验设计](json-storage-stage3-experiment-design.md)
+- [JSON 存储设计调研](json-storage-design-survey-2026-09-08.md)
+- [阶段一实验设计](json-storage-stage1-experiment-design-2026-09-08.md)
+- [阶段二实验设计](json-storage-stage2-experiment-design-2026-09-08.md)
+- [阶段三实验设计](json-storage-stage3-experiment-design-2026-09-08.md)
 
 ### 9.2 官方资料与论文
 

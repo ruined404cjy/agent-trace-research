@@ -4,8 +4,8 @@
 > trace-synthesis `f93dbb0...` 用于当时的三表摄入验证。当前 exporter
 > `4cc3bf2...` 已采用 events 单宽表，benchmark v4 database catalog 仍与其存在
 > 28/26 列差异。执行前应按
-> [JSON 存储设计调研](json-storage-design-survey.md)和
-> [阶段一实验设计](json-storage-stage1-experiment-design.md)重新固定匹配版本。
+> [JSON 存储设计调研](json-storage-design-survey-2026-09-08.md)和
+> [阶段一实验设计](json-storage-stage1-experiment-design-2026-09-08.md)重新固定匹配版本。
 
 本文面向已经能够启动 GV xstore 实例、已经配置 Go 环境与 Go module 换源，并已克隆 `trace-synthesis`、`exporter_demo`、`opentelemetry-collector` 的黄区操作者和 Agent。目标是在实际 xstore 上完成固定 Agent Trace 数据的 OTLP/HTTP 摄入、三表写入、dstore 物理形态确认和集合级精确对账。
 

@@ -1,9 +1,9 @@
 # Agent Trace JSON 存储阶段三实验设计
 
 > 状态：待执行；阶段二横向报告完成后启动
-> 日期：2026-09-07
+> 初始设计日期：2026-09-07；文档修订日期：2026-09-08
 > 数据路径：`independent_loader`
-> 上游边界：[阶段一报告](json-storage-stage1-report-2026-09-07.md)第 6、7 节、[阶段二实验设计](json-storage-stage2-experiment-design.md)
+> 上游边界：[阶段一报告](json-storage-stage1-report-2026-09-08.md)第 6、7 节、[阶段二实验设计](json-storage-stage2-experiment-design-2026-09-08.md)
 
 ## 1. 目标与范围
 
@@ -31,7 +31,7 @@ experiments/json-storage-stage3/
   tests/
 ```
 
-运行产物位于 gitignored 的 `docs/temp/json-storage-stage3/`。每个完成目录包含 `run-manifest.json`；缺少该文件或 `status` 不是 `complete` 的目录不进入比较。最终结果写入 `docs/json-storage-stage3-payload-report-YYYY-MM-DD.md`。
+运行产物位于 gitignored 的 `docs/temp/json-storage-stage3/`。每个完成目录包含 `run-manifest.json`；缺少该文件或 `status` 不是 `complete` 的目录不进入比较。最终结果写入 `docs/json-storage-stage3-report-YYYY-MM-DD.md`，报告主题写入文档标题。
 
 ## 3. 数据契约
 
@@ -158,7 +158,7 @@ run manifest 至少记录 run ID、状态、完整复现命令、输入与 truth
 
 ## 10. 参考资料
 
-- [阶段一报告](json-storage-stage1-report-2026-09-07.md)
-- [阶段一实验设计](json-storage-stage1-experiment-design.md)
-- [阶段二实验设计](json-storage-stage2-experiment-design.md)
-- [JSON 存储设计调研](json-storage-design-survey.md)
+- [阶段一报告](json-storage-stage1-report-2026-09-08.md)
+- [阶段一实验设计](json-storage-stage1-experiment-design-2026-09-08.md)
+- [阶段二实验设计](json-storage-stage2-experiment-design-2026-09-08.md)
+- [JSON 存储设计调研](json-storage-design-survey-2026-09-08.md)

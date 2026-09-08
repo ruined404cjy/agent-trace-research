@@ -1,6 +1,6 @@
 # Agent Trace JSON 存储阶段二横向实验报告
 
-> 日期：2026-09-07
+> 实验完成日期：2026-09-07；文档修订日期：2026-09-08
 > 状态：六轮正式实验完成，18 个布局结果通过正确性与原文恢复门禁
 > 数据路径：`independent_loader`
 > 比较契约：`json-storage-cross-engine-v1`
@@ -11,7 +11,7 @@
 
 因此，稳定高频路径适合表达式索引或 native JSON 路径读取；openGauss 包含查询可采用通过本数据正确性验证的 `jsonb_hash_ops` GIN；完整 residual 回查需要评估服务端物化、序列化与响应传输成本。上述结论对应本报告的静态查询和固定返回契约。持续写入结果提供同一加载流程的成本证据；写入期间的查询样本因加载速度和水位分布不同，作为负载干扰证据单独呈现。
 
-本阶段完成真实输入分布审计与 residual 横向比较。Full/Core、长 payload 布局和 asset reference 的性能实验由[阶段三设计](json-storage-stage3-experiment-design.md)承担。机制背景见[阶段一报告](json-storage-stage1-report-2026-09-07.md)，本报告的横向数字全部来自本阶段正式根。
+本阶段完成真实输入分布审计与 residual 横向比较。Full/Core、长 payload 布局和 asset reference 的性能实验由[阶段三设计](json-storage-stage3-experiment-design-2026-09-08.md)承担。机制背景见[阶段一报告](json-storage-stage1-report-2026-09-08.md)，本报告的横向数字全部来自本阶段正式根。
 
 ## 2. 输入审计与冻结身份
 
@@ -195,7 +195,7 @@ sha256sum docs/temp/json-storage-stage2/formal-20260907-retry-3/summary/summary.
 
 ## 参考资料
 
-- [阶段二实验设计](json-storage-stage2-experiment-design.md)。
+- [阶段二实验设计](json-storage-stage2-experiment-design-2026-09-08.md)。
 - [真实 Trace 审计完成 manifest](temp/json-storage-stage2/real-trace-audit-20260907/run-manifest.json)。
 - [正式机器汇总与全部产物身份](temp/json-storage-stage2/formal-20260907-retry-3/summary/summary.json)。
 - [ClickHouse JSON 类型说明](https://clickhouse.com/docs/reference/data-types/newjson)，null/缺失语义与路径存储。

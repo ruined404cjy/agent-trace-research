@@ -1,9 +1,9 @@
 # Agent Trace JSON 存储阶段二实验设计
 
 > 状态：已完成，6 个正式 run、18 个布局结果通过门禁
-> 日期：2026-09-07
+> 实验完成日期：2026-09-07；文档修订日期：2026-09-08
 > 数据路径：`independent_loader`
-> 上游边界：[阶段一报告](json-storage-stage1-report-2026-09-07.md)第 6、7 节
+> 上游边界：[阶段一报告](json-storage-stage1-report-2026-09-08.md)第 6、7 节
 
 ## 1. 目标与证据边界
 
@@ -22,7 +22,7 @@
 
 trace-synthesis 已增加跨 backend 的并发模式、QPS 口径和可比性设计；当前 database 与 Langfuse backend 的 event policy 仍不一致。阶段二采用这些设计中的同输入、同参数计划、同并发模式、阶段屏障、连接复用、计时边界和全成功样本门禁，不复用尚未满足统一语义的系统级结果。
 
-Full/Core、长 payload 和 asset reference 属于独立的物理分层问题，顺延到 [阶段三实验设计](json-storage-stage3-experiment-design.md)。阶段二结果只回答 residual 的跨引擎差异。
+Full/Core、长 payload 和 asset reference 属于独立的物理分层问题，顺延到 [阶段三实验设计](json-storage-stage3-experiment-design-2026-09-08.md)。阶段二结果只回答 residual 的跨引擎差异。
 
 ## 2. 产物与目录
 
@@ -37,7 +37,7 @@ experiments/json-storage-stage2/
   tests/
 ```
 
-运行产物位于 gitignored 的 `docs/temp/json-storage-stage2/`。每个产物目录最后写入 `run-manifest.json`；缺少该文件或 `status` 不是 `complete` 的目录不构成有效运行。唯一正式统计根为 `formal-20260907-retry-3/`，结果见[阶段二横向报告](json-storage-stage2-cross-engine-report-2026-09-07.md)。
+运行产物位于 gitignored 的 `docs/temp/json-storage-stage2/`。每个产物目录最后写入 `run-manifest.json`；缺少该文件或 `status` 不是 `complete` 的目录不构成有效运行。唯一正式统计根为 `formal-20260907-retry-3/`，结果见[阶段二横向报告](json-storage-stage2-report-2026-09-08.md)。
 
 ## 3. 真实 Trace 分布审计
 
@@ -213,8 +213,8 @@ run manifest 至少记录：
 
 ## 8. 参考资料
 
-- [阶段一报告](json-storage-stage1-report-2026-09-07.md)
-- [JSON 存储设计调研](json-storage-design-survey.md)
+- [阶段一报告](json-storage-stage1-report-2026-09-08.md)
+- [JSON 存储设计调研](json-storage-design-survey-2026-09-08.md)
 - [trace-synthesis 跨 backend 可比性分析](https://github.com/zfwang2021/trace-synthesis/blob/ef3be141cc17415de9fb5a9d8003c16a4cd679ac/docs/design/benchmark/cross-backend-comparability-analysis.md)
 - [trace-synthesis 并发模式统一设计](https://github.com/zfwang2021/trace-synthesis/blob/ef3be141cc17415de9fb5a9d8003c16a4cd679ac/docs/design/benchmark/concurrency-mode-unification-design.md)
 - [trace-synthesis QPS 指标统一设计](https://github.com/zfwang2021/trace-synthesis/blob/ef3be141cc17415de9fb5a9d8003c16a4cd679ac/docs/design/benchmark/qps-metric-unification-design.md)
