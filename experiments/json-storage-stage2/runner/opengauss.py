@@ -91,7 +91,7 @@ def create_layout_ddls(namespace, layout):
     if layout == "og_jsonb_gin":
         statements.append(
             f"CREATE INDEX analytics_gin_attributes_idx ON {schema}.analytics "
-            "USING gin(attributes jsonb_ops)"
+            "USING gin(attributes jsonb_hash_ops)"
         )
     return ";\n".join(statements) + ";"
 

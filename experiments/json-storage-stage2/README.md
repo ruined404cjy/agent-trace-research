@@ -28,7 +28,7 @@ python3 experiments/json-storage-stage2/generator/generate_cross_engine.py \
 /home/omm/work/agent-trace/trace-synthesis/.venv/bin/python \
   experiments/json-storage-stage2/runner/run_cross_engine.py \
   --input docs/temp/json-storage-stage2/cross-engine-input-20260907 \
-  --output docs/temp/json-storage-stage2/formal-20260907/opengauss-round-1 \
+  --output docs/temp/json-storage-stage2/formal-20260907-retry-1/opengauss-round-1 \
   --engine opengauss --container-name agent-trace-opengauss-v6 \
   --namespace json_s2_og_r1 --round 1 \
   --layout-order og_jsonb,og_jsonb_hot,og_jsonb_gin \
@@ -43,6 +43,10 @@ python3 experiments/json-storage-stage2/generator/generate_cross_engine.py \
 | openGauss | `og_jsonb,og_jsonb_hot,og_jsonb_gin` | `og_jsonb_hot,og_jsonb_gin,og_jsonb` | `og_jsonb_gin,og_jsonb,og_jsonb_hot` |
 | ClickHouse | `ch_string,ch_map,ch_native` | `ch_map,ch_native,ch_string` | `ch_native,ch_string,ch_map` |
 
+openGauss 6.0.0 的 `jsonb_ops` GIN 写入递归空字符串时触发 `jsonb_gin.cpp:519` 错误。`og_jsonb_gin` 使用 `jsonb_hash_ops`，Q05 保持 JSONB `@>` 包含查询；DDL、GIN 空间、自然计划与禁用顺扫计划均记录该布局。回归测试同时验证空字符串的 Q04、analysis 和 raw 恢复。源码依据见 [v6.0.0](https://gitee.com/opengauss/openGauss-server/blob/v6.0.0/src/common/backend/utils/adt/jsonb_gin.cpp) 与 [v6.0.2](https://gitee.com/opengauss/openGauss-server/blob/v6.0.2/src/common/backend/utils/adt/jsonb_gin.cpp)。
+
+`formal-20260907/` 只保留首次失败轮次 `opengauss-r1-04ca47c0b0d8487db41e2d255efb3875` 的诊断，整轮排除统计。openGauss 与 ClickHouse 各三轮的六个完整重试 run 全部写入新根 `docs/temp/json-storage-stage2/formal-20260907-retry-1/`，后续汇总使用该新根。每次重试选择新的输出目录与 run ID。
+
 ## 产物与门禁
 
 每个 layout 的 `result.json` 记录 DDL、查询与 runner identity、写入 block、并发查询、维护、静态查询、执行计划、analysis correctness、raw recovery、空间和 cleanup。产物不保存密码或原始 payload。
@@ -54,6 +58,6 @@ ClickHouse 的 analytics 与 raw 写入是独立请求。analytics 成功而 raw
 运行后检查完成状态与临时对象清理：
 
 ```bash
-find docs/temp/json-storage-stage2/formal-20260907 -name run-manifest.json -print0 \
+find docs/temp/json-storage-stage2/formal-20260907-retry-1 -name run-manifest.json -print0 \
   | xargs -0 -n1 jq -r '[.status,.engine,.round,.gates.correctness,.gates.raw_recovery,.gates.cleanup] | @tsv'
 ```

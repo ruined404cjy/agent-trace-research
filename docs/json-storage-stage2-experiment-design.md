@@ -120,12 +120,16 @@ generator 同时输出：
 |---|---|---|
 | openGauss | `og_jsonb` | `JSONB`，无 residual 索引 |
 | openGauss | `og_jsonb_hot` | 同一 `JSONB`，增加 `gen_ai.operation.name` 表达式索引 |
-| openGauss | `og_jsonb_gin` | 同一 `JSONB`，增加 `jsonb_ops` GIN 通用索引 |
+| openGauss | `og_jsonb_gin` | 同一 `JSONB`，增加 `jsonb_hash_ops` GIN 包含查询索引 |
 | ClickHouse | `ch_string` | nested canonical JSON `String CODEC(ZSTD(3))` |
 | ClickHouse | `ch_map` | `Map(String,String)`，value 为 canonical JSON 字符串 |
 | ClickHouse | `ch_native` | 审计派生 `max_dynamic_paths` 的 native `JSON`，加稀疏 `fidelity_values Map(String,String)` |
 
 ClickHouse native JSON 负责路径分析。`ch_native` 的 analytics 表同时保存稀疏 `fidelity_values Map(String,String)`：仅当一个原始 Attribute 的值递归包含 `null`、空对象或空数组时，保存该原始 Attribute key 与完整 canonical JSON value。Q04 先从 native JSON residual 恢复，再以该 Map 覆盖对应 key，从而恢复 native JSON 无法区分的状态；该 Map 作为 analytics residual 的可逆状态补充，其字节计入 analytics 空间。raw 表只承担逐行原始 UTF-8 bytes 恢复，native JSON 和 `fidelity_values` 都不承担原文恢复。Map 查询使用原始 Attribute key；String、JSONB 和 native JSON 查询使用嵌套分析路径。
+
+openGauss 6.0.0 的 `jsonb_ops` GIN 在写入空字符串时触发 `jsonb_gin.cpp:519` 的零长度复制错误，递归对象与数组中的空字符串同样受影响。`og_jsonb_gin` 使用可保留这些值的 `jsonb_hash_ops`；Q05 保持 `attributes @> %s::jsonb`，并验证 truth、自然计划和禁用顺扫后的 GIN 计划。DDL 与索引空间记录此 opclass，阶段一 `jsonb_ops` 结果保持其原有实验范围。根因与修复条件见 openGauss [v6.0.0 源码](https://gitee.com/opengauss/openGauss-server/blob/v6.0.0/src/common/backend/utils/adt/jsonb_gin.cpp)和 [v6.0.2 源码](https://gitee.com/opengauss/openGauss-server/blob/v6.0.2/src/common/backend/utils/adt/jsonb_gin.cpp)。
+
+首次 openGauss 正式轮次 `opengauss-r1-04ca47c0b0d8487db41e2d255efb3875` 因该错误失败；其诊断保存在 `docs/temp/json-storage-stage2/formal-20260907/opengauss-round-1/`，按失败轮次规则排除整轮统计。兼容布局的正式轮次使用新的 run ID 与输出目录。
 
 ### 5.2 公共查询
 

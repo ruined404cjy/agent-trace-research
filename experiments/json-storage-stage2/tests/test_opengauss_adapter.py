@@ -29,7 +29,7 @@ class OpenGaussAdapterUnitTest(unittest.TestCase):
         self.assertIn("jsonb_object_field_text", hot)
         self.assertNotIn("USING gin", hot)
         self.assertNotIn("CREATE INDEX", plain)
-        self.assertIn("USING gin(attributes jsonb_ops)", gin)
+        self.assertIn("USING gin(attributes jsonb_hash_ops)", gin)
         self.assertNotIn("jsonb_object_field_text", gin)
 
     def test_queries_keep_all_visibility_predicates_and_reject_invalid_inputs(self):
@@ -253,6 +253,63 @@ class OpenGaussAdapterIntegrationTest(unittest.TestCase):
             finally:
                 connection.close()
             self.assertEqual(count, 0)
+        finally:
+            self.adapter.cleanup(layout)
+            self.assertFalse(self.adapter.schema_exists(layout))
+
+    def test_gin_preserves_recursive_empty_strings_and_containment_results(self):
+        """捕获 GIN 写入递归空字符串失败或过滤、恢复契约发生偏差的回归。"""
+        layout = "og_jsonb_gin"
+        rows = []
+        records = []
+        for event_id, mode in (("event-match", "A.3"), ("event-other", "B.1")):
+            attributes = {"failure": {"mistake_mode": mode}, "payload": {"text": "", "items": [""]}}
+            encoded = json.dumps(attributes, sort_keys=True, separators=(",", ":"))
+            rows.append({
+                **self.rows[0], "ingest_seq": len(rows), "event_id": event_id,
+                "trace_id": "trace-empty", "span_id": event_id,
+                "project_id": "empty-test", "start_time": "2030-01-01T00:00:00.000Z",
+                "end_time": "2030-01-01T00:00:00.001Z", "attributes_analysis": attributes,
+                "raw_event": encoded,
+            })
+            records.append({
+                "event_id": event_id,
+                "analysis_sha256": hashlib.sha256(encoded.encode()).hexdigest(),
+                "raw_sha256": hashlib.sha256(encoded.encode()).hexdigest(),
+            })
+        params = {
+            "project_id": "empty-test", "start_time": "2030-01-01T00:00:00.000Z",
+            "end_time": "2030-01-02T00:00:00.000Z", "trace_id": "trace-empty",
+            "failure_mistake_mode": "A.3",
+            "key_map": {"failure.mistake_mode": "failure.mistake_mode", "payload": "payload"},
+        }
+        self.adapter.create_layout(layout, budget=32)
+        try:
+            self.adapter.insert_block(layout, rows)
+            self.adapter.finish_maintenance(layout, timeout_seconds=30)
+            connection = self.adapter.connect_worker()
+            try:
+                result = self.adapter.execute_query(connection, layout, "Q05", params, watermark=2)
+                self.assertEqual(result["result"], {
+                    "row_count": 1,
+                    "identity_sha256": hashlib.sha256(b'["event-match"]').hexdigest(),
+                })
+                restored = self.adapter.execute_query(connection, layout, "Q04", params, watermark=2)
+                self.assertEqual(restored["result"], [
+                    ["2030-01-01T00:00:00.000Z", "event-match", {
+                        "failure.mistake_mode": '"A.3"', "payload": '{"items":[""],"text":""}',
+                    }],
+                    ["2030-01-01T00:00:00.000Z", "event-other", {
+                        "failure.mistake_mode": '"B.1"', "payload": '{"items":[""],"text":""}',
+                    }],
+                ])
+            finally:
+                connection.close()
+            plan = self.adapter.collect_plan(layout, "Q05", params, watermark=2)
+            self.assertTrue(plan["natural"])
+            self.assertIn("analytics_gin_attributes_idx", plan["forced"])
+            self.assertTrue(self.adapter.verify_analysis(layout, {"records": records})["ok"])
+            self.assertTrue(self.adapter.verify_raw(layout, {"records": records})["ok"])
         finally:
             self.adapter.cleanup(layout)
             self.assertFalse(self.adapter.schema_exists(layout))
