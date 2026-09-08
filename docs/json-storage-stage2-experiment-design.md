@@ -37,7 +37,7 @@ experiments/json-storage-stage2/
   tests/
 ```
 
-运行产物位于 gitignored 的 `docs/temp/json-storage-stage2/`。每个产物目录最后写入 `run-manifest.json`；缺少该文件或 `status` 不是 `complete` 的目录不构成有效运行。唯一正式统计根为 `formal-20260907-retry-2/`，结果见[阶段二横向报告](json-storage-stage2-cross-engine-report-2026-09-07.md)。
+运行产物位于 gitignored 的 `docs/temp/json-storage-stage2/`。每个产物目录最后写入 `run-manifest.json`；缺少该文件或 `status` 不是 `complete` 的目录不构成有效运行。唯一正式统计根为 `formal-20260907-retry-3/`，结果见[阶段二横向报告](json-storage-stage2-cross-engine-report-2026-09-07.md)。
 
 ## 3. 真实 Trace 分布审计
 
@@ -166,7 +166,9 @@ ClickHouse 每条测量查询使用唯一 query ID，HTTP 响应完整读取后�
 
 测量请求通过 HTTP 参数设置 `log_queries=1`、`log_processors_profiles=0`、`memory_profiler_step=0`、`log_query_settings=0`。DDL、INSERT、日志采集、计划、空间、merge 和清理等管理请求使用相同观测开关，并设置 `log_queries=0`。业务参数继续通过 `param_*` 绑定。该配置限制观测日志引入的后台写入与 merge。
 
-`formal-20260907-retry-1/` 中的 ClickHouse 第三轮 `clickhouse-r3-83bd945702b64f2291febfa4c6ee5b82` 触发 server-total memory limit。逐查询全局日志 flush 产生的 system log part 与 merge 构成本次观测扰动。该根保留诊断产物，失败整轮排除；全部六轮在 `formal-20260907-retry-2/` 使用上述批量日志采集配置和新 run ID 完整运行，最终统计仅消费该新根。
+`formal-20260907-retry-1/` 中的 ClickHouse 第三轮 `clickhouse-r3-83bd945702b64f2291febfa4c6ee5b82` 触发 server-total memory limit。逐查询全局日志 flush 产生的 system log part 与 merge 构成本次观测扰动。该根保留诊断产物，失败整轮排除；全部六轮在 `formal-20260907-retry-3/` 使用上述批量日志采集配置和新 run ID 完整运行，最终统计仅消费该新根。
+
+`formal-20260907-retry-2/` 的 ClickHouse worker 在屏障前未显式 connect，首个并发样本存在建连计时风险；静态样本已预热。为统一 runner 身份，整根退出统计。`formal-20260907/`、`formal-20260907-retry-1/`、`formal-20260907-retry-2/` 的全部产物仅保留诊断。retry-3 的 worker 在 TCP 连接成功后进入屏障，runner 只清理本次运行成功创建并取得所有权的 layout；ClickHouse 本次创建的 database 在后续建表失败时由 adapter 清理。
 
 ## 6. Manifest 与停止条件
 

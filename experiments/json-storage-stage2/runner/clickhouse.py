@@ -185,7 +185,13 @@ class ClickHouseAdapter:
 
     def connect_worker(self):
         """建立一条供单个 worker 在阶段内复用的独立 HTTP 连接。"""
-        return http.client.HTTPConnection(self.host, self.port, timeout=30)
+        connection = http.client.HTTPConnection(self.host, self.port, timeout=30)
+        try:
+            connection.connect()
+        except Exception:
+            connection.close()
+            raise
+        return connection
 
     @staticmethod
     def _json_rows(body):
@@ -243,11 +249,23 @@ class ClickHouseAdapter:
         if self.database_exists(layout):
             raise ValueError(f"database already exists: {database}")
         connection = self.connect_worker()
+        database_created = False
         try:
             ddl = create_layout_ddl(self.namespace, layout, budget)
-            for statement in (item.strip() for item in ddl.split(";") if item.strip()):
+            statements = [item.strip() for item in ddl.split(";") if item.strip()]
+            self._request(connection, statements[0])
+            database_created = True
+            for statement in statements[1:]:
                 self._request(connection, statement)
             return {"database": database, "ddl": ddl}
+        except Exception as error:
+            # CREATE DATABASE 成功后取得所有权，建表失败时回滚本次部分创建。
+            if database_created:
+                try:
+                    self.cleanup(layout)
+                except Exception as cleanup_error:
+                    error.add_note(f"layout creation cleanup failed: {cleanup_error}")
+            raise
         finally:
             connection.close()
 

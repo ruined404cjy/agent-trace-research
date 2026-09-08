@@ -97,14 +97,76 @@ class ClickHouseAdapterUnitTest(unittest.TestCase):
             clickhouse.ClickHouseAdapter("127.0.0.1", 18123, "unused", "a" * 63)
 
     def test_connect_worker_returns_independent_connections_for_workers(self):
-        """捕获多个查询 worker 意外共享 HTTPConnection 对象的回归。"""
+        """阻止 worker 共享连接或把首次 TCP 建连纳入查询计时。"""
         adapter = clickhouse.ClickHouseAdapter("127.0.0.1", 18123, "unused", "json_s2_test")
-        with mock.patch.object(clickhouse.http.client, "HTTPConnection", side_effect=[object(), object()]) as constructor:
+        connections = [mock.Mock(), mock.Mock()]
+        with mock.patch.object(clickhouse.http.client, "HTTPConnection", side_effect=connections) as constructor:
             first = adapter.connect_worker()
             second = adapter.connect_worker()
 
         self.assertIsNot(first, second)
         self.assertEqual(constructor.call_count, 2)
+        for connection in connections:
+            connection.connect.assert_called_once_with()
+        params = {"project_id": "project", "start_time": "2030-01-01T00:00:00.000Z", "end_time": "2030-01-02T00:00:00.000Z"}
+        ticks = iter((1.0, 1.001, 2.0, 2.001))
+
+        def query_clock():
+            first.connect.assert_called_once_with()
+            return next(ticks)
+
+        with mock.patch.object(adapter, "_request", return_value=""), mock.patch.object(
+            clickhouse.time, "perf_counter", side_effect=query_clock
+        ):
+            for _ in range(2):
+                sample = adapter.execute_query(first, "ch_string", "Q01", params, 512)
+                self.assertAlmostEqual(sample["latency_ms"], 1.0)
+        first.connect.assert_called_once_with()
+
+    def test_failed_preconnect_closes_connection_and_preserves_error(self):
+        """阻止连接失败的 worker 带着未关闭 socket 进入阶段。"""
+        adapter = clickhouse.ClickHouseAdapter("127.0.0.1", 18123, "unused", "json_s2_test")
+        connection = mock.Mock()
+        failure = OSError("connect failed")
+        connection.connect.side_effect = failure
+        with mock.patch.object(clickhouse.http.client, "HTTPConnection", return_value=connection):
+            with self.assertRaises(OSError) as raised:
+                adapter.connect_worker()
+        self.assertIs(raised.exception, failure)
+        connection.close.assert_called_once_with()
+
+    def test_partial_ddl_cleans_only_database_created_by_current_call(self):
+        """阻止建表失败遗留自有 database，或 CREATE DATABASE 失败后误删他人对象。"""
+        for failed_statement, cleanup_fails in ((0, False), (1, False), (2, False), (1, True)):
+            with self.subTest(failed_statement=failed_statement, cleanup_fails=cleanup_fails):
+                adapter = clickhouse.ClickHouseAdapter("127.0.0.1", 18123, "unused", "json_s2_test")
+                state = {"exists": False, "creates": 0, "drops": 0}
+                failure = RuntimeError("DDL failed")
+
+                def request(_connection, statement):
+                    if statement.startswith("DROP DATABASE"):
+                        state["drops"] += 1
+                        if cleanup_fails:
+                            raise RuntimeError("DROP failed")
+                        state["exists"] = False
+                    else:
+                        index = state["creates"]
+                        state["creates"] += 1
+                        state["exists"] = True
+                        if index == failed_statement:
+                            raise failure
+                    return ""
+
+                with mock.patch.object(adapter, "database_exists", side_effect=lambda _layout: state["exists"]), mock.patch.object(
+                    adapter, "connect_worker", return_value=mock.Mock()
+                ), mock.patch.object(adapter, "_request", side_effect=request):
+                    with self.assertRaises(RuntimeError) as raised:
+                        adapter.create_layout("ch_string", 32)
+                self.assertIs(raised.exception, failure)
+                self.assertEqual(state["drops"], 0 if failed_statement == 0 else 1)
+                self.assertEqual(state["exists"], failed_statement == 0 or cleanup_fails)
+                if cleanup_fails:
+                    self.assertIn("DROP failed", " ".join(getattr(failure, "__notes__", [])))
 
     def test_measurement_defers_logs_and_management_requests_disable_observer_logs(self):
         """阻止测量逐条 flush 或管理请求继续放大 system logs。"""

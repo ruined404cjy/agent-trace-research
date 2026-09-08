@@ -341,6 +341,64 @@ class CrossEngineRunnerTest(unittest.TestCase):
         self.assertEqual(manifest["status"], "failed")
         self.assertEqual(adapter.cleaned, ["og_jsonb"])
 
+    def test_create_rejection_preserves_unowned_layout_and_cleanup_diagnostics(self):
+        """阻止创建失败后的 finally 删除既有对象，并保留 adapter 部分回滚错误。"""
+        rows, truth, args = self._execution_fixture()
+        adapter = FakeEngineAdapter()
+        failure = ValueError("namespace already exists")
+        failure.add_note("layout creation cleanup failed: DROP failed")
+        with tempfile.TemporaryDirectory() as temporary:
+            args.output = temporary
+            with mock.patch.object(runner.common, "verify_input", return_value=(rows, truth)), mock.patch.object(
+                runner, "_adapter_for", return_value=adapter
+            ), mock.patch.object(runner, "_input_lineage", return_value={"seed": 42}), mock.patch.object(
+                runner, "_collect_environment", return_value={}
+            ), mock.patch.object(adapter, "create_layout", side_effect=failure):
+                with self.assertRaises(ValueError):
+                    runner.execute(args)
+            manifest = json.loads((Path(temporary) / "run-manifest.json").read_bytes())
+            result = json.loads((Path(temporary) / "og_jsonb" / "result.json").read_bytes())
+        self.assertEqual(adapter.cleaned, [])
+        self.assertEqual(result["cleanup"], {"removed": False, "skipped": True, "reason": "not_owned"})
+        self.assertEqual(manifest["status"], "failed")
+        self.assertEqual(result["error"]["notes"], failure.__notes__)
+        self.assertEqual(manifest["error"]["notes"], failure.__notes__)
+
+    def test_clickhouse_workers_connect_before_barrier_and_reuse_connections(self):
+        """阻止惰性 HTTP 建连越过屏障，验证独立连接在各 worker 查询中复用。"""
+        import clickhouse
+        adapter = FakeAdapter()
+        transport = clickhouse.ClickHouseAdapter("127.0.0.1", 18123, "unused", "json_s2_test")
+        connected = set()
+        barrier_observations = []
+        real_barrier = threading.Barrier
+
+        def connection_factory(*_args, **_kwargs):
+            connection = mock.Mock()
+            connection.connect.side_effect = lambda: connected.add(threading.get_ident())
+            adapter.connections.append(connection)
+            return connection
+
+        def barrier_factory(parties):
+            barrier = real_barrier(parties)
+            original_wait = barrier.wait
+
+            def wait():
+                if threading.current_thread().name.startswith("stage2-query-"):
+                    barrier_observations.append(threading.get_ident() in connected)
+                return original_wait()
+
+            barrier.wait = wait
+            return barrier
+
+        with mock.patch.object(clickhouse.http.client, "HTTPConnection", side_effect=connection_factory), mock.patch.object(
+            adapter, "connect_worker", side_effect=transport.connect_worker
+        ), mock.patch.object(runner.threading, "Barrier", side_effect=barrier_factory):
+            runner.run_ingest_with_queries(adapter, self.blocks(), self.concurrent_truth(), 2)
+        self.assertEqual(barrier_observations, [True, True])
+        self.assertEqual(len(adapter.connections), 2)
+        self.assertEqual({id(c) for c in adapter.connections}, {q[0] for q in adapter.query_calls})
+
     def test_execute_replaces_stale_manifest_when_validation_or_environment_fails(self):
         """阻止参数或环境失败保留旧 complete manifest 或遗漏失败诊断。"""
         rows, truth, args = self._execution_fixture()

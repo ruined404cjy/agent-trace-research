@@ -444,6 +444,8 @@ def _publish_manifest(output_dir, manifest, status, artifacts, error=None):
     result["status"] = status
     if error is not None:
         result["error"] = {"message": str(error), "type": type(error).__name__}
+        if getattr(error, "__notes__", None):
+            result["error"]["notes"] = list(error.__notes__)
     _write_json(Path(output_dir) / "run-manifest.json", result)
 
 
@@ -591,9 +593,11 @@ def execute(args):
         for layout in layout_order:
             session = _LayoutSession(adapter, layout)
             layout_result = {"layout": layout, "status": "failed"}
-            cleanup = {"removed": False}
+            owned = False
+            cleanup = {"removed": False, "skipped": True, "reason": "not_owned"}
             try:
                 created = adapter.create_layout(layout, truth["native_json"]["path_budget"])
+                owned = True
                 layout_result["ddl"] = {
                     "sha256": hashlib.sha256(created["ddl"].encode("utf-8")).hexdigest(),
                     "identity": created,
@@ -623,11 +627,14 @@ def execute(args):
                 layout_result["status"] = "complete"
             except Exception as error:
                 layout_result["error"] = {"message": str(error), "type": type(error).__name__}
+                if getattr(error, "__notes__", None):
+                    layout_result["error"]["notes"] = list(error.__notes__)
                 all_layouts_ok = False
                 raise
             finally:
                 try:
-                    cleanup = adapter.cleanup(layout)
+                    if owned:
+                        cleanup = adapter.cleanup(layout)
                 except Exception as cleanup_error:
                     cleanup = {"error": {"message": str(cleanup_error), "type": type(cleanup_error).__name__}, "removed": False}
                     all_layouts_ok = False
