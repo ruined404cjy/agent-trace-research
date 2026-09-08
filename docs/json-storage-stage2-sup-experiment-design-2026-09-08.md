@@ -15,7 +15,7 @@
 3. ClickHouse Native JSON 的 type hint、动态路径预算、data part、merge、`OPTIMIZE FINAL` 和 Sidecar 在完整流程中的作用；
 4. 四种候选布局在统一 workload 下的适用场景。
 
-[阶段二正式报告](json-storage-stage2-report-2026-09-08.md)及其正式根保持冻结。本实验使用新契约、新 run ID 和独立结果目录，不覆盖或重新解释阶段二已有结果。[阶段三实验](json-storage-stage3-experiment-design-2026-09-08.md)继续负责 Full/Core、长 payload 和 asset reference。
+[阶段二原实验目录](temp/json-storage-stage2/formal-20260907-retry-3/)及其中的实验数据保持不变。本实验使用新契约、新运行编号和独立结果目录，不覆盖或重新解释阶段二已有结果。[阶段二报告](json-storage-stage2-report-2026-09-08.md)在保留原实验身份和证据边界的基础上补充四结构结果，并按核心处理流程调整章节。[阶段三实验](json-storage-stage3-experiment-design-2026-09-08.md)继续负责 Full/Core、长 payload 和 asset reference。
 
 本实验不覆盖 Map、饱和吞吐、冷缓存、多节点、故障恢复、Collector/exporter 全链路和对象存储。数据库空间保留引擎原生口径，不计算跨引擎压缩比例。
 
@@ -27,9 +27,9 @@
 experiments/json-storage-stage2-sup/
   README.md
   generator/generate_supplement_truth.py
-  runner/common.py
-  runner/opengauss.py
-  runner/clickhouse.py
+  runner/supplement_common.py
+  runner/opengauss_four_layout.py
+  runner/clickhouse_four_layout.py
   runner/run_four_layouts.py
   runner/run_clickhouse_mechanisms.py
   report/summarize_results.py
@@ -46,7 +46,7 @@ docs/temp/json-storage-stage2-sup/
   clickhouse-mechanisms-*/
 ```
 
-`input-20260908/` 只保存补充 truth、查询 catalog 和来源 manifest，不复制 302,518,948 bytes 的阶段二 dataset。来源文件路径、字节数和 SHA-256 写入 manifest。正式结果完成后生成 `docs/json-storage-stage2-sup-pre-YYYY-MM-DD.md`，作为组内进展汇报辅助材料。
+`input-20260908/` 只保存补充 truth、查询 catalog 和来源 manifest，不复制 302,518,948 bytes 的阶段二 dataset。来源文件路径、字节数和 SHA-256 写入 manifest。正式结果完成后更新阶段二报告，并生成 `docs/json-storage-stage2-sup-pre-YYYY-MM-DD.md` 作为组内进展汇报辅助材料。
 
 ## 3. 输入与预处理边界
 
@@ -77,14 +77,14 @@ docs/temp/json-storage-stage2-sup/
 
 所有布局具有相同的身份、时间、项目和稳定分析列，并保存独立 raw 表。
 
-| layout ID | 引擎 | residual 结构 | 附加加速 |
+| 存储布局编号 | 引擎 | 动态属性列 | 附加加速 |
 |---|---|---|---|
 | `og_json` | openGauss 6.0.0 | `attributes JSON NOT NULL` | 无 |
 | `og_jsonb` | openGauss 6.0.0 | `attributes JSONB NOT NULL` | 无 |
 | `ch_string` | ClickHouse 25.12.11.4 | `attributes String CODEC(ZSTD(3))` | 无 |
 | `ch_native` | ClickHouse 25.12.11.4 | `attributes JSON(max_dynamic_paths=32)` | 稀疏 `fidelity_values Map(String,String)` |
 
-`ch_native` 的稀疏 Sidecar 仅保存递归包含 JSON null、空对象或空数组的原始 Attribute canonical value。它与 Native JSON 一起构成可恢复的分析布局，成本计入载入、空间和完整读取。四结构都通过独立 raw 表恢复摄入原文。
+`ch_native` 的稀疏保真 Sidecar 仅保存递归包含 JSON null、空对象或空数组的原始 Attribute canonical value。它与 ClickHouse Native JSON 一起构成可恢复的分析存储布局，成本计入载入、空间和完整读取。四种结构都通过独立 raw 表恢复摄入原文。
 
 基础矩阵不创建 GIN、表达式索引、type hint、投影或物化热点列。Native JSON 的自动动态子列属于该类型的基础物理组织，不视为额外索引。
 
@@ -149,7 +149,7 @@ ClickHouse 机制观察建立以下布局：
 
 ## 6. ClickHouse 载入、merge 与 FINAL 流程
 
-机制 runner 对其拥有的临时表执行以下步骤：
+机制实验程序对其创建的临时表执行以下步骤：
 
 1. 创建 MergeTree 表，并对该表暂停后台 merge；
 2. 写入多个 block，记录首个 part 和全部零层 part 的列、压缩空间、dynamic/shared paths 与实际类型；
@@ -177,7 +177,7 @@ ClickHouse 机制观察建立以下布局：
 
 每轮记录预处理、analysis INSERT、raw INSERT、完整 block、维护和查询的分项耗时。openGauss 记录 heap、TOAST、index 和总分配空间；ClickHouse 记录 active part 压缩/未压缩 bytes、part、dynamic/shared paths 和 QueryFinish 指标。两引擎共同报告客户端完整响应延迟、返回 bytes、正确性和请求等价速率；引擎专有指标不做数值等同。
 
-manifest 记录 run ID、状态、完整命令、四布局顺序、输入 lineage、数据和 truth SHA-256、代码/DDL/查询摘要、容器镜像 digest、服务端版本、宿主资源、测量参数、正确性、维护、产物 SHA-256 和 cleanup。失败轮次使用新 run ID 重跑，失败产物只作诊断。
+运行清单记录运行编号、状态、完整命令、四种存储布局的顺序、输入来源、数据和 truth SHA-256、代码/DDL/查询摘要、容器镜像 digest、服务端版本、宿主资源、测量参数、正确性、维护、产物 SHA-256 和清理结果。失败轮次使用新的运行编号重跑，失败产物只作诊断。
 
 ## 8. 执行门槛与停止条件
 
@@ -187,12 +187,20 @@ manifest 记录 run ID、状态、完整命令、四布局顺序、输入 lineag
 2. 单元测试；
 3. openGauss JSON/JSONB 运算符与表达式索引能力探针；
 4. ClickHouse type hint、表级 merge 控制和路径库存探针；
-5. 每引擎至少一个小数据 smoke run；
+5. 每个引擎至少完成一次小数据验证；
 6. 四轮正式运行与确定性汇总。
 
-Docker daemon、固定镜像或端口不可用时停止数据库 smoke 和正式运行，代码与单元测试可以继续。输入身份、truth、容器版本、查询结果、恢复或 cleanup 任一门禁失败时发布诊断结果，不进入正式汇总。
+Docker 服务、固定镜像或端口不可用时停止数据库小数据验证和正式运行，代码与单元测试可以继续。输入身份、truth、容器版本、查询结果、恢复或清理任一门禁失败时发布诊断结果，不进入正式汇总。
 
-## 9. 汇报辅助材料
+## 9. 报告与汇报辅助材料
+
+阶段二报告和汇报辅助材料按以下顺序组织：
+
+1. openGauss JSONB 的输入、解析、二进制表示、索引维护、路径查询和完整 JSON 返回流程；
+2. ClickHouse Native JSON 的输入、解析、类型识别、dynamic path/shared data 分配、data part 写入、后台 merge、`OPTIMIZE TABLE ... FINAL` 和读取流程；
+3. Sidecar 对比需要解决的原始信息缺口、增加的数据和新增恢复步骤；
+4. openGauss JSON、openGauss JSONB、ClickHouse String JSON、ClickHouse Native JSON 在基础载入、路径查询、完整 JSON 和特殊负载中的结果；
+5. 证据边界和布局选择建议。
 
 `json-storage-stage2-sup-pre-YYYY-MM-DD.md` 按以下结构组织：
 
@@ -213,6 +221,7 @@ Docker daemon、固定镜像或端口不可用时停止数据库 smoke 和正式
 - S01～S05 每布局每轮各 100 个样本，S06 各 20 个样本，全部通过 truth；
 - ClickHouse 四种机制布局和 FINAL 正确性探针完成；
 - 汇总器从原始产物重算结果，两次输出 bytes 和 SHA-256 一致；
+- 阶段二报告按核心处理流程重组，原正式结果与补充结果分别标识来源；
 - 汇报辅助材料中的数字均可定位到正式 summary 或机制 manifest；
 - 运行后无实验临时数据库对象、暂停 merge 状态或 active merge。
 
