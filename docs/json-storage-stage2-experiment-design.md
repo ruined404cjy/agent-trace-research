@@ -123,9 +123,9 @@ generator 同时输出：
 | openGauss | `og_jsonb_gin` | 同一 `JSONB`，增加 `jsonb_ops` GIN 通用索引 |
 | ClickHouse | `ch_string` | nested canonical JSON `String CODEC(ZSTD(3))` |
 | ClickHouse | `ch_map` | `Map(String,String)`，value 为 canonical JSON 字符串 |
-| ClickHouse | `ch_native` | 审计派生 `max_dynamic_paths` 的 native `JSON` |
+| ClickHouse | `ch_native` | 审计派生 `max_dynamic_paths` 的 native `JSON`，加稀疏 `fidelity_values Map(String,String)` |
 
-ClickHouse native JSON 只承担路径分析。raw 表承担字节级恢复，避免把 native JSON 的空容器、missing/null 和含点键重建语义误写为原文能力。Map 查询使用原始 Attribute key；String、JSONB 和 native JSON 查询使用嵌套分析路径。
+ClickHouse native JSON 负责路径分析。`ch_native` 的 analytics 表同时保存稀疏 `fidelity_values Map(String,String)`：仅当一个原始 Attribute 的值递归包含 `null`、空对象或空数组时，保存该原始 Attribute key 与完整 canonical JSON value。Q04 先从 native JSON residual 恢复，再以该 Map 覆盖对应 key，从而恢复 native JSON 无法区分的状态；该 Map 作为 analytics residual 的可逆状态补充，其字节计入 analytics 空间。raw 表只承担逐行原始 UTF-8 bytes 恢复，native JSON 和 `fidelity_values` 都不承担原文恢复。Map 查询使用原始 Attribute key；String、JSONB 和 native JSON 查询使用嵌套分析路径。
 
 ### 5.2 公共查询
 
