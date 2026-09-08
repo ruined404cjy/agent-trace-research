@@ -14,7 +14,9 @@ Agent Trace 的公开调研、复现指南和实验设计。仓库当前重点�
 |---|---|
 | [JSON 存储阶段一机制报告](docs/json-storage-stage1-report-2026-09-07.md) | 汇总阶段一背景与基线、openGauss/ClickHouse 引擎内实测、机制结论和阶段二入口 |
 | [JSON 存储设计调研](docs/json-storage-design-survey.md) | 代表性系统、论文、现有项目状态、工程结论与遗留问题 |
-| [JSON 存储穿刺与对比实验设计](docs/json-storage-spike-experiment-design.md) | 多字段、Full/Core 与长 payload 实验的数据、workload、指标和门槛 |
+| [JSON 存储阶段一实验设计](docs/json-storage-stage1-experiment-design.md) | 阶段一多字段机制实验及顺延目标的数据、workload、指标和门槛 |
+| [JSON 存储阶段二实验设计](docs/json-storage-stage2-experiment-design.md) | 真实 Trace 审计与 openGauss/ClickHouse residual 统一横向实验 |
+| [JSON 存储阶段三实验设计](docs/json-storage-stage3-experiment-design.md) | inline、独立 payload 表、Full/Core 与 asset reference 实验 |
 | [OTel 与 Langfuse 学习指南](docs/otel-langfuse-study-guide.md) | OTel、Collector、GenAI 语义和 Langfuse 摄入链路 |
 | [蓝区复现指南](docs/trace-ingestion-demo-blue-zone-guide.md) | 历史固定版本的标准 openGauss row profile 复现 |
 | [黄区复现指南](docs/trace-ingestion-demo-yellow-zone-guide.md) | 历史固定版本的 GV xstore 复现 |
@@ -22,11 +24,11 @@ Agent Trace 的公开调研、复现指南和实验设计。仓库当前重点�
 ## 当前状态
 
 - 资料基线日期：2026-09-07。
-- exporter main：`9a49c8a9d6091633112fe793fcf12310859aeb7f`；18 列 schema 冻结：`0c26c9ecf03acf0bd6aa3a3c103ba4e7a78b523a`。
-- trace-synthesis main：`6472d8e1ac6cdb42494b79b28d4d5361919d4776`。
+- exporter 远端 main：`81b55be6d6912d18c4e2ac7102fd7906e9dac3e8`；SPEC v1.8 仍冻结 18 列最小 OTel schema。
+- trace-synthesis 远端 main：`ef3be141cc17415de9fb5a9d8003c16a4cd679ac`；v4 database catalog revision 仍为 `2026-09-02.3`、28 列。
 - 已验证历史配对：benchmark `9529c8f389673132757f4da9a96878926f22b94f`、exporter `54ca553a7ed09ad1751c82adab3aa52c6e9357b1`。
 - Langfuse 已确认基线：`983c2a6e5bbe9e8f35fe10eb017c9abd6220833b`。
-- exporter main 为 18 列；trace-synthesis main v4 database catalog 仍为 28 列，两仓 main 尚未形成联合冻结。系统级回归使用已验证历史配对；独立机制实验记录 `data_path=independent_loader`。
+- exporter 远端 main 为 18 列；trace-synthesis 远端 main 的 v4 database catalog 仍为 28 列，两仓尚未形成联合冻结。系统级回归使用已验证历史配对；独立机制实验记录 `data_path=independent_loader`。
 - 蓝区和黄区指南固定在历史三表版本，不能直接与当前 events 单宽表 exporter 混用。
 
 ## 来源与发布边界

@@ -1,6 +1,6 @@
-# Agent Trace JSON 存储第一阶段穿刺实验设计
+# Agent Trace JSON 存储阶段一实验设计
 
-> 状态：实验执行中；标准 openGauss 6.0.0 JSONB 矩阵和裁剪后的 ClickHouse 机制矩阵已完成
+> 状态：阶段一已结束；多字段 JSON 机制矩阵已完成，Full/Core 与 asset 实验顺延阶段三
 > 日期：2026-09-04
 > 范围：多字段 JSON、Full/Core、JSON 长字段与外部引用
 > 配套调研：[json-storage-design-survey.md](json-storage-design-survey.md)
@@ -10,11 +10,13 @@
 
 第一阶段通过小型、可独立执行的实验验证三类存储机制：
 
-1. 标准 openGauss JSONB 定向索引与 ClickHouse native JSON 动态子列在多字段 JSON 上的差异。
+1. 标准 openGauss JSONB 索引与 ClickHouse native JSON 动态子列各自在多字段 JSON 上的机制和边界。
 2. Full/Core 物理分层对列表查询、预览读取和完整详情读取的影响。
 3. 数据库内联大值与外部 asset 引用在空间、读取和完整性方面的差异。
 
 实验回答机制问题，不对完整产品或数据库作综合排名。现有 exporter、benchmark、 Langfuse 和 Tempo 用于提供实现证据，不要求直接改造、替换或完整复现。
+
+阶段一实际完成目标 1 的引擎内机制实验。目标 2、3 已形成实验设计，尚未实现 runner 或正式运行；两项目标合并进入 [阶段三实验设计](json-storage-stage3-experiment-design.md)。阶段二只执行 residual 的 openGauss/ClickHouse 统一横向比较。
 
 ## 2. 当前边界
 
@@ -181,7 +183,7 @@ ClickHouse native `JSON` 按叶路径扁平存储，不能称为 PostgreSQL/open
 
 预算边界、混合密度和等单行宽度实验达到本阶段目标。limited 布局在 98 条业务路径加两个热点路径时为 100 dynamic / 0 shared，增加一条业务路径后为 100 dynamic / 1 shared。混合密度 profile 让 98 条长尾路径先占满业务路径预算；三轮 merge 均换入 50 条高/中密度路径并换出 50 条长尾路径，排除了按字典序或首次出现顺序保留的解释。最终保留全部 10 条 95% 路径、全部 40 条 20% 路径和 48 条 1% 路径，其余 402 条 1% 路径进入 shared data。固定每行约 50 个动态字段时，路径全集从 50 增至 5000，native merge 中位数从约 0.27–0.29 s 增至约 32 s；直接子列查询显著减少读取量，但完整 native 对象重建比 String 内容读取慢约 65–102 倍，canonical sidecar 恢复到 String 同量级。native 载入吞吐和 sidecar 后总空间高于 String。详细数字见 [9 月 7 日阶段一报告](json-storage-stage1-report-2026-09-07.md)。
 
-## 5. 实验二：Full/Core 物理分层
+## 5. 实验二：Full/Core 物理分层（顺延阶段三）
 
 ### 5.1 最小实现
 
@@ -214,7 +216,7 @@ events_core
 
 如果稳定列查询已经能完全裁剪大列，报告该事实；Full/Core 的结论只保留 preview 计算、回查和写放大方面的差异，不把预期收益写成既定结果。
 
-## 6. 实验三：长 payload 的内联与引用
+## 6. 实验三：长 payload 的内联与引用（顺延阶段三）
 
 ### 6.1 比较对象
 
@@ -276,8 +278,8 @@ events_core
 4. 黄区可用时使用相同输入和 truth 运行 GaussVector 正确性 profile。
 5. 使用已验证提交配对或完成列数适配的版本运行当前项目系统级 workload。
 6. 运行多字段 JSON 机制实验。
-7. 复用可用列式实例运行 Full/Core 实验。
-8. 运行长 payload 内联与引用实验。
+7. Full/Core 实验未在阶段一执行，按阶段三统一四布局契约实施。
+8. 长 payload 内联与引用实验未在阶段一执行，按阶段三原文恢复和 asset 故障门禁实施。
 9. 正确性契约明确后，运行带时间范围查询和持续分批摄入的第二阶段对照。
 
 任一候选出现以下情况时停止扩展：
@@ -325,7 +327,7 @@ experiments/json-storage-stage1/
 
 Tempo dedicated columns、KV/EAV、Parquet Variant、完整 Langfuse 复现和大规模容量实验均作为后续选项，不在第一阶段预先排期。
 
-预算边界、混合密度和等单行宽度组已经完成。紧接的路径工作是完成真实 Trace 窗口审计，再决定 `50/500 × 1%/5%/20%/50%/95%` 中的代表性主梯度；2% 和 10% 只细化已发现的转折。面向目标实时分析负载的后续布局比较包括“强类型列 + String residual”“强类型列 + Map”和“强类型列 + 有路径预算的 native JSON”，并加入持续写入、后台 merge 与并发查询。长字段同时比较同表独立列、独立 payload 表、Full/Core 物化和 asset reference。九组均匀密度产物保留为机制资产；`5000×20%` 和 `5000×95%` 缺少场景依据，不进入当前结论。
+预算边界、混合密度和等单行宽度组已经完成。[阶段二](json-storage-stage2-experiment-design.md)审计真实 Trace 窗口并统一比较“强类型列 + String residual”“强类型列 + Map”和“强类型列 + 有路径预算的 native JSON”，同时加入持续写入、后台 merge 与并发查询。[阶段三](json-storage-stage3-experiment-design.md)比较同表独立列、独立 payload 表、Full/Core 物化和 asset reference。九组均匀密度产物保留为机制资产；`5000×20%` 和 `5000×95%` 缺少场景依据，不进入阶段一结论。
 
 ## 11. 参考资料
 

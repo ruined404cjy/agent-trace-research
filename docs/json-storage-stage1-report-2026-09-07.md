@@ -248,7 +248,7 @@ Tempo 的 intrinsic/dedicated columns、Parquet Variant shredding、Sinew 的物
 | 保留未运行 | `50/500 × 1%/5%/20%/50%/95%` | 真实 Trace 审计后选择；梯度值不表示字段提升阈值 |
 | 当前裁剪 | `5000×20%`、`5000×95%` | 每行约 1000 和 4750 个字段，缺少场景依据 |
 
-多字段的阶段一结论是：稳定分析字段应从动态路径竞争中移出；动态 residual 必须设置预算；人工字段提升以查询用途和收益为入口，再结合密度、类型稳定性、基数和值长；当前数据不能确定通用密度阈值。长字段尚未完成布局性能实验。当前仅形成“分析特征与完整 payload 分层”的候选方向，同表独立列、独立 payload 表、Full/Core 物化双表和 asset reference 留到阶段二统一比较。
+多字段的阶段一结论是：稳定分析字段应从动态路径竞争中移出；动态 residual 必须设置预算；人工字段提升以查询用途和收益为入口，再结合密度、类型稳定性、基数和值长；当前数据不能确定通用密度阈值。长字段尚未完成布局性能实验。当前仅形成“分析特征与完整 payload 分层”的候选方向，同表独立列、独立 payload 表、Full/Core 物化双表和 asset reference 留到阶段三统一比较。
 
 ## 6. 证据边界
 
@@ -263,11 +263,13 @@ Tempo 的 intrinsic/dedicated columns、Parquet Variant shredding、Sinew 的物
 
 ## 7. 阶段二实验与报告边界
 
-阶段二在真实 Trace 窗口审计和联合基线冻结后执行。审计按 tenant/project、Agent/工作流、instrumentation 版本和时间窗口统计 `P/W/dᵢ/cᵢ/Tᵢ/Lᵢ/E`，并据此确定代表性混合 profile。横向实验统一行数、输入字节、INSERT block、时间窗口、查询选择性、返回内容、正确性门禁和原文保存范围；openGauss 比较强类型列加 JSONB residual 及定向/通用索引，ClickHouse 比较强类型列加 String、Map 和有预算的 native JSON。
+阶段二在真实 Trace 窗口审计和两仓最新状态核对后执行。两仓尚未形成联合冻结，阶段二固定使用 `independent_loader`。审计按数据实际提供的 Agent/工作流、framework、schema version 和时间窗口统计 `P/W/dᵢ/cᵢ/Tᵢ/Lᵢ/E`，并显式记录不可获得的 tenant/project 和 instrumentation 维度。横向实验统一行数、输入字节、INSERT block、时间窗口、查询选择性、返回内容、正确性门禁和原文保存范围；openGauss 比较强类型列加 JSONB residual 及定向/通用索引，ClickHouse 比较强类型列加 String、Map 和有预算的 native JSON。
 
-阶段二同时加入持续分批写入、后台维护和并发查询，记录写入吞吐与 p95/p99 延迟、索引维护、active part、merge backlog、查询尾延迟、压缩空间和整对象读取。长 payload 比较同表独立列、`events_analytics + event_payloads`、Full/Core 物化双表和 `events_analytics + asset reference`，再决定 payload 与分析字段的物理分层。
+阶段二同时加入持续分批写入、后台维护和并发查询，记录写入吞吐与 p95/p99 延迟、索引维护、active part、merge backlog、查询尾延迟、压缩空间和整对象读取。每个 worker 在阶段内复用独立连接；延迟覆盖请求到结果完整读取，正确性校验位于计时区间外；正式统计只使用全部成功的轮次。QPS 作为请求等价速率报告。
 
-阶段二结果单独形成 `json-storage-stage2-cross-engine-report-YYYY-MM-DD.md`。该报告引用本报告和 [JSON 存储设计调研](json-storage-design-survey.md)，只记录基线增量、统一实验、横向结果和最终建议，不重复阶段一的完整背景与单引擎机制过程。实验完成前，方案和门禁继续维护在 [JSON 存储穿刺实验设计](json-storage-spike-experiment-design.md)，不预先填写结果报告。
+阶段二结果单独形成 `json-storage-stage2-cross-engine-report-YYYY-MM-DD.md`。该报告引用本报告和 [JSON 存储设计调研](json-storage-design-survey.md)，只记录基线增量、统一实验、横向结果和最终建议，不重复阶段一的完整背景与单引擎机制过程。实验完成前，方案和门禁维护在 [JSON 存储阶段二实验设计](json-storage-stage2-experiment-design.md)，不预先填写结果报告。
+
+Full/Core、长 payload 和 asset reference 在 [阶段三实验设计](json-storage-stage3-experiment-design.md)中统一比较。阶段三独立记录写放大、空间、列表与详情读取、原文恢复和 asset 故障结果，不与阶段二 residual 指标合并排名。
 
 ## 8. 发布范围
 
@@ -279,7 +281,9 @@ Tempo 的 intrinsic/dedicated columns、Parquet Variant shredding、Sinew 的物
 
 - [第一阶段实验基础设施与结果](../experiments/json-storage-stage1/README.md)
 - [JSON 存储设计调研](json-storage-design-survey.md)
-- [第一阶段穿刺实验设计](json-storage-spike-experiment-design.md)
+- [阶段一实验设计](json-storage-stage1-experiment-design.md)
+- [阶段二实验设计](json-storage-stage2-experiment-design.md)
+- [阶段三实验设计](json-storage-stage3-experiment-design.md)
 
 ### 9.2 官方资料与论文
 

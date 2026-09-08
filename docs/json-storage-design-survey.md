@@ -3,7 +3,7 @@
 > 状态：调研结论，供方案选择和穿刺实验使用
 > 调研日期：2026-09-04
 > 范围：多字段 JSON、JSON 内长值、Trace 大 payload、热点字段、半结构化查询
-> 配套实验设计：[json-storage-spike-experiment-design.md](json-storage-spike-experiment-design.md)
+> 阶段一实验设计：[json-storage-stage1-experiment-design.md](json-storage-stage1-experiment-design.md)
 > 阶段一报告：[json-storage-stage1-report-2026-09-07.md](json-storage-stage1-report-2026-09-07.md)
 
 ## 1. 结论
@@ -392,7 +392,7 @@ langfuse: OTLP -> Langfuse ingestion/worker -> ClickHouse/PostgreSQL/MinIO
 
 端到端结果属于系统级比较，包含接收、队列、转换、schema 和存储实现的共同影响。数据库 JSON 能力比较需要使用独立 loader，或采集分段时延、CPU 和 bytes read，拆分摄入层与数据库执行。系统级结果与引擎级结果分别报告。
 
-详细数据规格、workload、指标和运行门槛见配套的 [JSON 存储穿刺与对比实验设计](json-storage-spike-experiment-design.md)。
+阶段一数据规格、workload、指标和运行门槛见 [JSON 存储阶段一实验设计](json-storage-stage1-experiment-design.md)；residual 统一横向契约见 [JSON 存储阶段二实验设计](json-storage-stage2-experiment-design.md)；Full/Core、长 payload 和 asset reference 见 [阶段三实验设计](json-storage-stage3-experiment-design.md)。
 
 ### 5.2 证据与修改层次
 
