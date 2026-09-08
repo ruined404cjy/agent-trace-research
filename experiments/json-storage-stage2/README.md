@@ -2,6 +2,8 @@
 
 本目录比较 openGauss 6.0.0 与 ClickHouse 25.12.11.4 的 residual JSON 布局。数据路径固定为 `independent_loader`，不经过 Collector、exporter、benchmark 或产品服务。
 
+阶段二已完成 6 个正式 run、18 个布局结果。结论见[阶段二横向报告](../../docs/json-storage-stage2-cross-engine-report-2026-09-07.md)。正式统计仅使用 `formal-20260907-retry-2/`；`formal-20260907/`、`formal-20260907-retry-1/` 的全部产物只用于诊断。
+
 ## 依赖与输入
 
 使用 Python 3.11、`psycopg`、两个已运行的数据库容器和冻结输入。正式输入目录必须由生成器发布完成 manifest，默认位置为 `docs/temp/json-storage-stage2/cross-engine-input-20260907/`。runner 校验 dataset、truth、block size、watermark、identity 和可比性契约。
@@ -65,3 +67,13 @@ HTTP 参数固定为测量请求 `log_queries=1`，管理请求 `log_queries=0`�
 find docs/temp/json-storage-stage2/formal-20260907-retry-2 -name run-manifest.json -print0 \
   | xargs -0 -n1 jq -r '[.status,.engine,.round,.gates.correctness,.gates.raw_recovery,.gates.cleanup] | @tsv'
 ```
+
+## 汇总
+
+```bash
+python3 experiments/json-storage-stage2/report/summarize_results.py \
+  --input docs/temp/json-storage-stage2/formal-20260907-retry-2 \
+  --output docs/temp/json-storage-stage2/formal-20260907-retry-2/summary
+```
+
+汇总器校验六轮身份、18 个 result 的字节数/SHA、布局与轮次、样本/truth、原文恢复、维护和清理。ClickHouse 每个正式样本必须具有八项 QueryFinish 指标。指标由原始 block/sample 重算，使用每轮 nearest-rank 与三轮 median/min/max；JSON 输出不包含当前时间，支持字节级重复验证。空间分别标注 openGauss 分配字节和 ClickHouse active part 压缩字节。

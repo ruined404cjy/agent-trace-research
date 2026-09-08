@@ -1,6 +1,6 @@
 # Agent Trace JSON 存储阶段二实验设计
 
-> 状态：待执行
+> 状态：已完成，6 个正式 run、18 个布局结果通过门禁
 > 日期：2026-09-07
 > 数据路径：`independent_loader`
 > 上游边界：[阶段一报告](json-storage-stage1-report-2026-09-07.md)第 6、7 节
@@ -37,7 +37,7 @@ experiments/json-storage-stage2/
   tests/
 ```
 
-运行产物位于 gitignored 的 `docs/temp/json-storage-stage2/`。每个产物目录最后写入 `run-manifest.json`；缺少该文件或 `status` 不是 `complete` 的目录不构成有效运行。最终结果写入 `docs/json-storage-stage2-cross-engine-report-YYYY-MM-DD.md`。
+运行产物位于 gitignored 的 `docs/temp/json-storage-stage2/`。每个产物目录最后写入 `run-manifest.json`；缺少该文件或 `status` 不是 `complete` 的目录不构成有效运行。唯一正式统计根为 `formal-20260907-retry-2/`，结果见[阶段二横向报告](json-storage-stage2-cross-engine-report-2026-09-07.md)。
 
 ## 3. 真实 Trace 分布审计
 

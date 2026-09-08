@@ -7,12 +7,14 @@ Agent Trace 的公开调研、复现指南和实验设计。仓库当前重点�
 | 实验 | 状态与用途 |
 |---|---|
 | [JSON 存储第一阶段实验基础设施](experiments/json-storage-stage1/README.md) | 生成正确性与路径组织数据，并记录 openGauss JSONB 与 ClickHouse native JSON 实验结果 |
+| [JSON 存储阶段二横向实验](experiments/json-storage-stage2/README.md) | 已完成真实输入审计、六轮 residual 横向实验、正确性与原文恢复验证 |
 
 ## 文档
 
 | 文档 | 状态与用途 |
 |---|---|
 | [JSON 存储阶段一机制报告](docs/json-storage-stage1-report-2026-09-07.md) | 汇总阶段一背景与基线、openGauss/ClickHouse 引擎内实测、机制结论和阶段二入口 |
+| [JSON 存储阶段二横向报告](docs/json-storage-stage2-cross-engine-report-2026-09-07.md) | 统一契约下的六布局写入、静态与并发查询、空间和异常证据；唯一正式根为 `formal-20260907-retry-2/` |
 | [JSON 存储设计调研](docs/json-storage-design-survey.md) | 代表性系统、论文、现有项目状态、工程结论与遗留问题 |
 | [JSON 存储阶段一实验设计](docs/json-storage-stage1-experiment-design.md) | 阶段一多字段机制实验及顺延目标的数据、workload、指标和门槛 |
 | [JSON 存储阶段二实验设计](docs/json-storage-stage2-experiment-design.md) | 真实 Trace 审计与 openGauss/ClickHouse residual 统一横向实验 |
@@ -24,6 +26,7 @@ Agent Trace 的公开调研、复现指南和实验设计。仓库当前重点�
 ## 当前状态
 
 - 资料基线日期：2026-09-07。
+- 阶段二正式统计根为 `docs/temp/json-storage-stage2/formal-20260907-retry-2/`；`formal-20260907/`、`formal-20260907-retry-1/` 的产物仅保留诊断。
 - exporter 远端 main：`81b55be6d6912d18c4e2ac7102fd7906e9dac3e8`；SPEC v1.8 仍冻结 18 列最小 OTel schema。
 - trace-synthesis 远端 main：`ef3be141cc17415de9fb5a9d8003c16a4cd679ac`；v4 database catalog revision 仍为 `2026-09-02.3`、28 列。
 - 已验证历史配对：benchmark `9529c8f389673132757f4da9a96878926f22b94f`、exporter `54ca553a7ed09ad1751c82adab3aa52c6e9357b1`。
