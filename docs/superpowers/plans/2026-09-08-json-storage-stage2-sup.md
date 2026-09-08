@@ -34,6 +34,7 @@
 | `experiments/json-storage-stage2-sup/runner/opengauss_four_layout.py` | openGauss JSON/JSONB DDL、载入、查询、恢复、空间和清理 |
 | `experiments/json-storage-stage2-sup/runner/clickhouse_four_layout.py` | ClickHouse String JSON/Native JSON DDL、载入、查询、Sidecar、part、merge 和清理 |
 | `experiments/json-storage-stage2-sup/runner/run_four_layouts.py` | 单轮四结构顺序执行、环境采集、失败处理和 manifest 发布 |
+| `experiments/json-storage-stage2-sup/runner/run_opengauss_mechanisms.py` | JSON/JSONB 热点表达式索引配对及 JSONB GIN 能力观察 |
 | `experiments/json-storage-stage2-sup/runner/run_clickhouse_mechanisms.py` | type hint、Sidecar、merge、`OPTIMIZE TABLE ... FINAL` 与 `SELECT ... FINAL` 观察 |
 | `experiments/json-storage-stage2-sup/report/summarize_results.py` | 校验四轮 16 个结果并生成确定性 JSON/Markdown 汇总 |
 | `experiments/json-storage-stage2-sup/tests/` | truth、适配、运行、汇总和数据库集成测试 |
@@ -227,7 +228,7 @@
 **Interfaces:**
 - Consumes: Tasks 1～3 的 truth、公共契约和两个适配器
 - Produces: 每轮 `run-manifest.json`、四个 `result-<layout>.json`、`summary.json`、`tables.md`
-- CLI: `run_four_layouts.py --input ... --truth ... --output ... --round 1 --layout-order ...`
+- CLI: `run_four_layouts.py --input ... --truth ... --output ... --round 1 --layout-order ... --opengauss-container ... --clickhouse-container ...`
 - CLI: `summarize_results.py --input ... --output ...`
 
 - [ ] **Step 1: 编写失败的编排、失败发布和汇总测试**
@@ -244,7 +245,7 @@
 - [ ] **Step 2: 运行测试并确认因编排和汇总缺失而失败**
 
   ```bash
-  python3 -m unittest experiments/json-storage-stage2-sup/tests/test_run_four_layouts.py \
+  /home/omm/work/agent-trace/trace-synthesis/.venv/bin/python -m unittest experiments/json-storage-stage2-sup/tests/test_run_four_layouts.py \
     experiments/json-storage-stage2-sup/tests/test_summarize_results.py -v
   ```
 
@@ -261,25 +262,38 @@
 - [ ] **Step 5: 运行完整单元测试并提交**
 
   ```bash
-  python3 -m unittest discover -s experiments/json-storage-stage2-sup/tests -v
+  /home/omm/work/agent-trace/trace-synthesis/.venv/bin/python -m unittest discover -s experiments/json-storage-stage2-sup/tests -v
   git add experiments/json-storage-stage2-sup/runner/run_four_layouts.py \
     experiments/json-storage-stage2-sup/report/summarize_results.py \
     experiments/json-storage-stage2-sup/tests
   git commit -m "feat: run four JSON storage layouts"
   ```
 
-### Task 5: ClickHouse Native JSON 机制观察
+### Task 5: openGauss JSONB 与 ClickHouse Native JSON 机制观察
 
 **Files:**
+- Create: `experiments/json-storage-stage2-sup/runner/run_opengauss_mechanisms.py`
 - Create: `experiments/json-storage-stage2-sup/runner/run_clickhouse_mechanisms.py`
+- Create: `experiments/json-storage-stage2-sup/tests/test_opengauss_mechanisms.py`
 - Create: `experiments/json-storage-stage2-sup/tests/test_clickhouse_mechanisms.py`
 
 **Interfaces:**
 - Consumes: Task 1 输入与 truth、Task 3 ClickHouse HTTP/恢复函数
-- Produces: 四种 Native JSON 变体的阶段观察、路径变化、Sidecar 结果和 FINAL 正确性结果
-- Public functions: `mechanism_ddls(database: str) -> dict[str, str]`、`validate_path_transition(before: dict, after: dict, expected: set[str]) -> dict`、`run_final_probe(...) -> dict`
+- Produces: openGauss JSON/JSONB 索引观察，四种 Native JSON 变体的阶段观察、路径变化、Sidecar 结果和 FINAL 正确性结果
+- Public functions: `opengauss_mechanism_ddls(schema: str) -> dict[str, str]`、`mechanism_ddls(database: str) -> dict[str, str]`、`validate_path_transition(before: dict, after: dict, expected: set[str]) -> dict`、`run_final_probe(...) -> dict`
 
-- [ ] **Step 1: 编写失败的机制 DDL 与状态转换测试**
+- [ ] **Step 1: 编写失败的 openGauss 索引机制测试**
+
+  ```python
+  ddls = opengauss_mechanism_ddls("s2sup_og_mech")
+  self.assertIn("attributes JSON NOT NULL", ddls["og_json_hot"])
+  self.assertIn("attributes JSONB NOT NULL", ddls["og_jsonb_hot"])
+  self.assertIn("CREATE INDEX", ddls["og_json_hot"])
+  self.assertIn("CREATE INDEX", ddls["og_jsonb_hot"])
+  self.assertIn("jsonb_hash_ops", ddls["og_jsonb_gin"])
+  ```
+
+- [ ] **Step 2: 编写失败的 ClickHouse 机制 DDL 与状态转换测试**
 
   ```python
   ddls = mechanism_ddls("s2sup_mech")
@@ -290,33 +304,39 @@
   self.assertTrue(validate_path_transition(before, after, expected_paths)["logical_paths_preserved"])
   ```
 
-- [ ] **Step 2: 运行测试并确认因机制 runner 缺失而失败**
+- [ ] **Step 3: 运行测试并确认因机制程序缺失而失败**
 
   ```bash
-  python3 -m unittest experiments/json-storage-stage2-sup/tests/test_clickhouse_mechanisms.py -v
+  /home/omm/work/agent-trace/trace-synthesis/.venv/bin/python -m unittest experiments/json-storage-stage2-sup/tests/test_opengauss_mechanisms.py -v
+  /home/omm/work/agent-trace/trace-synthesis/.venv/bin/python -m unittest experiments/json-storage-stage2-sup/tests/test_clickhouse_mechanisms.py -v
   ```
 
-  Expected: FAIL，缺少 `run_clickhouse_mechanisms.py`。
+  Expected: FAIL，缺少两个机制实验程序。
 
-- [ ] **Step 3: 实现按自然顺序记录的机制流程**
+- [ ] **Step 4: 实现 openGauss JSONB 和 ClickHouse Native JSON 的机制流程**
+
+  openGauss 使用相同输入比较 JSON/JSONB 无索引与热点表达式索引，记录 JSON 文本解析、JSONB 转换、COPY、索引维护、`ANALYZE`、自然执行计划、路径查询、完整 JSON 返回和 heap/TOAST/index 空间。`og_jsonb_gin` 使用 `jsonb_hash_ops` 和 containment，只说明 JSONB 特有查询能力，不与 JSON 计算性能比例。
 
   runner 只暂停自己创建表的 merge，并在 `finally` 恢复。依次记录 DDL、首个 INSERT 后、全部 INSERT 后、恢复后台 merge 并稳定后、`OPTIMIZE TABLE ... FINAL` 后的 data part、压缩空间、dynamic/shared paths 和路径类型。每个阶段执行固定 truth 查询；路径物理位置改变时仍要求逻辑路径全集和结果不变。
 
   Sidecar 组记录无 Sidecar 的 Native JSON 回读差异、稀疏保真 Sidecar 的条目数/字节/恢复耗时、完整文档 Sidecar 的字节/恢复耗时。type hint 组与自动路径组保持相同预算和 Sidecar，只改变两个热点路径的声明类型。
 
-- [ ] **Step 4: 实现 FINAL 正确性探针**
+- [ ] **Step 5: 实现 FINAL 正确性探针并验证**
 
   建立独立 `ReplacingMergeTree(version)` 小表，跨两个 data part 写同一主键的两个版本。普通查询返回两个物理版本；`SELECT ... FINAL` 返回最新逻辑版本；`OPTIMIZE TABLE ... FINAL` 后普通查询返回最新版本且 active part 为一个。该探针只记录正确性和 part 变化。
 
-- [ ] **Step 5: 运行测试并提交**
-
   ```bash
-  python3 -m unittest experiments/json-storage-stage2-sup/tests/test_clickhouse_mechanisms.py -v
+  /home/omm/work/agent-trace/trace-synthesis/.venv/bin/python -m unittest experiments/json-storage-stage2-sup/tests/test_opengauss_mechanisms.py -v
+  /home/omm/work/agent-trace/trace-synthesis/.venv/bin/python -m unittest experiments/json-storage-stage2-sup/tests/test_clickhouse_mechanisms.py -v
+  RUN_OPENGAUSS_INTEGRATION=1 /home/omm/work/agent-trace/trace-synthesis/.venv/bin/python -m unittest \
+    experiments/json-storage-stage2-sup/tests/test_opengauss_mechanisms.py -v
   RUN_CLICKHOUSE_INTEGRATION=1 python3 -m unittest \
     experiments/json-storage-stage2-sup/tests/test_clickhouse_mechanisms.py -v
-  git add experiments/json-storage-stage2-sup/runner/run_clickhouse_mechanisms.py \
+  git add experiments/json-storage-stage2-sup/runner/run_opengauss_mechanisms.py \
+    experiments/json-storage-stage2-sup/runner/run_clickhouse_mechanisms.py \
+    experiments/json-storage-stage2-sup/tests/test_opengauss_mechanisms.py \
     experiments/json-storage-stage2-sup/tests/test_clickhouse_mechanisms.py
-  git commit -m "feat: observe ClickHouse Native JSON lifecycle"
+  git commit -m "feat: observe JSON storage engine mechanisms"
   ```
 
 ### Task 6: 复现说明、正式运行与结果校验
@@ -336,10 +356,10 @@
   README 说明两个容器、端口、输入、四轮命令、机制命令、汇总命令、失败目录排除规则和清理核对。运行：
 
   ```bash
-  python3 -m compileall -q experiments/json-storage-stage2-sup
-  python3 -m unittest discover -s experiments/json-storage-stage1/tests -v
-  python3 -m unittest discover -s experiments/json-storage-stage2/tests -v
-  python3 -m unittest discover -s experiments/json-storage-stage2-sup/tests -v
+  /home/omm/work/agent-trace/trace-synthesis/.venv/bin/python -m compileall -q experiments/json-storage-stage2-sup
+  /home/omm/work/agent-trace/trace-synthesis/.venv/bin/python -m unittest discover -s experiments/json-storage-stage1/tests -v
+  /home/omm/work/agent-trace/trace-synthesis/.venv/bin/python -m unittest discover -s experiments/json-storage-stage2/tests -v
+  /home/omm/work/agent-trace/trace-synthesis/.venv/bin/python -m unittest discover -s experiments/json-storage-stage2-sup/tests -v
   ```
 
 - [ ] **Step 2: 启动或确认固定容器并完成 smoke run**
@@ -365,13 +385,17 @@
     'ch_native,ch_string,og_jsonb,og_json'
   )
   for round in 1 2 3 4; do
-    python3 experiments/json-storage-stage2-sup/runner/run_four_layouts.py \
+    /home/omm/work/agent-trace/trace-synthesis/.venv/bin/python experiments/json-storage-stage2-sup/runner/run_four_layouts.py \
       --input docs/temp/json-storage-stage2/cross-engine-input-20260907 \
       --truth docs/temp/json-storage-stage2-sup/input-20260908 \
       --output "docs/temp/json-storage-stage2-sup/formal-20260908/round-${round}" \
       --namespace "json_s2sup_r${round}" \
       --round "${round}" \
       --layout-order "${orders[$((round - 1))]}" \
+      --opengauss-container agent-trace-opengauss-v6 \
+      --opengauss-port 15432 \
+      --clickhouse-container agent-trace-clickhouse-25-12 \
+      --clickhouse-port 18123 \
       --measurements 100 \
       --document-page-measurements 20
   done
@@ -379,17 +403,25 @@
 
   Expected: 四个完成的运行清单共声明 16 个完成结果；失败批次保留诊断并使用新的输出目录完整重跑。
 
-- [ ] **Step 4: 运行 ClickHouse 机制观察和确定性汇总**
+- [ ] **Step 4: 运行 openGauss 与 ClickHouse 机制观察和确定性汇总**
 
   ```bash
-  python3 experiments/json-storage-stage2-sup/runner/run_clickhouse_mechanisms.py \
+  /home/omm/work/agent-trace/trace-synthesis/.venv/bin/python experiments/json-storage-stage2-sup/runner/run_opengauss_mechanisms.py \
     --input docs/temp/json-storage-stage2/cross-engine-input-20260907 \
     --truth docs/temp/json-storage-stage2-sup/input-20260908 \
-    --output docs/temp/json-storage-stage2-sup/clickhouse-mechanisms-20260908
-  python3 experiments/json-storage-stage2-sup/report/summarize_results.py \
+    --output docs/temp/json-storage-stage2-sup/opengauss-mechanisms-20260908 \
+    --container-name agent-trace-opengauss-v6 \
+    --port 15432
+  /home/omm/work/agent-trace/trace-synthesis/.venv/bin/python experiments/json-storage-stage2-sup/runner/run_clickhouse_mechanisms.py \
+    --input docs/temp/json-storage-stage2/cross-engine-input-20260907 \
+    --truth docs/temp/json-storage-stage2-sup/input-20260908 \
+    --output docs/temp/json-storage-stage2-sup/clickhouse-mechanisms-20260908 \
+    --container-name agent-trace-clickhouse-25-12 \
+    --port 18123
+  /home/omm/work/agent-trace/trace-synthesis/.venv/bin/python experiments/json-storage-stage2-sup/report/summarize_results.py \
     --input docs/temp/json-storage-stage2-sup/formal-20260908 \
     --output docs/temp/json-storage-stage2-sup/formal-20260908/summary-a
-  python3 experiments/json-storage-stage2-sup/report/summarize_results.py \
+  /home/omm/work/agent-trace/trace-synthesis/.venv/bin/python experiments/json-storage-stage2-sup/report/summarize_results.py \
     --input docs/temp/json-storage-stage2-sup/formal-20260908 \
     --output docs/temp/json-storage-stage2-sup/formal-20260908/summary-b
   cmp docs/temp/json-storage-stage2-sup/formal-20260908/summary-a/summary.json \
@@ -413,6 +445,9 @@
 - Modify: `docs/json-storage-stage1-report-2026-09-08.md`
 - Modify: `docs/json-storage-stage1-experiment-design-2026-09-08.md`
 - Modify: `docs/json-storage-design-survey-2026-09-08.md`
+- Modify: `README.md`
+- Modify: `experiments/json-storage-stage1/README.md`
+- Modify: `experiments/json-storage-stage2/README.md`
 - Create: `docs/json-storage-stage2-sup-pre-2026-09-08.md`
 - Create: `docs/assets/json-storage-opengauss-jsonb-flow.svg`
 - Create: `docs/assets/json-storage-clickhouse-native-json-flow.svg`

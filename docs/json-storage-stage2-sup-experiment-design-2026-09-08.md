@@ -31,6 +31,7 @@ experiments/json-storage-stage2-sup/
   runner/opengauss_four_layout.py
   runner/clickhouse_four_layout.py
   runner/run_four_layouts.py
+  runner/run_opengauss_mechanisms.py
   runner/run_clickhouse_mechanisms.py
   report/summarize_results.py
   tests/
