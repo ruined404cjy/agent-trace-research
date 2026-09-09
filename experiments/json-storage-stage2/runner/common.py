@@ -5,6 +5,7 @@ import json
 import math
 import os
 import tempfile
+import time
 from collections import Counter
 from pathlib import Path
 
@@ -212,37 +213,87 @@ def contract_fields(manifest):
     return result
 
 
-def write_manifest_last(output_dir, manifest, artifacts):
-    """原子发布 bytes artifact 和最终 run manifest；失败时发布诊断 manifest。"""
+def _artifact_path(output_dir, name, content):
+    """校验 artifact 名称和内容，并返回输出路径。"""
+    if not isinstance(name, str) or name in RESERVED_ARTIFACT_NAMES:
+        raise ValueError("reserved artifact name")
+    path = Path(name)
+    if path.name != name or path.is_absolute() or not isinstance(content, bytes):
+        raise ValueError("artifacts must map relative file names to bytes")
+    return output_dir / path
+
+
+def write_manifest_last(
+    output_dir,
+    manifest,
+    artifacts,
+    *,
+    record_artifact_write_timing=False,
+    clock_ns=None,
+):
+    """原子发布 artifact 和最终 manifest，可选记录 artifact 原子写入耗时。"""
     output_dir = Path(output_dir)
     if not isinstance(manifest, dict):
         raise ValueError("manifest must be an object")
     if not isinstance(artifacts, dict):
         raise ValueError("artifacts must be a mapping of relative names to bytes")
+    if record_artifact_write_timing:
+        timings = manifest.get("timings_ns")
+        if not isinstance(timings, dict):
+            raise ValueError("timings_ns must be an object")
+        if clock_ns is None:
+            clock_ns = time.perf_counter_ns
     output_dir.mkdir(parents=True, exist_ok=True)
     manifest_path = output_dir / "run-manifest.json"
     manifest_path.unlink(missing_ok=True)
     base_manifest = contract_fields(manifest)
+    artifact_write_started = None
+    artifact_write_elapsed_ns = None
     try:
         artifact_identities = {}
-        for name, content in sorted(artifacts.items()):
-            if not isinstance(name, str) or name in RESERVED_ARTIFACT_NAMES:
-                raise ValueError("reserved artifact name")
-            path = Path(name)
-            if path.name != name or path.is_absolute() or not isinstance(content, bytes):
-                raise ValueError("artifacts must map relative file names to bytes")
-            artifact_path = output_dir / path
-            write_atomically(artifact_path, content)
-            artifact_identities[name] = file_identity(artifact_path)
+        if record_artifact_write_timing:
+            artifact_entries = [
+                (name, content, _artifact_path(output_dir, name, content))
+                for name, content in sorted(artifacts.items())
+            ]
+            artifact_write_started = clock_ns()
+            for _, content, artifact_path in artifact_entries:
+                write_atomically(artifact_path, content)
+            artifact_write_elapsed_ns = clock_ns() - artifact_write_started
+            artifact_identities = {
+                name: file_identity(artifact_path)
+                for name, _, artifact_path in artifact_entries
+            }
+        else:
+            for name, content in sorted(artifacts.items()):
+                artifact_path = _artifact_path(output_dir, name, content)
+                write_atomically(artifact_path, content)
+                artifact_identities[name] = file_identity(artifact_path)
         complete_manifest = dict(base_manifest)
         complete_manifest["artifacts"] = artifact_identities
         complete_manifest["status"] = "complete"
         complete_manifest.pop("error", None)
+        if record_artifact_write_timing:
+            complete_manifest["timings_ns"] = {
+                **timings,
+                "artifact_write": artifact_write_elapsed_ns,
+            }
         write_atomically(manifest_path, canonical_bytes(complete_manifest) + b"\n")
     except Exception as error:
+        if (
+            record_artifact_write_timing
+            and artifact_write_started is not None
+            and artifact_write_elapsed_ns is None
+        ):
+            artifact_write_elapsed_ns = clock_ns() - artifact_write_started
         failed_manifest = dict(base_manifest)
         failed_manifest["artifacts"] = {}
         failed_manifest["error"] = {"message": str(error), "type": type(error).__name__}
         failed_manifest["status"] = "failed"
+        if record_artifact_write_timing and artifact_write_elapsed_ns is not None:
+            failed_manifest["timings_ns"] = {
+                **timings,
+                "artifact_write": artifact_write_elapsed_ns,
+            }
         write_atomically(manifest_path, canonical_bytes(failed_manifest) + b"\n")
         raise

@@ -173,6 +173,98 @@ class RunnerCommonTest(unittest.TestCase):
             self.assertEqual(failed["artifacts"], {})
             self.assertEqual(failed["error"], {"type": "OSError", "message": "disk full"})
 
+    def test_write_manifest_last_default_does_not_add_artifact_write_timing(self):
+        """捕获默认发布路径新增计时字段导致已有产物结构变化。"""
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            common.write_manifest_last(
+                output_dir,
+                {"run_id": "default", "timings_ns": {"read": 3}},
+                {"metrics.json": b"metrics\n"},
+            )
+
+            manifest = json.loads((output_dir / "run-manifest.json").read_bytes())
+            self.assertEqual(manifest["timings_ns"], {"read": 3})
+
+    def test_write_manifest_last_times_only_atomic_artifact_writes_when_requested(self):
+        """捕获 artifact_write 边界包含 identity 或最终 manifest 写入。"""
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            original_write = common.write_atomically
+            original_identity = common.file_identity
+            events = []
+            clock_values = iter((100, 170))
+
+            def clock_ns():
+                events.append("clock")
+                return next(clock_values)
+
+            def record_write(path, content):
+                events.append(f"write:{Path(path).name}")
+                original_write(path, content)
+
+            def record_identity(path):
+                events.append(f"identity:{Path(path).name}")
+                return original_identity(path)
+
+            with (
+                patch.object(common, "write_atomically", side_effect=record_write),
+                patch.object(common, "file_identity", side_effect=record_identity),
+            ):
+                common.write_manifest_last(
+                    output_dir,
+                    {"run_id": "timed", "timings_ns": {"read": 3}},
+                    {"b.json": b"b\n", "a.json": b"a\n"},
+                    record_artifact_write_timing=True,
+                    clock_ns=clock_ns,
+                )
+
+            self.assertEqual(
+                events,
+                [
+                    "clock",
+                    "write:a.json",
+                    "write:b.json",
+                    "clock",
+                    "identity:a.json",
+                    "identity:b.json",
+                    "write:run-manifest.json",
+                ],
+            )
+            manifest = json.loads((output_dir / "run-manifest.json").read_bytes())
+            self.assertEqual(manifest["timings_ns"], {"artifact_write": 70, "read": 3})
+
+    def test_write_manifest_last_publishes_failed_status_after_timed_complete_write_failure(self):
+        """捕获计时发布的 complete 写入失败后遗留完成状态。"""
+        with tempfile.TemporaryDirectory() as directory:
+            output_dir = Path(directory)
+            original_write = common.write_atomically
+            manifest_statuses = []
+
+            def fail_complete_manifest(path, content):
+                if Path(path).name == "run-manifest.json":
+                    status = json.loads(content)["status"]
+                    manifest_statuses.append(status)
+                    if status == "complete":
+                        raise OSError("complete manifest unavailable")
+                original_write(path, content)
+
+            clock_values = iter((100, 170))
+            with patch.object(common, "write_atomically", side_effect=fail_complete_manifest):
+                with self.assertRaisesRegex(OSError, "complete manifest unavailable"):
+                    common.write_manifest_last(
+                        output_dir,
+                        {"run_id": "timed-failure", "timings_ns": {"read": 3}},
+                        {"metrics.json": b"metrics\n"},
+                        record_artifact_write_timing=True,
+                        clock_ns=lambda: next(clock_values),
+                    )
+
+            self.assertEqual(manifest_statuses, ["complete", "failed"])
+            manifest = json.loads((output_dir / "run-manifest.json").read_bytes())
+            self.assertEqual(manifest["status"], "failed")
+            self.assertEqual(manifest["timings_ns"], {"artifact_write": 70, "read": 3})
+
     def test_write_manifest_last_rejects_reserved_artifact_names(self):
         """捕获 artifact 覆盖最终 manifest 或其原子临时文件。"""
         with tempfile.TemporaryDirectory() as directory:
