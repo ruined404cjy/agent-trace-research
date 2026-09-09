@@ -60,6 +60,15 @@ class ClickHouseFourLayoutUnitTest(unittest.TestCase):
             "127.0.0.1", 18123, "unused", "jsons2sup_test"
         )
 
+    def test_database_version_uses_safe_http_query(self):
+        """捕获环境身份遗漏 ClickHouse 服务端版本。"""
+        connection = mock.MagicMock()
+        with mock.patch.object(self.adapter, "connect_worker", return_value=connection), mock.patch.object(
+            self.adapter, "_request", return_value="25.12.11.4\n"
+        ) as request:
+            self.assertEqual(self.adapter.database_version(), "25.12.11.4")
+        request.assert_called_once_with(connection, "SELECT version()")
+
     def test_layout_ddl_only_adds_native_sidecar(self):
         """防止基础布局混入索引、hint 或额外加速结构。"""
         string_ddl = clickhouse.create_layout_ddl("s2sup", "ch_string", 32)

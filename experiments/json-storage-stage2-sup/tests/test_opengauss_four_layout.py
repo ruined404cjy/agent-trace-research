@@ -77,6 +77,14 @@ class OpenGaussFourLayoutUnitTest(unittest.TestCase):
             "127.0.0.1", 15432, "unused", "jsons2sup_test"
         )
 
+    def test_database_version_uses_existing_safe_connection(self):
+        """捕获环境身份遗漏 openGauss 服务端版本。"""
+        connection = mock.MagicMock()
+        connection.execute.return_value.fetchone.return_value = ("openGauss 6.0.0",)
+        with mock.patch.object(self.adapter, "connect_worker", return_value=connection):
+            self.assertEqual(self.adapter.database_version(), "openGauss 6.0.0")
+        connection.execute.assert_called_once_with("SELECT version()")
+
     def test_layout_ddl_only_changes_attributes_type_and_has_no_acceleration(self):
         """防止基础比较混入索引或改变稳定列定义。"""
         json_ddl = opengauss.create_layout_ddls("s2sup", "og_json")

@@ -223,6 +223,30 @@ def _artifact_path(output_dir, name, content):
     return output_dir / path
 
 
+def _failed_manifest(manifest, identities, error):
+    """构造唯一的公共契约失败清单状态。"""
+    failed = contract_fields(manifest)
+    failed["artifacts"] = identities
+    failed["error"] = {"message": str(error), "type": type(error).__name__}
+    failed["status"] = "failed"
+    return failed
+
+
+def write_failed_manifest(output_dir, manifest, artifacts, error):
+    """原子写出已产生的诊断 artifact，并最后发布公共契约失败清单。"""
+    output_dir = Path(output_dir)
+    if not isinstance(manifest, dict) or not isinstance(artifacts, dict):
+        raise ValueError("manifest and artifacts must be mappings")
+    output_dir.mkdir(parents=True, exist_ok=True)
+    identities = {}
+    for name, content in sorted(artifacts.items()):
+        path = _artifact_path(output_dir, name, content)
+        write_atomically(path, content)
+        identities[name] = file_identity(path)
+    failed = _failed_manifest(manifest, identities, error)
+    write_atomically(output_dir / "run-manifest.json", canonical_bytes(failed) + b"\n")
+
+
 def write_manifest_last(
     output_dir,
     manifest,
@@ -286,10 +310,7 @@ def write_manifest_last(
             and artifact_write_elapsed_ns is None
         ):
             artifact_write_elapsed_ns = clock_ns() - artifact_write_started
-        failed_manifest = dict(base_manifest)
-        failed_manifest["artifacts"] = {}
-        failed_manifest["error"] = {"message": str(error), "type": type(error).__name__}
-        failed_manifest["status"] = "failed"
+        failed_manifest = _failed_manifest(base_manifest, artifact_identities, error)
         if record_artifact_write_timing and artifact_write_elapsed_ns is not None:
             failed_manifest["timings_ns"] = {
                 **timings,

@@ -178,6 +178,14 @@ class OpenGaussFourLayoutAdapter:
             autocommit=False,
         )
 
+    def database_version(self):
+        """返回当前 openGauss 服务端版本。"""
+        connection = self.connect_worker()
+        try:
+            return connection.execute("SELECT version()").fetchone()[0]
+        finally:
+            connection.close()
+
     def schema_exists(self, layout):
         """返回布局 schema 是否存在。"""
         connection = self.connect_worker()

@@ -275,6 +275,14 @@ class ClickHouseFourLayoutAdapter:
             raise
         return connection
 
+    def database_version(self):
+        """返回当前 ClickHouse 服务端版本。"""
+        connection = self.connect_worker()
+        try:
+            return self._request(connection, "SELECT version()").strip()
+        finally:
+            connection.close()
+
     @staticmethod
     def _json_rows(body):
         """解析 ClickHouse JSONEachRow 响应。"""

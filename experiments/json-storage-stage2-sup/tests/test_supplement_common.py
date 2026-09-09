@@ -30,5 +30,12 @@ class SupplementCommonTest(unittest.TestCase):
         for order in common.ROUND_ORDERS:
             self.assertEqual(set(order), set(common.LAYOUTS))
 
+    def test_fixed_query_results_are_bound_to_reviewed_truth(self):
+        """捕获汇总用的固定查询摘要或返回行数漂移。"""
+        self.assertEqual(set(common.EXPECTED_RESULT_SHA256), set(common.QUERY_IDS))
+        self.assertTrue(all(len(value) == 64 for value in common.EXPECTED_RESULT_SHA256.values()))
+        self.assertEqual(common.EXPECTED_ROW_COUNTS,
+                         {"S01": 3, "S02": 1, "S03": 741, "S04": 4277, "S05": 6, "S06": 256})
+
 if __name__ == "__main__":
     unittest.main()

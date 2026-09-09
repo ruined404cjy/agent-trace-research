@@ -264,6 +264,7 @@ class RunnerCommonTest(unittest.TestCase):
             manifest = json.loads((output_dir / "run-manifest.json").read_bytes())
             self.assertEqual(manifest["status"], "failed")
             self.assertEqual(manifest["timings_ns"], {"artifact_write": 70, "read": 3})
+            self.assertEqual(manifest["artifacts"]["metrics.json"], common.file_identity(output_dir / "metrics.json"))
 
     def test_write_manifest_last_rejects_reserved_artifact_names(self):
         """捕获 artifact 覆盖最终 manifest 或其原子临时文件。"""
@@ -290,6 +291,20 @@ class RunnerCommonTest(unittest.TestCase):
                 manifest["artifacts"][".metrics.json.tmp"],
                 common.file_identity(output_dir / ".metrics.json.tmp"),
             )
+
+    def test_write_failed_manifest_uses_shared_contract_and_keeps_diagnostics(self):
+        """捕获失败发布遗漏公共契约或已生成诊断身份。"""
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            common.write_failed_manifest(
+                output, {"run_id": "failed-run"}, {"result.json": b'{"status":"failed"}\n'},
+                RuntimeError("query failed"),
+            )
+            manifest = json.loads((output / "run-manifest.json").read_bytes())
+            self.assertEqual(manifest["status"], "failed")
+            self.assertEqual(manifest["error"], {"message": "query failed", "type": "RuntimeError"})
+            self.assertEqual(manifest["artifacts"]["result.json"], common.file_identity(output / "result.json"))
+            self.assertEqual(manifest["comparability_contract_version"], common.COMPARABILITY_CONTRACT_VERSION)
 
     @staticmethod
     def write_valid_input(input_dir):
