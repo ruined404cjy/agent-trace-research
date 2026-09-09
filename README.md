@@ -8,6 +8,7 @@ Agent Trace 的公开调研、复现指南和实验设计。仓库当前重点�
 |---|---|
 | [JSON 存储第一阶段实验基础设施](experiments/json-storage-stage1/README.md) | 生成正确性与路径组织数据，并记录 openGauss JSONB 与 ClickHouse native JSON 实验结果 |
 | [JSON 存储阶段二横向实验](experiments/json-storage-stage2/README.md) | 已完成真实输入审计、六轮 residual 横向实验、正确性与原文恢复验证 |
+| [JSON 存储阶段二补充实验](experiments/json-storage-stage2-sup/README.md) | JSON、JSONB、String JSON 与 Native JSON 四种基础存储结构的复现入口 |
 
 ## 文档
 
