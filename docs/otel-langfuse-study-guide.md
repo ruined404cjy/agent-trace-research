@@ -376,7 +376,7 @@ OTLP span
 
 本文尚未获取 xstore 的事务、索引、compaction、schema evolution 和对象存储能力。以下内容是基于 OTel 与 Langfuse 的工程映射，需要用 xstore 实际接口验证。
 
-标准 openGauss 的实际部署、固定样本摄入和精确对账见 [蓝区 openGauss 复现指南](trace-ingestion-demo-blue-zone-guide.md)；GV 连接、Go 换源、定制 Collector 构建和 dstore 验收见 [黄区 GV xstore 复现指南](trace-ingestion-demo-yellow-zone-guide.md)。本节用于建立目标体系和后续能力演进视图，两份运行指南用于复现当前三表摄入 MVP。
+标准 openGauss 的实际部署、固定样本摄入和精确对账见 [标准 openGauss 复现指南](trace-ingestion-demo-blue-zone-guide.md)；GV 连接、Go 换源、定制 Collector 构建和 dstore 验收见 [GV xstore 复现指南](trace-ingestion-demo-yellow-zone-guide.md)。本节用于建立目标体系和后续能力演进视图，两份运行指南用于复现当前三表摄入 MVP。
 
 ### 8.1 最小可运行链路
 

@@ -1,8 +1,8 @@
 # Agent Trace JSON 存储阶段二补充实验设计：四种存储结构横比与 ClickHouse 机制观察
 
-> 状态：设计已确认，待实现和正式运行
-> 日期：2026-09-08
-> 数据路径：`independent_loader`
+> 状态：实验与正式报告已完成
+> 日期：2026-09-09
+> 数据路径：独立载入程序
 > 基础契约：`json-storage-cross-engine-v1`
 > 补充契约：`json-storage-four-layout-v1`
 
@@ -15,11 +15,11 @@
 3. ClickHouse Native JSON 的 type hint、动态路径预算、data part、merge、`OPTIMIZE FINAL` 和 Sidecar 在完整流程中的作用；
 4. 四种候选存储结构在统一查询负载下的适用场景。
 
-阶段二原实验数据保持不变。本实验使用新契约和独立结果目录；[阶段二报告](json-storage-stage2-report-2026-09-08.md)保留已有实验的证据边界，并补充四种存储结构结果。
+阶段二原实验数据保持不变。本实验使用新契约和独立结果目录；[阶段二报告](json-storage-stage2-report-2026-09-09.md)保留已有实验的证据边界，并补充四种存储结构结果。
 
-报告章节按 openGauss JSON/JSONB、ClickHouse String JSON/Native JSON 的处理流程和场景化比较组织。[阶段三实验](json-storage-stage3-experiment-design-2026-09-08.md)继续负责 Full/Core、长 payload 和 asset reference。
+报告章节按 openGauss JSON/JSONB、ClickHouse String JSON/ClickHouse Native JSON 的处理流程和场景化比较组织。[阶段三实验](json-storage-stage3-experiment-design-2026-09-09.md)继续负责 Full/Core、长 payload 和 asset reference。
 
-本实验不覆盖 Map、饱和吞吐、冷缓存、多节点、故障恢复、Collector/exporter 全链路和对象存储。数据库空间保留引擎原生口径，不计算跨引擎压缩比例。
+本实验不覆盖 Map、饱和吞吐、冷缓存、多节点、故障恢复、Collector/exporter 全链路和对象存储。数据库空间保留引擎原生口径，不计算跨引擎压缩比例。正式结果见[阶段二报告](json-storage-stage2-report-2026-09-09.md)，组内说明见[汇报辅助材料](json-storage-stage2-sup-pre-2026-09-09.md)。
 
 ## 2. 产物与目录
 
@@ -89,7 +89,7 @@ dataset、原始输入、truth 和查询 catalog 的字节数与内容摘要保�
 
 ClickHouse Native JSON 的稀疏 Sidecar 只保存递归包含 JSON null、空对象或空数组的原始 Attribute canonical value。它与 ClickHouse Native JSON 一起构成可恢复的分析存储结构，成本计入载入、空间和完整读取。四种存储结构都通过独立原文表恢复摄入原文。
 
-基础矩阵不创建 GIN、表达式索引、type hint、投影或物化热点列。Native JSON 的自动动态子列属于该类型的基础物理组织，不视为额外索引。
+基础矩阵不创建 GIN、表达式索引、type hint、投影或物化热点列。ClickHouse Native JSON 的自动动态子列属于该类型的基础物理组织，不视为额外索引。
 
 ### 4.2 公共查询
 
@@ -143,12 +143,12 @@ ClickHouse 机制观察建立以下存储结构：
 
 | 存储结构 | 控制变量 | 用途 |
 |---|---|---|
-| Native JSON（无 Sidecar） | 预算 32，无 Sidecar | 观察 Native JSON 自身的语义边界 |
-| Native JSON（稀疏 Sidecar） | 预算 32，稀疏 Sidecar | 对应基础矩阵的 ClickHouse Native JSON |
-| Native JSON（完整 Sidecar） | 预算 32，完整 canonical Sidecar | 观察完整 Sidecar 的载入、空间和整文档读取成本 |
-| Native JSON（类型提示、稀疏 Sidecar） | 预算 32，两个热点 type hint，稀疏 Sidecar | 在相同预算下隔离手动 type hint |
+| ClickHouse Native JSON（无 Sidecar） | 预算 32，无 Sidecar | 观察 ClickHouse Native JSON 自身的语义边界 |
+| ClickHouse Native JSON（稀疏 Sidecar） | 预算 32，稀疏 Sidecar | 对应基础矩阵的 ClickHouse Native JSON |
+| ClickHouse Native JSON（完整 Sidecar） | 预算 32，完整 canonical Sidecar | 观察完整 Sidecar 的载入、空间和整文档读取成本 |
+| ClickHouse Native JSON（类型提示、稀疏 Sidecar） | 预算 32，两个热点 type hint，稀疏 Sidecar | 在相同预算下隔离手动 type hint |
 
-该组是机制观察，不形成新的全结构性能排名。ClickHouse String JSON/Native JSON 正式性能来自四种存储结构矩阵；上述变体记录 DDL、载入、空间、路径库存、正确性和固定查询观察值。
+该组是机制观察，不形成新的全结构性能排名。ClickHouse String JSON/ClickHouse Native JSON 正式性能来自四种存储结构矩阵；上述变体记录 DDL、载入、空间、路径库存、正确性和固定查询观察值。
 
 ## 6. ClickHouse 载入、merge 与 FINAL 流程
 
@@ -232,8 +232,8 @@ Docker 服务、固定镜像或端口不可用时停止数据库小数据验证�
 
 ## 11. 参考资料
 
-- [阶段一实验设计](json-storage-stage1-experiment-design-2026-09-08.md)
-- [阶段一报告](json-storage-stage1-report-2026-09-08.md)
-- [阶段二实验设计](json-storage-stage2-experiment-design-2026-09-08.md)
-- [阶段二报告](json-storage-stage2-report-2026-09-08.md)
-- [JSON 存储设计调研](json-storage-design-survey-2026-09-08.md)
+- [阶段一实验设计](json-storage-stage1-experiment-design-2026-09-09.md)
+- [阶段一报告](json-storage-stage1-report-2026-09-09.md)
+- [阶段二实验设计](json-storage-stage2-experiment-design-2026-09-09.md)
+- [阶段二报告](json-storage-stage2-report-2026-09-09.md)
+- [JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)

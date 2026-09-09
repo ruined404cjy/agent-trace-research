@@ -1,7 +1,7 @@
 # Agent Trace JSON 存储阶段一：语义与引擎内机制报告
 
 > 状态：阶段一报告
-> 实验完成日期：2026-09-07；文档修订日期：2026-09-08
+> 实验完成日期：2026-09-07；文档修订日期：2026-09-09
 > 实验与代码基线：2026-09-07 · `b8a112c`
 > 范围：openGauss 6.0.0、ClickHouse 25.12.11.4、多字段 JSON、长 payload
 
@@ -11,10 +11,10 @@ Agent Trace 存储属于持续追加写入、按时间范围过滤和聚合的�
 
 阶段一形成以下结论：
 
-1. openGauss JSONB 与 ClickHouse Native JSON 解决不同问题。openGauss JSONB 是行内二进制文档，通过 GIN 或表达式索引加速路径查询；ClickHouse Native JSON 把叶路径组织成动态子列，超出预算的路径进入 shared data。两者不能按同名类型直接比较。
+1. openGauss JSONB 与 ClickHouse Native JSON 解决不同问题。openGauss JSONB 是由 heap/TOAST 存储的二进制 datum，通过 GIN 或表达式索引加速路径查询；ClickHouse Native JSON 把叶路径组织成动态子列，超出预算的路径进入 shared data。两者不能按同名类型直接比较。
 2. openGauss JSONB 九组合成边界实验表明，通用 GIN 提供冷路径检索能力，同时增加载入时间和索引空间；固定热点表达式索引在全部九组中被自然采用。该结果支持提升稳定热点字段，不支持为全部动态属性默认建立通用索引。
-3. ClickHouse Native JSON 的热点和冷路径查询结果与 truth 一致。目标小字段查询相对 ClickHouse String JSON 解析快约 **5–10 倍**，完整 Native JSON 对象重建则比 String JSON 内容读取慢约 **65–102 倍**。动态路径预算限制独立子列数，merge 按非空出现量重新组织路径，全局路径集合会显著放大 merge 成本。
-4. 本实验增加的 `metadata_raw` 是 canonical Sidecar，用于逻辑 metadata 对账。它不是 ClickHouse 内建功能，也不保存摄入原文。生产存储应按路径分析、逻辑文档恢复和字节级审计需求选择 Native JSON、canonical 文档或原始 bytes。
+3. ClickHouse Native JSON 的热点和冷路径查询结果与 truth 一致。目标小字段查询相对 ClickHouse String JSON 解析快约 **5–10 倍**，完整 ClickHouse Native JSON 对象重建则比 ClickHouse String JSON 内容读取慢约 **65–102 倍**。动态路径预算限制独立子列数，merge 按非空出现量重新组织路径，全局路径集合会显著放大 merge 成本。
+4. 本实验增加的 `metadata_raw` 是 canonical Sidecar，用于逻辑 metadata 对账。它不是 ClickHouse 内建功能，也不保存摄入原文。生产存储应按路径分析、逻辑文档恢复和字节级审计需求选择 ClickHouse Native JSON、canonical 文档或原始 bytes。
 5. 面向实时分析的稳定设计方向是“强类型分析列 + 有预算的动态属性 + 基于查询负载的字段提升 + 长 payload 分层”。阶段二已在统一数据和查询下比较 openGauss JSONB、ClickHouse String JSON、ClickHouse Map 与 ClickHouse Native JSON。
 
 ## 2. 项目边界与基线
@@ -53,7 +53,7 @@ OpenTelemetry Span 的 intrinsic 信息、Attributes 和 Agent payload 具有不
 
 调研覆盖 PostgreSQL/openGauss JSONB、ClickHouse Native JSON、Grafana Tempo dedicated columns、Langfuse Full/Core 与 field overflow，以及 Parquet Variant、Doris Variant、Elasticsearch flattened、Snowflake/BigQuery/Databricks 半结构化类型。
 
-列式半结构化存储研究覆盖 Dremel、Sinew 和 AsterixDB。各项目机制和来源见[JSON 存储设计调研](json-storage-design-survey-2026-09-08.md)。
+列式半结构化存储研究覆盖 Dremel、Sinew 和 AsterixDB。各项目机制和来源见[JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)。
 
 本地准备并审计了以下数据：
 
@@ -113,18 +113,18 @@ ClickHouse 探针复用同一数据和 truth，建立三种 MergeTree 布局：
 | 存储结构 | 定义 |
 |---|---|
 | ClickHouse String JSON | `String CODEC(ZSTD(3))`，查询时调用 JSON 提取函数 |
-| Native JSON（动态路径预算 100） | `JSON(max_dynamic_paths=100)` + `metadata_raw String CODEC(ZSTD(3))` |
-| Native JSON（类型提示，动态路径预算 1000） | `JSON(max_dynamic_paths=1000, hot.tenant String, hot.region String)` + `metadata_raw` |
+| ClickHouse Native JSON（动态路径预算 100） | `JSON(max_dynamic_paths=100)` + `metadata_raw String CODEC(ZSTD(3))` |
+| ClickHouse Native JSON（类型提示，动态路径预算 1000） | `JSON(max_dynamic_paths=1000, hot.tenant String, hot.region String)` + `metadata_raw` |
 
-`metadata_raw` 是本实验增加的 canonical Sidecar，不是 ClickHouse Native JSON 自动生成的原文副本。实验程序先把 JSONL 解析为对象，取出 `metadata`，再按对象键排序和紧凑分隔符重新序列化。同一次 INSERT 将该字符串写入 `metadata_raw`，并将对象写入 Native JSON `metadata`。
+`metadata_raw` 是本实验增加的 canonical Sidecar，不是 ClickHouse Native JSON 自动生成的原文副本。实验程序先把 JSONL 解析为对象，取出 `metadata`，再按对象键排序和紧凑分隔符重新序列化。同一次 INSERT 将该字符串写入 `metadata_raw`，并将对象写入 ClickHouse Native JSON `metadata`。
 
 Sidecar 保留键值、数组顺序、空对象和空数组等逻辑结构。结构空白、原始对象键顺序、等价转义形式、数值原始文本、重复键实例，以及 metadata 之外的完整事件不在其保存范围内。该稳定序列化是实验内部的对账约定，未声明符合 RFC 8785 JCS。
 
 RFC 8259 将结构空白视为无关信息，并指出重复对象成员会产生不可互操作的解析结果；OTel Attribute Collection 要求键唯一，并按与顺序无关的键值集合定义相等性。因此，canonical 表示适合跨引擎逻辑对账、确定性摘要和去重。
 
-签名或 HMAC 校验、字节级审计、取证、解析器差异复现、向外部系统精确重放，以及依赖对象成员顺序重新构造 prompt 的流程需要保存摄入时的完整原始 bytes。本实验使用 canonical Sidecar 验证 Native JSON 的逻辑保真边界；生产存储根据分析、逻辑恢复和原文恢复要求选择必要表示。
+签名或 HMAC 校验、字节级审计、取证、解析器差异复现、向外部系统精确重放，以及依赖对象成员顺序重新构造 prompt 的流程需要保存摄入时的完整原始 bytes。本实验使用 canonical Sidecar 验证 ClickHouse Native JSON 的逻辑保真边界；生产存储根据分析、逻辑恢复和原文恢复要求选择必要表示。
 
-本报告把摄入程序读取输入到新数据可查询称为“载入”，把客户端向 ClickHouse 提交一个 block 称为“INSERT”，把 MergeTree 生成的不可变存储单元称为“data part”。Native JSON 的载入和合并按以下顺序完成：
+本报告把摄入程序读取输入到新数据可查询称为“载入”，把客户端向 ClickHouse 提交一个 block 称为“INSERT”，把 MergeTree 生成的不可变存储单元称为“data part”。ClickHouse Native JSON 的载入和合并按以下顺序完成：
 
 1. 摄入程序准备行并发起 INSERT。
 2. ClickHouse 解析 JSON，发现叶路径及其实际类型。
@@ -137,25 +137,25 @@ RFC 8259 将结构空白视为无关信息，并指出重复对象成员会产�
 
 canonical Sidecar 在载入端增加重新序列化和同行写入两个步骤。`metadata_raw` 随 data part 作为普通 ZSTD String 列存储和合并，不参与 JSON 路径发现、动态路径预算或路径重组。ClickHouse advanced shared data 内部的 `.copy.*` 表示用于整列读取和 merge，也不保存原始输入 bytes。
 
-Native JSON 的叶路径重建会省略部分空容器，因此实验按用途区分三种表示：
+ClickHouse Native JSON 的叶路径重建会省略部分空容器，因此实验按用途区分三种表示：
 
 | 用途 | 数据来源 | 校验内容 |
 |---|---|---|
 | 路径分析 | ClickHouse Native JSON | 路径过滤命中 ID 与 truth 一致 |
-| 逻辑文档恢复 | ClickHouse String JSON，或 Native JSON + canonical Sidecar | canonical 内容摘要一致，保留空对象、空数组和 JSON null |
+| 逻辑文档恢复 | ClickHouse String JSON，或 ClickHouse Native JSON + canonical Sidecar | canonical 内容摘要一致，保留空对象、空数组和 JSON null |
 | 摄入原文恢复 | 首次解析前保存的原始 bytes | 阶段一未建立该副本，未验证原始 UTF-8 内容摘要 |
 
-Native JSON 的完整对象回读差异作为引擎语义观察记录，不参与路径分析门禁。Sidecar 的目的，是补充 Native JSON 叶路径表示缺失的文档状态；原始 bytes 负责 Sidecar 也不保留的文本级信息。
+ClickHouse Native JSON 的完整对象回读差异作为引擎语义观察记录，不参与路径分析门禁。Sidecar 的目的，是补充 ClickHouse Native JSON 叶路径表示缺失的文档状态；原始 bytes 负责 Sidecar 也不保留的文本级信息。
 
 第一轮语义重跑使用 `50×20%` 的 250,200 行和 `500×1%` 的 291,100 行。两组、三种存储结构的热点与冷路径 ID 集合均与 truth 一致；两个 canonical Sidecar 的 canonical 内容摘要差异均为 0。
 
-`50×20%` 的两个 Native JSON 列各有 77,562 条对象重建差异，均为省略空的 `metadata.paths`；`500×1%` 每行都有路径叶值，Native JSON 重建差异为 0。该轮证明 Native JSON 保持已存叶路径的分析语义，也证明 canonical Sidecar 可以恢复本实验定义的逻辑 metadata。该轮未验证 Native JSON、Sidecar 或二者组合的摄入原文恢复。
+`50×20%` 的两个 ClickHouse Native JSON 列各有 77,562 条对象重建差异，均为省略空的 `metadata.paths`；`500×1%` 每行都有路径叶值，ClickHouse Native JSON 重建差异为 0。该轮证明 ClickHouse Native JSON 保持已存叶路径的分析语义，也证明 canonical Sidecar 可以恢复本实验定义的逻辑 metadata。该轮未验证 ClickHouse Native JSON、Sidecar 或二者组合的摄入原文恢复。
 
 原性能计时包含完整 ID 排序与传输，且统一使用 `getSubcolumn(...)::String` 后没有得到预期列裁剪，因此不进入性能结论。
 
 正式性能矩阵改用直接子列语法：动态值读取为 `metadata.path.:String`，type hint 路径直接按名读取。正确性查询单独返回排序 ID；性能查询在 `start_time` 排序键的 50% 时间窗口内执行按 `hot.region` 分组的 `count()`，只返回至多四行。
 
-整对象读取使用同一时间窗口，并对实际内容执行 `cityHash64` 聚合：ClickHouse String JSON 直接读取 `metadata`，Native JSON 重建使用 `toJSONString(metadata)`，Sidecar 使用 `metadata_raw`。该方法强制数据库消费内容并只返回一个标量，排除了 String `sum(length(...))` 仅读取 offset 的优化和网络返回量差异。
+整对象读取使用同一时间窗口，并对实际内容执行 `cityHash64` 聚合：ClickHouse String JSON 直接读取 `metadata`，ClickHouse Native JSON 重建使用 `toJSONString(metadata)`，Sidecar 使用 `metadata_raw`。该方法强制数据库消费内容并只返回一个标量，排除了 String `sum(length(...))` 仅读取 offset 的优化和网络返回量差异。
 
 每次查询使用唯一 query ID，从 `system.query_log` 的 `QueryFinish` 记录读取耗时、`read_rows`、`read_bytes`、内存和 ProfileEvents。所有 profile 固定 50,000 行；等宽和混合组分别运行三轮，并采用三种存储结构的平衡顺序轮换。完成门禁同时核对合并后行数、缺失/额外/重复 ID、dynamic/shared 路径全集、精确预算和路径保留优先级。
 
@@ -168,9 +168,9 @@ Native JSON 的完整对象回读差异作为引擎语义观察记录，不参�
 | 等宽中基数 | `500×10%` | 50.0 | 54.173 MiB |
 | 等宽高基数压力 | `5000×1%` | 50.0 | 54.173 MiB |
 
-预算边界结果精确符合 `max_dynamic_paths=100` 的定义。动态路径预算 100 的 Native JSON 中，98 条业务路径加两个未提示热点路径得到 100 dynamic / 0 shared；增加第 99 条业务路径后保持 100 dynamic，并把 `paths.p00098` 放入 shared data。
+预算边界结果精确符合 `max_dynamic_paths=100` 的定义。动态路径预算 100 的 ClickHouse Native JSON 中，98 条业务路径加两个未提示热点路径得到 100 dynamic / 0 shared；增加第 99 条业务路径后保持 100 dynamic，并把 `paths.p00098` 放入 shared data。
 
-使用类型提示、动态路径预算 1000 的 Native JSON 中，两个热点 type hint 不计入预算，因此分别得到 98 和 99 个 dynamic path，shared 均为 0。
+使用类型提示、动态路径预算 1000 的 ClickHouse Native JSON 中，两个热点 type hint 不计入预算，因此分别得到 98 和 99 个 dynamic path，shared 均为 0。
 
 混合密度路径同时控制编号和首次出现顺序：`p00499` 等字典序靠后的路径属于 95% 稳定组；每个 100 行周期先由 1% 长尾路径占据前 5 行，高/中密度路径从第 6 行开始出现。最先出现的 98 条业务路径全部为长尾路径，与两个热点一起占满 100 条动态路径预算。
 
@@ -178,39 +178,39 @@ Native JSON 的完整对象回读差异作为引擎语义观察记录，不参�
 
 **该结果表明，ClickHouse merge 优先保留非空出现量更高的路径。** 字典序、首次出现顺序和查询频率均未参与本次选择。
 
-等单行宽度结果如下。载入速率和 merge 是三轮中位数；压缩空间取 merge 后 active part，Native JSON 数字包含 `metadata_raw` Sidecar；dynamic/shared 取三轮一致值。
+等单行宽度结果如下。载入速率和 merge 是三轮中位数；压缩空间取 merge 后 active part，ClickHouse Native JSON 数字包含 `metadata_raw` Sidecar；dynamic/shared 取三轮一致值。
 
 | profile | 存储结构 | 载入 rows/s | merge | 压缩空间 | dynamic/shared |
 |---|---|---:|---:|---:|---:|
 | 50×95% | ClickHouse String JSON | 12,992 | 0.069 s | 2.428 MiB | — |
-| 50×95% | Native JSON（预算 100） | 8,644 | 0.288 s | 3.499 MiB | 52 / 0 |
-| 50×95% | Native JSON（类型提示，预算 1000） | 8,588 | 0.272 s | 3.499 MiB | 50 / 0 |
+| 50×95% | ClickHouse Native JSON（预算 100） | 8,644 | 0.288 s | 3.499 MiB | 52 / 0 |
+| 50×95% | ClickHouse Native JSON（类型提示，预算 1000） | 8,588 | 0.272 s | 3.499 MiB | 50 / 0 |
 | 500×10% | ClickHouse String JSON | 12,450 | 0.164 s | 4.049 MiB | — |
-| 500×10% | Native JSON（预算 100） | 6,666 | 2.579 s | 6.392 MiB | 100 / 402 |
-| 500×10% | Native JSON（类型提示，预算 1000） | 5,059 | 1.864 s | 5.448 MiB | 500 / 0 |
+| 500×10% | ClickHouse Native JSON（预算 100） | 6,666 | 2.579 s | 6.392 MiB | 100 / 402 |
+| 500×10% | ClickHouse Native JSON（类型提示，预算 1000） | 5,059 | 1.864 s | 5.448 MiB | 500 / 0 |
 | 5000×1% | ClickHouse String JSON | 12,474 | 0.159 s | 3.503 MiB | — |
-| 5000×1% | Native JSON（预算 100） | 6,612 | **31.946 s** | 9.632 MiB | 100 / 4902 |
-| 5000×1% | Native JSON（类型提示，预算 1000） | 2,309 | **31.693 s** | 22.230 MiB | 1000 / 4000 |
+| 5000×1% | ClickHouse Native JSON（预算 100） | 6,612 | **31.946 s** | 9.632 MiB | 100 / 4902 |
+| 5000×1% | ClickHouse Native JSON（类型提示，预算 1000） | 2,309 | **31.693 s** | 22.230 MiB | 1000 / 4000 |
 
 查询表中的耗时和读取量是三轮共 15 个 `QueryFinish` 样本的中位数。热点查询的 tenant 选择性在三个 profile 中相同；冷路径选择性随逐路径密度变化，因此冷路径数字只用于组内布局比较。
 
 | profile | 存储结构 | 热点耗时 / 读取量 | 冷路径耗时 / 读取量 |
 |---|---|---:|---:|
 | 50×95% | ClickHouse String JSON | 37 ms / 24.547 MiB | 41 ms / 24.547 MiB |
-| 50×95% | Native JSON（预算 100） | 7 ms / 1.311 MiB | 6 ms / 1.128 MiB |
-| 50×95% | Native JSON（类型提示，预算 1000） | 7 ms / 0.954 MiB | 7 ms / 0.949 MiB |
+| 50×95% | ClickHouse Native JSON（预算 100） | 7 ms / 1.311 MiB | 6 ms / 1.128 MiB |
+| 50×95% | ClickHouse Native JSON（类型提示，预算 1000） | 7 ms / 0.954 MiB | 7 ms / 0.949 MiB |
 | 500×10% | ClickHouse String JSON | 58 ms / 25.719 MiB | 62 ms / 25.719 MiB |
-| 500×10% | Native JSON（预算 100） | 7 ms / 1.184 MiB | 7 ms / 0.950 MiB |
-| 500×10% | Native JSON（类型提示，预算 1000） | 6 ms / 0.816 MiB | 6 ms / 0.747 MiB |
+| 500×10% | ClickHouse Native JSON（预算 100） | 7 ms / 1.184 MiB | 7 ms / 0.950 MiB |
+| 500×10% | ClickHouse Native JSON（类型提示，预算 1000） | 6 ms / 0.816 MiB | 6 ms / 0.747 MiB |
 | 5000×1% | ClickHouse String JSON | 59 ms / 25.719 MiB | 64 ms / 25.719 MiB |
-| 5000×1% | Native JSON（预算 100） | 8 ms / 1.180 MiB | 9 ms / 0.940 MiB |
-| 5000×1% | Native JSON（类型提示，预算 1000） | 6 ms / 0.791 MiB | 8 ms / 0.374 MiB |
+| 5000×1% | ClickHouse Native JSON（预算 100） | 8 ms / 1.180 MiB | 9 ms / 0.940 MiB |
+| 5000×1% | ClickHouse Native JSON（类型提示，预算 1000） | 6 ms / 0.791 MiB | 8 ms / 0.374 MiB |
 
 整对象内容读取同样汇总三轮共 15 个 `QueryFinish` 样本。耗时与读取量是服务端 hash 聚合指标，不包含把 25,000 份 JSON 返回客户端的网络传输。
 
-Native JSON 重建：
+ClickHouse Native JSON 重建：
 
-| profile | String JSON 内容读取 | Native JSON（预算 100） | Native JSON（类型提示，预算 1000） |
+| profile | ClickHouse String JSON 内容读取 | ClickHouse Native JSON（预算 100） | ClickHouse Native JSON（类型提示，预算 1000） |
 |---|---:|---:|---:|
 | 50×95% | 17 ms / 24.547 MiB | 1,418 ms / 24.807 MiB | 1,362 ms / 24.378 MiB |
 | 500×10% | 39 ms / 25.719 MiB | 3,451 ms / 57.259 MiB | 2,806 ms / 121.631 MiB |
@@ -226,23 +226,23 @@ Sidecar 内容读取：
 
 14 个正式运行的分析等价与文档保真门禁全部通过，合并后行数、ID 身份、路径全集和整对象摘要门禁也全部通过。
 
-直接子列访问下，Native JSON 对目标小字段过滤与分组的服务端耗时为 String JSON 解析的约 **1/5–1/10**，读取量为约 **1/19–1/69**。完整 Native JSON 对象重建则比 String JSON 内容读取慢约 **65–102 倍**，内存中位数为 29.876–284.807 MiB，而 String JSON 为 16.226–16.912 MiB。
+直接子列访问下，ClickHouse Native JSON 对目标小字段过滤与分组的服务端耗时为 ClickHouse String JSON 解析的约 **1/5–1/10**，读取量为约 **1/19–1/69**。完整 ClickHouse Native JSON 对象重建则比 ClickHouse String JSON 内容读取慢约 **65–102 倍**，内存中位数为 29.876–284.807 MiB，而 ClickHouse String JSON 为 16.226–16.912 MiB。
 
-canonical Sidecar 的耗时为 14–33 ms，与 String JSON 的 17–39 ms 同量级，且全部内容摘要一致。**分析子列和完整逻辑详情应使用不同读取路径。** 生产存储按详情、审计和重放契约决定是否保留 canonical 或原始 bytes 副本。
+canonical Sidecar 的耗时为 14–33 ms，与 ClickHouse String JSON 的 17–39 ms 同量级，且全部内容摘要一致。**分析子列和完整逻辑详情应使用不同读取路径。** 生产存储按详情、审计和重放契约决定是否保留 canonical 或原始 bytes 副本。
 
-本轮载入指标包含客户端读取、解析、canonical 序列化、传输和 ClickHouse INSERT，不等同于纯服务端解析时间。98 与 99 条业务路径边界各运行一轮：三种存储结构的载入吞吐变化均不超过约 1.3%，增加首条 shared path 没有形成可辨认的载入时延突变。
+本轮载入指标包含客户端读取、解析、canonical 序列化、传输和 ClickHouse INSERT，不等同于纯服务端解析时间。载入计时与后续 merge 分开记录，完整生命周期成本需要同时查看两项。98 与 99 条业务路径边界各运行一轮：三种存储结构的载入吞吐变化均不超过约 1.3%，增加首条 shared path 没有形成可辨认的载入时延突变。
 
-500 路径混合组与 98 路径组的输入和单行宽度接近。ClickHouse String JSON、Native JSON（预算 100）和 Native JSON（类型提示，预算 1000）的载入吞吐分别下降约 4.9%、15.8% 和 47.4%，后两者的 merge 分别放大约 4.2 倍和 6.1 倍。两组仍存在输入字节和每行字段数差异，因此差值不能全部归因于路径基数。
+500 路径混合组与 98 路径组的输入和单行宽度接近。ClickHouse String JSON、ClickHouse Native JSON（预算 100）和 ClickHouse Native JSON（类型提示，预算 1000）的载入吞吐分别下降约 4.9%、15.8% 和 47.4%，后两者的 merge 分别放大约 4.2 倍和 6.1 倍。两组仍存在输入字节和每行字段数差异，因此差值不能全部归因于路径基数。
 
-固定约 50 个字段/行和相近输入字节后，ClickHouse String JSON 在 50、500、5000 路径三组中的载入吞吐保持在 12.45–12.99 千 rows/s。Native JSON（预算 100）从 8.64 千降到 6.67 千后，在 500 到 5000 路径之间基本持平；其独立动态路径预算固定为 100，其余路径进入 shared data。
+固定约 50 个字段/行和相近输入字节后，ClickHouse String JSON 在 50、500、5000 路径三组中的载入吞吐保持在 12.45–12.99 千 rows/s。ClickHouse Native JSON（预算 100）从 8.64 千降到 6.67 千后，在 500 到 5000 路径之间基本持平；其独立动态路径预算固定为 100，其余路径进入 shared data。
 
-Native JSON（类型提示，预算 1000）随独立动态路径从 50 增至 500 和 1000，载入吞吐从 8.59 千降至 5.06 千和 2.31 千。两种 Native JSON 存储结构的 merge 中位数从 0.288/0.272 秒增至 31.946/31.693 秒。**单行字段数和输入字节影响逐行处理，全局路径基数与独立子列数影响 Native JSON 组织，路径全集持续放大 merge。**
+ClickHouse Native JSON（类型提示，预算 1000）随独立动态路径从 50 增至 500 和 1000，载入吞吐从 8.59 千降至 5.06 千和 2.31 千。两种 ClickHouse Native JSON 存储结构的 merge 中位数从 0.288/0.272 秒增至 31.946/31.693 秒。**单行字段数和输入字节影响逐行处理，全局路径基数与独立子列数影响 ClickHouse Native JSON 组织，路径全集持续放大 merge。**
 
 现有矩阵通过同步改变路径基数和均匀密度来保持每行宽度，不能独立给出密度与载入时延的函数关系。500 路径混合组也同时改变逐路径密度分布和每行宽度。密度梯度只有在固定总行数、路径基数、值长和 INSERT block，并分别记录输入字节后才可解释；因此 `50/500 × 1%/5%/20%/50%/95%` 仍是待真实数据审计筛选的下一阶段机制矩阵，而不是当前已证实的性能规律。
 
 提高动态路径预算需要针对实际访问路径。`5000×1%` 中从 100 提高到 1000 个动态路径没有改变两个显式查询的数量级，却使类型提示存储结构的载入吞吐降至 2,309 rows/s，压缩空间增至 22.230 MiB。稳定热点应使用强类型列或 type hint；预算外长尾留在 shared data。该结论适用于本次合成数据和直接子列查询，不替代真实 Trace 分布审计。
 
-当前 `metadata_raw` 只承担实验 canonical 对账和逻辑 metadata 恢复。需要字节级审计和重放时，摄入层应在首次解析前保存完整原始输入 bytes，并记录长度、内容摘要、内容类型、编码和保留策略。原始 bytes 已经存在时，canonical 内容可以按需重新生成。详细机制和跨项目设计比较见[JSON 存储设计调研](json-storage-design-survey-2026-09-08.md)。
+当前 `metadata_raw` 只承担实验 canonical 对账和逻辑 metadata 恢复。需要字节级审计和重放时，摄入层应在首次解析前保存完整原始输入 bytes，并记录长度、内容摘要、内容类型、编码和保留策略。原始 bytes 已经存在时，canonical 内容可以按需重新生成。详细机制和跨项目设计比较见[JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)。
 
 ## 4. 机制差异与阶段一边界
 
@@ -256,9 +256,9 @@ Native JSON（类型提示，预算 1000）随独立动态路径从 50 增至 50
 | 整对象读取 | 保持 JSONB 结构语义，输出文本格式规范化 | 子列重建遵循叶路径语义并可能省略空容器；逻辑恢复使用 canonical Sidecar，字节级恢复使用摄入原文 |
 | 阶段一定位 | openGauss 行存基线、语义对照、少量定向索引 | ClickHouse 动态属性分析候选 |
 
-该表是机制映射，不是横向性能结果。openGauss 实验比较 JSONB 的无索引、GIN 和表达式索引；ClickHouse 实验比较 String JSON、Native JSON（预算 100）和 Native JSON（类型提示，预算 1000）。两侧的 schema、数据行数、索引、路径预算、写入方式和空间口径不同。
+该表是机制映射，不是横向性能结果。openGauss 实验比较 JSONB 的无索引、GIN 和表达式索引；ClickHouse 实验比较 ClickHouse String JSON、ClickHouse Native JSON（预算 100）和 ClickHouse Native JSON（类型提示，预算 1000）。两侧的 schema、数据行数、索引、路径预算、写入方式和空间口径不同。
 
-ClickHouse 等宽实验包含时间范围裁剪与分组计数，仍采用一次性分批载入。阶段一证据不能回答哪个引擎性能更高，也不能把 Native JSON 与 JSONB 的引擎内结果直接相除。
+ClickHouse 等宽实验包含时间范围裁剪与分组计数，仍采用一次性分批载入。阶段一证据不能回答哪个引擎性能更高，也不能把 ClickHouse Native JSON 与 JSONB 的引擎内结果直接相除。
 
 ## 5. 阶段一设计结论
 
@@ -272,7 +272,7 @@ ClickHouse 等宽实验包含时间范围裁剪与分组计数，仍采用一次
 4. 分别定义 missing、JSON null、SQL NULL、类型冲突、数组顺序、路径转义和重建规则。
 5. 长、高基数字段使用适合的压缩编码或独立物理层，控制常规分析的读取量。
 
-Tempo 的 intrinsic/dedicated columns、Parquet Variant shredding、Sinew 的物理列与 reservoir、ClickHouse dynamic paths 与 shared data 都体现分层存储。完整项目与论文比较见 [JSON 存储设计调研](json-storage-design-survey-2026-09-08.md)。
+Tempo 的 intrinsic/dedicated columns、Parquet Variant shredding、Sinew 的物理列与 reservoir、ClickHouse dynamic paths 与 shared data 都体现分层存储。完整项目与论文比较见 [JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)。
 
 字段提升的具体信号具有不同证据等级：
 
@@ -283,7 +283,7 @@ Tempo 的 intrinsic/dedicated columns、Parquet Variant shredding、Sinew 的物
 | 类型稳定性 | typed column、type hint 和 Variant shredding 都需要类型契约；冲突值通常回落到动态属性表示 |
 | 基数和值长 | Sinew、Tempo 等用其判断列化、字典编码和 blob 编码成本；具体阈值属于实现与查询负载参数 |
 
-因此，查询频率参与本项目的查询负载收益评估，但不能单独称为公认的自动提升指标。ClickHouse 当前 merge 按非 null 值数量选择动态路径，并不读取查询日志。各项目的具体机制和来源见[JSON 存储设计调研](json-storage-design-survey-2026-09-08.md)。
+因此，查询频率参与本项目的查询负载收益评估，但不能单独称为公认的自动提升指标。ClickHouse 当前 merge 按非 null 值数量选择动态路径，并不读取查询日志。各项目的具体机制和来源见[JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)。
 
 ### 5.2 多字段与长字段结论
 
@@ -308,17 +308,17 @@ Tempo 的 intrinsic/dedicated columns、Parquet Variant shredding、Sinew 的物
 | openGauss JSON 正确性 | 当前 schema 的 JSON 语义和边界输入处理 | exporter 端到端 JSONB 行为与性能 |
 | openGauss JSONB 九组路径实验 | GIN、表达式索引在本机合成数据内的成本和计划 | 与 ClickHouse Native JSON 的性能高低 |
 | openGauss 端到端参照 | 已验证 exporter/benchmark 配对的摄入约束 | 当前两仓 main 的联合基线、完整查询基线 |
-| ClickHouse String JSON/Native JSON 三种存储结构 | dynamic/shared 组织、子列查询、整对象重建和 merge 成本 | 持续写入、后台 merge 和并发查询尾延迟 |
+| ClickHouse String JSON/ClickHouse Native JSON 三种存储结构 | dynamic/shared 组织、子列查询、整对象重建和 merge 成本 | 持续写入、后台 merge 和并发查询尾延迟 |
 
 所有数据库实验均为单机固定版本，路径数据主要为确定性合成数据。公开数据只支持 50 路径量级更接近已观察样本，尚不能把任一均匀密度 profile 定义为代表性查询负载。当前 ClickHouse 载入指标还包含客户端解析、canonical 序列化和传输。结论适用于机制筛选，不能直接外推到生产容量或跨引擎选型。
 
 ## 7. 后续阶段
 
-[阶段二实验](json-storage-stage2-experiment-design-2026-09-08.md)已在 48,534 行固定 Trace 数据上，统一比较 openGauss JSONB、ClickHouse String JSON、ClickHouse Map 和 ClickHouse Native JSON。
+[阶段二实验](json-storage-stage2-experiment-design-2026-09-09.md)已在 48,534 行固定 Trace 数据上，统一比较 openGauss JSONB、ClickHouse String JSON、ClickHouse Map 和 ClickHouse Native JSON。
 
-统一契约覆盖输入、分批写入、时间窗口、查询返回、正确性、原文恢复和三轮统计。结果见[阶段二横向实验报告](json-storage-stage2-report-2026-09-08.md)。
+统一契约覆盖输入、分批写入、时间窗口、查询返回、正确性、原文恢复和三轮统计。结果见[阶段二横向实验报告](json-storage-stage2-report-2026-09-09.md)。
 
-Full/Core、长 payload 和 asset reference 纳入[阶段三实验设计](json-storage-stage3-experiment-design-2026-09-08.md)。阶段三独立记录写放大、空间、列表与详情读取、原文恢复和 asset 故障结果。
+Full/Core、长 payload 和 asset reference 纳入[阶段三实验设计](json-storage-stage3-experiment-design-2026-09-09.md)。阶段三独立记录写放大、空间、列表与详情读取、原文恢复和 asset 故障结果。
 
 ## 8. 发布范围
 
@@ -329,10 +329,10 @@ Full/Core、长 payload 和 asset reference 纳入[阶段三实验设计](json-s
 ### 9.1 本地证据
 
 - [第一阶段实验基础设施与结果](../experiments/json-storage-stage1/README.md)
-- [JSON 存储设计调研](json-storage-design-survey-2026-09-08.md)
-- [阶段一实验设计](json-storage-stage1-experiment-design-2026-09-08.md)
-- [阶段二实验设计](json-storage-stage2-experiment-design-2026-09-08.md)
-- [阶段三实验设计](json-storage-stage3-experiment-design-2026-09-08.md)
+- [JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)
+- [阶段一实验设计](json-storage-stage1-experiment-design-2026-09-09.md)
+- [阶段二实验设计](json-storage-stage2-experiment-design-2026-09-09.md)
+- [阶段三实验设计](json-storage-stage3-experiment-design-2026-09-09.md)
 
 ### 9.2 官方资料与论文
 

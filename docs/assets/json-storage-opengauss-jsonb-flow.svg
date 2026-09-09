@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="560" viewBox="0 0 1200 560" role="img" aria-labelledby="title desc">
+  <title id="title">openGauss JSON 与 JSONB 处理流程</title>
+  <desc id="desc">原始 JSON 经 COPY 或 SQL 输入，校验后分别保存为 JSON 文本表示或 JSONB 二进制文档表示，再进入 heap 和 TOAST。索引用于匹配查询，完整文档从基列返回。</desc>
+  <defs>
+    <style>
+      .box { fill:#f7f9fc; stroke:#52657a; stroke-width:2; rx:8; }
+      .json { fill:#eef6ff; stroke:#2f6f9f; stroke-width:2; rx:8; }
+      .jsonb { fill:#eef8f1; stroke:#397554; stroke-width:2; rx:8; }
+      .note { fill:#fff8e8; stroke:#9a7725; stroke-width:2; rx:8; }
+      .text { font-family:"Noto Sans CJK SC","Microsoft YaHei",sans-serif; font-size:18px; fill:#1f2933; text-anchor:middle; }
+      .small { font-size:15px; fill:#44515f; }
+      .label { font-size:16px; font-weight:600; }
+      .arrow { stroke:#52657a; stroke-width:2.2; fill:none; marker-end:url(#arrow); }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#52657a"/>
+    </marker>
+  </defs>
+
+  <rect width="1200" height="560" fill="#ffffff"/>
+  <text x="600" y="38" class="text" font-size="24" font-weight="700">openGauss JSON 与 JSONB：写入、存储和读取</text>
+
+  <rect x="40" y="105" width="160" height="82" class="box"/>
+  <text x="120" y="137" class="text">原始 JSON</text>
+  <text x="120" y="164" class="text small">UTF-8 文本</text>
+
+  <rect x="245" y="105" width="170" height="82" class="box"/>
+  <text x="330" y="137" class="text">COPY / SQL</text>
+  <text x="330" y="164" class="text small">输入数据库</text>
+
+  <rect x="460" y="105" width="170" height="82" class="box"/>
+  <text x="545" y="137" class="text">JSON 语法校验</text>
+  <text x="545" y="164" class="text small">两种类型均执行</text>
+
+  <path d="M200 146 H245" class="arrow"/>
+  <path d="M415 146 H460" class="arrow"/>
+
+  <rect x="690" y="72" width="205" height="82" class="json"/>
+  <text x="792" y="104" class="text label">openGauss JSON</text>
+  <text x="792" y="131" class="text small">保存文本表示</text>
+
+  <rect x="690" y="182" width="205" height="94" class="jsonb"/>
+  <text x="792" y="216" class="text label">openGauss JSONB</text>
+  <text x="792" y="243" class="text small">二进制文档表示</text>
+  <text x="792" y="264" class="text small">规范化对象语义</text>
+
+  <path d="M630 132 C660 132,660 113,690 113" class="arrow"/>
+  <path d="M630 160 C660 160,660 229,690 229" class="arrow"/>
+
+  <rect x="955" y="123" width="200" height="100" class="box"/>
+  <text x="1055" y="157" class="text label">heap / TOAST</text>
+  <text x="1055" y="184" class="text small">datum 写入 heap</text>
+  <text x="1055" y="207" class="text small">大值可压缩或移出行</text>
+  <path d="M895 113 C925 113,925 151,955 151" class="arrow"/>
+  <path d="M895 229 C925 229,925 195,955 195" class="arrow"/>
+
+  <rect x="185" y="350" width="230" height="100" class="note"/>
+  <text x="300" y="383" class="text label">可选索引维护</text>
+  <text x="300" y="410" class="text small">热点表达式 B-tree</text>
+  <text x="300" y="433" class="text small">JSONB GIN</text>
+
+  <rect x="485" y="350" width="220" height="100" class="box"/>
+  <text x="595" y="383" class="text label">路径读取</text>
+  <text x="595" y="410" class="text small">基列操作符</text>
+  <text x="595" y="433" class="text small">优化器选择计划</text>
+
+  <rect x="775" y="350" width="240" height="100" class="box"/>
+  <text x="895" y="383" class="text label">完整文档读取</text>
+  <text x="895" y="410" class="text small">基列序列化返回</text>
+  <text x="895" y="433" class="text small">客户端解析和校验</text>
+
+  <path d="M1055 223 V306 H300 V350" class="arrow"/>
+  <path d="M1055 223 V306 H595 V350" class="arrow"/>
+  <path d="M1055 223 V306 H895 V350" class="arrow"/>
+  <path d="M415 400 H485" class="arrow"/>
+
+  <text x="600" y="518" class="text small">索引用于匹配查询；完整文档始终从 JSON 或 JSONB 基列返回。</text>
+</svg>

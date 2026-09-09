@@ -1,10 +1,10 @@
 # Agent Trace JSON 存储设计调研
 
 > 状态：调研结论，供方案选择和穿刺实验使用
-> 调研日期：2026-09-04；文档修订日期：2026-09-08
+> 调研日期：2026-09-04；文档修订日期：2026-09-09
 > 范围：多字段 JSON、JSON 内长值、Trace 大 payload、热点字段、半结构化查询
-> 阶段一实验设计：[json-storage-stage1-experiment-design-2026-09-08.md](json-storage-stage1-experiment-design-2026-09-08.md)
-> 阶段一报告：[json-storage-stage1-report-2026-09-08.md](json-storage-stage1-report-2026-09-08.md)
+> 阶段一实验设计：[json-storage-stage1-experiment-design-2026-09-09.md](json-storage-stage1-experiment-design-2026-09-09.md)
+> 阶段一报告：[json-storage-stage1-report-2026-09-09.md](json-storage-stage1-report-2026-09-09.md)
 
 ## 1. 结论
 
@@ -25,13 +25,13 @@ OpenTelemetry Span 的 intrinsic 字段、Attributes 与 Agent payload 分属不
 当前项目适合验证以下分层模型：
 
 - 稳定且高频过滤、排序、聚合的字段使用独立强类型列。
-- 动态属性保留在 residual JSON 或 Map 中；已提升字段从 residual 中移除，读取层按需重建完整对象。
+- 长尾动态属性保留在 JSON 或 Map 中；已提升字段从动态属性中移除，读取层按需重建完整对象。
 - 分析主表保存 payload preview、长度、hash 和引用；完整详情保存在可独立裁剪的 payload 列、payload 表或 asset 层。
 - 极长、二进制、多模态或需要独立生命周期的内容进入 asset 层，主表保留结构化引用。
 - asset 引用携带内容类型、编码、长度、内容哈希、来源字段和状态。长文本与媒体共用物理设施，并保持业务语义可区分。
-- 需要精确审计或重放时单独保存 raw 原文，不要求分析型 residual 同时承担归档职责。
+- 需要精确审计或重放时单独保存原始 bytes，不要求分析用动态属性同时承担归档职责。
 
-该模型仍需通过实验确定热点字段集合、长值阈值、residual 形态，以及同表 payload、独立 payload 表、Full/Core 和对象引用的边界。当前 exporter 的 64 KiB 截断发生在数据库容量边界之前，会直接丢失内容，不适合作为长期大 payload 方案。
+该模型仍需通过实验确定热点字段集合、长值阈值、动态属性形态，以及同表 payload、独立 payload 表、Full/Core 和对象引用的边界。当前 exporter 的 64 KiB 截断发生在数据库容量边界之前，会直接丢失内容，不适合作为长期大 payload 方案。
 
 ## 2. 两类“大 JSON”
 
@@ -45,7 +45,7 @@ OpenTelemetry Span 的 intrinsic 字段、Attributes 与 Agent payload 分属不
 - 读取少量字段时产生整段解析和读取放大；
 - 全量展开为物理列后产生列数、统计信息和 compaction 压力。
 
-这类数据需要热点列、动态子列、Map/KV 或 residual 设计。仅把超长值移到对象存储不能缓解路径数量问题。
+这类数据需要热点列、动态子列、Map/KV 或整段动态属性设计。仅把超长值移到对象存储不能缓解路径数量问题。
 
 ### 2.2 少数字段值很长
 
@@ -79,7 +79,7 @@ JSON 内的长字符串在物理层属于大 payload，可与图片、音频和�
 
 #### 3.1.1 整段 JSON 文本或二进制 JSON
 
-`JSON` 文本保留输入文本，写入成本低，路径读取需要解析。二进制 JSON/JSONB 在写入时解析为内部结构，读取路径更快，并可配置通用或定向索引。
+openGauss JSON 保存进入 JSON datum 后的文本表示，写入成本较低，路径读取需要解析。逐字节原始事件仍应在首次解析前独立保存。openGauss JSONB 在写入时解析为二进制文档表示，避免查询时重复执行文本词法解析，并可配置通用或定向索引；实际查询收益取决于操作、选择率、索引和返回量。
 
 PostgreSQL 的 `json` 保存原始文本，`jsonb` 保存分解后的二进制结构；通用 GIN 索引复制全部键和值，定向表达式索引只覆盖指定路径，通常更小、查询更快。MySQL JSON 使用二进制格式，JSON 列通过生成列或表达式间接建立索引。
 
@@ -93,9 +93,9 @@ PostgreSQL 的 `json` 保存原始文本，`jsonb` 保存分解后的二进制�
 
 当前 exporter 已经具有这种模式的一部分，但 `metadata` 保留了所有属性，提升规则和重复范围没有显式契约。
 
-#### 3.1.3 热点列与 residual JSON/Map
+#### 3.1.3 热点列与动态属性 JSON/Map
 
-热点值移动到独立列，剩余动态属性进入 residual。读取完整对象时合并两部分。Tempo dedicated columns、Sinew physical column + column reservoir、Parquet Variant shredding 都体现了该模式。
+热点值移动到独立列，其余动态属性进入 JSON 或 Map。读取完整对象时合并两部分。Tempo dedicated columns、Sinew physical column + column reservoir、Parquet Variant shredding 都体现了该模式。
 
 优点是稳态不重复热点值，动态字段仍可容纳。代价集中在：
 
@@ -104,13 +104,13 @@ PostgreSQL 的 `json` 保存原始文本，`jsonb` 保存分解后的二进制�
 - 完整对象读取需要重建；
 - null、missing、类型冲突和路径转义必须有精确定义。
 
-Parquet Variant 规定 shredded 字段与 residual object 的键集合互斥，reader 负责重建；类型不匹配的值留在通用 `value`。这比应用约定更完整地定义了迁移和重建语义。
+Parquet Variant 规定 shredded 字段与剩余对象的键集合互斥，reader 负责重建；类型不匹配的值留在通用 `value`。这比应用约定更完整地定义了迁移和重建语义。
 
 #### 3.1.4 自动子列化与稀有路径共享区
 
 系统自动分析路径，把常见路径变成物理子列，把超出预算或稀有路径放进共享结构。
 
-ClickHouse 没有 PostgreSQL/openGauss 语义的 `JSONB` 类型。其原生类型名为 `JSON`，按 data part 管理动态路径，默认最多 1024 个动态路径。写入 part 时，预算内遇到的叶路径成为动态路径；预算外路径进入 shared data。merge 会按非 null 值数量重新选择保留为动态路径的路径，使稀有路径进入 shared data。每个未提示路径是 `Dynamic` 子列，内部按实际类型形成稠密子流；type hint 路径始终以指定类型保存，也不占用动态路径预算。`SKIP` 可排除无需分析的路径。shared data 的逻辑内容是路径与二进制值，磁盘有三种序列化：
+ClickHouse 没有 PostgreSQL/openGauss 语义的 `JSONB` 类型。其原生类型名为 `JSON`，按 data part 管理动态路径，默认最多 1024 个动态路径。写入 part 时，预算内遇到的叶路径成为动态路径；预算外路径进入 shared data。官方资料说明 merge 通常按非 null 值数量重新选择保留为动态路径的路径；本地固定版本也观察到这一行为。每个未提示路径是 `Dynamic` 子列，内部按实际类型形成稠密子流；type hint 路径始终以指定类型保存，也不占用动态路径预算。`SKIP` 可排除无需分析的路径。shared data 的逻辑内容是路径与二进制值，磁盘有三种序列化：
 
 - `map`：写入和整段读取较好，单路径读取需要扫描共享 Map；
 - `map_with_buckets`：增加写入成本，单路径只读一个 bucket；
@@ -118,7 +118,7 @@ ClickHouse 没有 PostgreSQL/openGauss 语义的 `JSONB` 类型。其原生类�
 
 Apache Doris Variant 也把叶路径列式化，并将高度稀疏路径重新打包到 JSONB 共享列。该类方案减少人工 schema 管理，代价是写入类型推断、物理元数据、merge/compaction 和整对象重建。路径上限、稀疏阈值和类型冲突必须纳入测试。
 
-ClickHouse 的路径扁平化与 PostgreSQL/openGauss JSONB 文档存储存在语义差异。ClickHouse 把路径表达为扁平叶路径，读取时将 JSON null 与路径缺失按同一空值语义处理；含点键需要专门的转义设置。官方 PostgreSQL CDC 因顶层标量/数组和含点键等不兼容，默认把源端 `json/jsonb` 映射为 `String`。本地 25.12.11.4 探针验证了嵌套空对象在 native JSON 重建时被省略。正式探针把 native JSON 作为分析来源，并增加 ZSTD 压缩的 canonical sidecar（列名 `metadata_raw`）承担逻辑文档对账；14 个补充运行均通过查询 truth 与 canonical hash 门禁。该布局明确计入 sidecar 的空间和写入成本。
+ClickHouse 的路径扁平化与 PostgreSQL/openGauss JSONB 文档存储存在语义差异。ClickHouse 把路径表达为扁平叶路径，读取时将 JSON null 与路径缺失按同一空值语义处理；含点键需要专门的转义设置。官方 PostgreSQL CDC 因顶层标量/数组和含点键等不兼容，默认把源端 `json/jsonb` 映射为 `String`。本地 25.12.11.4 探针验证了嵌套空对象在 ClickHouse Native JSON 重建时被省略。正式探针把 ClickHouse Native JSON 作为分析来源，并增加 ZSTD 压缩的 canonical Sidecar（列名 `metadata_raw`）承担逻辑文档对账；14 个补充运行均通过查询 truth 与 canonical hash 门禁。该存储结构明确计入 Sidecar 的空间和写入成本。
 
 查询必须使用能够触发物理子列裁剪的表达式。ClickHouse 官方同时支持 `getSubcolumn(json, 'a.b')` 和 `json.a.b.:Type`；本地 25.12.11.4 在当前 `getSubcolumn(...)::String` 过滤与分组形态下读取量明显放大，改用动态路径的 `metadata.path.:String` 和 type hint 路径的直接名称后，等宽三组的 native 查询中位读取量降至 0.35–1.31 MiB，String 解析为 24.55–25.72 MiB。该差异说明 SQL 访问形式属于实验和生产查询的必要门禁，不能只按列 DDL 判断子列收益。
 
@@ -186,7 +186,7 @@ Langfuse 同时覆盖“JSON 长字段”和“媒体大 payload”，两者共�
 
 PostgreSQL 提供文本 `json`、二进制 `jsonb`、GIN 以及表达式索引，并由 TOAST 透明处理宽值。MySQL JSON 通过生成列或表达式建立定向索引。两者适合事务型路径查询和少量确定热点路径。
 
-相较热点列 + residual：
+相较热点列 + 动态属性：
 
 - 通用 JSON 索引保持查询灵活，但索引复制范围大；
 - 定向表达式索引接近热点字段方案，表面 schema 变化较少；
@@ -206,7 +206,7 @@ ClickHouse 25.3 起把开源 JSON 类型标记为 production ready。它把路�
 
 首轮性能 SQL 返回并排序全部命中 ID，且当前 `getSubcolumn(...)::String` 形态没有形成目标列裁剪，因此旧计时不进入性能结论。修正后的矩阵固定 50,000 行，分离 ID truth 与性能聚合，使用 50% 时间范围、直接子列语法、QueryFinish 指标和三轮布局顺序轮换。
 
-98/99 路径边界精确验证 limited 布局在总路径数 100 时全部动态化、101 时第一条进入 shared data。`10×95% + 40×20% + 450×1%` 混合 profile 让 98 条长尾路径先占满业务路径预算；三轮 merge 均换入 50 条高/中密度路径并换出 50 条长尾路径，排除了按字典序或首次出现顺序保留的解释。固定每行约 50 个字段时，路径全集从 50 增至 5000，limited/hinted 的 merge 中位数从 0.288/0.272 s 增至 31.946/31.693 s。直接子列查询的中位读取量为 0.37–1.31 MiB、耗时为 6–9 ms；String 解析为 24.55–25.72 MiB、37–64 ms。完整 native 对象重建为 1,362–3,877 ms，String 内容读取为 17–39 ms，canonical sidecar 为 14–33 ms。native 载入吞吐较低，压缩空间包含 canonical sidecar；提高路径预算还会放大高基数压力组的载入和空间成本。完整数字见 [9 月 7 日阶段一报告](json-storage-stage1-report-2026-09-08.md)。
+98/99 路径边界精确验证 limited 布局在总路径数 100 时全部动态化、101 时第一条进入 shared data。`10×95% + 40×20% + 450×1%` 混合 profile 让 98 条长尾路径先占满业务路径预算；三轮 merge 均换入 50 条高/中密度路径并换出 50 条长尾路径，排除了按字典序或首次出现顺序保留的解释。固定每行约 50 个字段时，路径全集从 50 增至 5000，limited/hinted 的 merge 中位数从 0.288/0.272 s 增至 31.946/31.693 s。直接子列查询的中位读取量为 0.37–1.31 MiB、耗时为 6–9 ms；String 解析为 24.55–25.72 MiB、37–64 ms。完整 native 对象重建为 1,362–3,877 ms，String 内容读取为 17–39 ms，canonical sidecar 为 14–33 ms。native 载入吞吐较低，压缩空间包含 canonical sidecar；提高路径预算还会放大高基数压力组的载入和空间成本。完整数字见 [9 月 7 日阶段一报告](json-storage-stage1-report-2026-09-09.md)。
 
 该方案最适合字段形态变化快且有路径分析需求的日志/事件。与手工热点列相比，运维 schema 负担较低；写入、存储和整对象读取成本更高。它是列式半结构化分析类型，不是二进制文档 JSONB 的同名实现。当前 Langfuse 的 `events_full` 不能代表 ClickHouse 原生 JSON，二者必须作为不同实验候选。
 
@@ -238,13 +238,13 @@ Tempo 适合验证“Trace 原生列式布局、热点属性和对象存储 bloc
 - 面向 schemaless LSM 文档库的后续研究把 Dremel 扩展到异构类型和 LSM 生命周期，在 AsterixDB 实验中报告数量级查询改进和较小摄入影响。
 - Parquet Variant shredding 把常用路径写入 typed column，把类型不匹配和剩余对象留在通用 value；规范定义 missing、null、部分 shredding、重建和跨文件 schema 冲突。
 
-这些工作说明“热点列 + residual”可以由应用、存储引擎或文件格式实现。当前项目在应用层原型中应先固定重建语义和 workload，再评估是否值得向引擎能力演进。
+这些工作说明“热点列 + 动态属性”可以由应用、存储引擎或文件格式实现。当前项目在应用层原型中应先固定重建语义和 workload，再评估是否值得向引擎能力演进。
 
 #### 3.2.7 子列组织与提升依据对比
 
 目前没有一份外部报告覆盖本项目需要的全部比较维度。下表综合各项目官方文档、Sinew 论文和本地 ClickHouse 实验；它区分逻辑表示、物理子列组织和字段选择依据：
 
-| 系统或格式 | residual 与子列组织 | 自动选择 | 手工选择或 workload 输入 | 重建与保真边界 |
+| 系统或格式 | 动态属性存储与子列组织 | 自动选择 | 手工选择或 workload 输入 | 重建与保真边界 |
 |---|---|---|---|---|
 | PostgreSQL/openGauss JSONB | 分解的二进制文档；GIN 覆盖文档，表达式索引覆盖指定路径 | 不自动提升字段 | DBA 按常用查询建立表达式索引或生成列 | 保持 JSON 文档语义并规范化格式，不保存原始文本格式 |
 | ClickHouse JSON | 叶路径为 `Dynamic`/typed 子列，预算外路径进入 shared data | part 写入受路径预算限制；merge 按非 null 数量选择路径 | type hint 固定类型和子列，`SKIP` 排除路径 | 叶路径重建；null/missing、含点键和空容器语义与 JSONB 不同；逻辑对账使用 canonical sidecar，字节级恢复使用摄入原文 |
@@ -253,11 +253,11 @@ Tempo 适合验证“Trace 原生列式布局、热点属性和对象存储 bloc
 | Databricks Variant | Variant 使用内部列式编码，常见字段可获得专用编码 | 摄入时识别经常出现的字段 | 对频繁查询字段建议显式抽取或生成列 | Variant 保留逻辑值；内部选择算法不是跨格式契约 |
 | Grafana Tempo | intrinsic/dedicated Parquet 列加通用 `Attrs` | 不按查询日志自动提升 | 运维配置常查属性；密度、基数和值长指导列类型与编码 | 面向 TraceQL 属性读取，不承担 JSON 原文重建 |
 | Sinew | 物理列加 column reservoir | 后台 materializer 使用路径密度和基数 | 论文讨论 workload 收益，原型选择策略不读取查询频率 | 查询改写合并物理列和 reservoir |
-| Parquet Variant | shredding schema 指定 typed column，剩余值保留在 Variant `value` | 规范不规定选择算法 | writer 或上层 schema 选择 shredding 路径 | 规范定义 typed/residual 键互斥、类型回退和 reader 重建 |
+| Parquet Variant | shredding schema 指定 typed column，剩余值保留在 Variant `value` | 规范不规定选择算法 | writer 或上层 schema 选择 shredding 路径 | 规范定义 typed 列与通用 `value` 的键互斥、类型回退和 reader 重建 |
 
-可以称为公认的内容是分层本身：稳定分析字段使用强类型列，动态长尾保留在 residual，物理子列数量需要预算，类型冲突和重建语义需要显式定义。字段提升的统一公式尚不存在。非空密度被多个自动组织实现直接使用；类型稳定性是 typed 子列的共同前提；基数和值长常用于评估编码和存储成本。查询用途与访问频率是人工 schema、定向索引和 dedicated column 的常用输入，当前 ClickHouse、Sinew 等自动策略并未把查询频率作为统一的引擎指标。
+可以称为公认的内容是分层本身：稳定分析字段使用强类型列，动态长尾保留在动态属性存储中，物理子列数量需要预算，类型冲突和重建语义需要显式定义。字段提升的统一公式尚不存在。非空密度被多个自动组织实现直接使用；类型稳定性是 typed 子列的共同前提；基数和值长常用于评估编码和存储成本。查询用途与访问频率是人工 schema、定向索引和 dedicated column 的常用输入，当前 ClickHouse、Sinew 等自动策略并未把查询频率作为统一的引擎指标。
 
-目前没有跨 OLTP、OLAP、搜索和对象归档场景通用的 JSONB/子列最优解。开源实现和论文形成了一组较稳定的设计原则：已知且常查路径使用强类型列或 type hint；动态长尾进入 residual、Map 或 shared data；路径/字段数量设置预算；保留 missing、JSON null、类型冲突和重建语义；使用代表性数据与查询共同决定提升路径。具体机制仍随工作负载变化：PostgreSQL/openGauss 偏事务文档与索引，ClickHouse/Doris/Snowflake 偏列式分析，Elasticsearch 偏倒排搜索，Parquet Variant 偏跨引擎文件交换。
+目前没有跨 OLTP、OLAP、搜索和对象归档场景通用的 JSONB/子列最优解。开源实现和论文形成了一组较稳定的设计原则：已知且常查路径使用强类型列或 type hint；动态长尾采用 JSON、Map 或 shared data；路径/字段数量设置预算；保留 missing、JSON null、类型冲突和重建语义；使用代表性数据与查询共同决定提升路径。具体机制仍随工作负载变化：PostgreSQL/openGauss 偏事务文档与索引，ClickHouse/Doris/Snowflake 偏列式分析，Elasticsearch 偏倒排搜索，Parquet Variant 偏跨引擎文件交换。
 
 ### 3.3 方案能力比较
 
@@ -265,11 +265,11 @@ Tempo 适合验证“Trace 原生列式布局、热点属性和对象存储 bloc
 
 | 方向 | 主要收益 | 主要成本 | 当前角色 |
 |---|---|---|---|
-| JSON 文本 | 摄入和整对象读取路径简单，保留原文 | 字段分析逐行解析 | raw 或极冷 residual |
+| JSON 文本 | 摄入和整对象读取路径简单，保留原文 | 字段分析逐行解析 | 原文归档或极冷属性 |
 | JSONB + 通用索引 | 支持未知路径的包含和存在查询 | 解析、索引空间和持续索引维护 | 行存语义与灵活检索对照 |
 | JSONB + 定向索引/生成列 | 加速少量稳定路径 | schema 与索引维护 | openGauss 热点路径候选 |
-| 强类型列 + residual | 时间过滤、列裁剪和热点聚合稳定 | 字段归属和重建契约 | 目标分析布局 |
-| 自动子列 + shared data | 动态路径获得列式读取 | 类型推断、路径元数据、文件和 merge | ClickHouse residual 候选 |
+| 强类型列与动态属性 | 时间过滤、列裁剪和热点聚合稳定 | 字段归属和重建契约 | 目标分析布局 |
+| 自动子列 + shared data | 动态路径获得列式读取 | 类型推断、路径元数据、文件和 merge | ClickHouse JSON 候选 |
 | Map/flattened/EAV | 容纳大量未知扁平键 | 嵌套、类型或查询统计受限 | 扁平属性候选 |
 | 同表独立 payload 列 | 列裁剪成立时保持单表 | 详情和分析共享表生命周期 | 长字段最低复杂度基线 |
 | 独立 payload 表或 Full/Core | 隔离详情读取和分析工作集 | 重复写入、回查与一致性 | 需要实测的物理分层 |
@@ -282,9 +282,9 @@ Tempo 适合验证“Trace 原生列式布局、热点属性和对象存储 bloc
 
 ### 4.1 当前项目 JSON 存储基线
 
-exporter 的 ADR-0010 已在 `0c26c9ecf03acf0bd6aa3a3c103ba4e7a78b523a` 冻结 18 列最小 OTel 单表，`input`、`output`、`metadata` 三个 JSON 列承载动态属性和模型输入输出。生产 profile 已验证 dstore 列存 `JSON`，尚未使用 `JSONB`；JSON 路径读取在执行阶段解析。历史 28 列 schema 的 `tags` 已在 18 列冻结中删除，因此本阶段不再单独比较 tags 的 JSON 与 Array 表示。
+exporter 的 ADR-0010 已在 2026-09-02 · `0c26c9e` 冻结 18 列最小 OTel 单表，`input`、`output`、`metadata` 三个 JSON 列承载动态属性和模型输入输出。生产 profile 已验证 dstore 列存 `JSON`，尚未使用 `JSONB`；JSON 路径读取在执行阶段解析。历史 28 列 schema 的 `tags` 已在 18 列冻结中删除，因此本阶段不再单独比较 tags 的 JSON 与 Array 表示。
 
-exporter 把全部 span/event 属性写入 `metadata`，同时把部分 GenAI 输入输出提升到 `input`、`output`，尚未定义热点字段与 residual 的互斥或重建契约。默认 `max_attr_value_length=65536` 在入库前截断属性；JSON 列整体超限时只保存截断标记，没有可恢复引用。现有实现也未提供物化 Core/Full、asset 状态机和多模态对象生命周期。引擎验证已覆盖 50 MiB JSON 和更大的 TEXT，因此 64 KiB 是 exporter 策略，不能表示数据库的容量边界。
+exporter 把全部 span/event 属性写入 `metadata`，同时把部分 GenAI 输入输出提升到 `input`、`output`，尚未定义热点字段与剩余动态属性的互斥或重建契约。默认 `max_attr_value_length=65536` 在入库前截断属性；JSON 列整体超限时只保存截断标记，没有可恢复引用。现有实现也未提供物化 Core/Full、asset 状态机和多模态对象生命周期。引擎验证已覆盖 50 MiB JSON 和更大的 TEXT，因此 64 KiB 是 exporter 策略，不能表示数据库的容量边界。
 
 现有 benchmark workload 包含 JSON 路径过滤、动态属性聚合、文本查询和 light/full 投影，并使用查询 type 参数化、参数 catalog 以及 trace 长度、payload 大小等参数分层保证查询参数可复现。输入覆盖尚未成为运行门禁。对 `whowhen-pro` text split 的覆盖审计显示，6,257 条 trace 都带 `failure.root_span`，只有 232 条投影出 ERROR status，`gen_ai.provider.name` 只有 `unknown` 一个值；顺序 `--limit` 还可能只截取单一 framework。当前默认输入仍是 text split，多模态 sidecar 契约处于 Draft 状态。因此现有数据不能直接作为多字段 JSON、长 payload 和多模态存储的完整基线。
 
@@ -311,14 +311,14 @@ exporter 把全部 span/event 属性写入 `metadata`，同时把部分 GenAI �
 - 类型冲突与不同值基数对大路径 namespace 子列选择和编码的影响；
 - 单个长值与多个短值在相同总大小下的差异；
 - 2 MiB 以上长值、对象引用、多模态内容和对象存储故障；
-- 主表、索引、residual、Core 和对象存储的分项空间。
+- 主表、索引、动态属性、Core 和对象存储的分项空间。
 
 ### 4.2 建议的逻辑模型
 
 ```text
 events_analytics
   trace/span 稳定列 + 常用维度 + promoted attributes
-  + bounded residual + input/output preview + 长度/hash/引用状态
+  + 有预算的动态属性存储 + input/output preview + 长度/hash/引用状态
 
 event_payloads
   project_id + trace_id + span_id + field_path
@@ -340,20 +340,20 @@ assets
 - 非 null 密度；
 - 类型稳定性；
 - 基数与可用统计信息；
-- 从 residual 提升后的空间和写放大。
+- 字段提升后的空间和写放大。
 
 这里的查询出现频率是 workload 评估输入，不是各引擎公认的自动提升指标。ClickHouse merge 使用非 null 数量；Sinew 原型使用密度和基数；Tempo 的 dedicated columns 由配置选择。首批候选包括现有同级列、`provider.name`、模型、token/cost、错误级别和 service 信息。Tempo 的 5% 密度建议和 Sinew 的密度/基数策略可作为实验起点，不能直接作为生产阈值。
 
-### 4.4 residual 契约
+### 4.4 动态属性契约
 
 实验需要比较两种规则：
 
 - **copy**：热点字段仍保留在原 JSON；兼容简单，存在重复和一致性成本。
-- **move**：热点字段从 residual 移除；空间更小，reader 负责重建。
+- **move**：热点字段从 JSON 或 Map 的剩余属性中移除；空间更小，reader 负责重建。
 
 若选择 move，契约必须定义路径转义、数组、类型冲突、JSON null、missing、同名字段优先级和 schema version。Parquet Variant 的互斥键与 reader 重建规则可作为参考。
 
-schema 引入和迁移阶段可先采用 copy，以完整 JSON 对账并保留回滚能力；稳态空间优化再切换为 move。字节级原始输入若用于审计或重放，应单独保存为 raw payload 或 asset，不由查询用 residual 同时承担归档职责。
+schema 引入和迁移阶段可先采用 copy，以完整 JSON 对账并保留回滚能力；稳态空间优化再切换为 move。字节级原始输入若用于审计或重放，应单独保存为 raw payload 或 asset，不由查询用动态属性同时承担归档职责。
 
 逻辑正确性契约还应规定：object key 顺序不参与业务相等判断，数组顺序保留；路径 missing、JSON null 与 SQL NULL 分别表示缺失路径、显式空值和整列缺失；数值类型、重复键、路径转义和类型冲突进入 truth manifest。嵌套 map/slice 应保持结构化 JSON，继续字符串化属于需要单独验证的兼容行为。
 
@@ -381,7 +381,7 @@ resolver 应按 project/tenant 鉴权并生成受限下载地址。脱敏、加�
 
 ### 5.1 基线与比较边界
 
-可复现基线需要同时固定数据集与生成参数、Collector/exporter 版本和配置、schema 及索引、引擎 build 与 storage profile、查询 workload 和运行环境。每次运行还需保存输入 hash、truth manifest、DDL/catalog hash、二进制 hash 和正确性结果。当前 exporter main `9a49c8a9d6091633112fe793fcf12310859aeb7f` 写入 18 列；trace-synthesis main `6472d8e1ac6cdb42494b79b28d4d5361919d4776` 的 v4 database catalog revision `2026-09-02.3` 仍定义 28 列。两仓 main 尚未形成联合冻结，配对完成前的系统级结果不能进入新基线比较。独立 loader 的机制实验不依赖该列数配对。
+可复现基线需要同时固定数据集与生成参数、Collector/exporter 版本和配置、schema 及索引、引擎 build 与 storage profile、查询 workload 和运行环境。每次运行还需保存输入 hash、truth manifest、DDL/catalog hash、二进制 hash 和正确性结果。2026-09-03 的 exporter main `9a49c8a` 写入 18 列；2026-09-03 的 trace-synthesis main `6472d8e` 的 v4 database catalog revision `2026-09-02.3` 仍定义 28 列。两仓 main 尚未形成联合冻结，配对完成前的系统级结果不能进入新基线比较。独立 loader 的机制实验不依赖该列数配对。
 
 现有 database 与 Langfuse backend 的路径分别为：
 
@@ -392,14 +392,14 @@ langfuse: OTLP -> Langfuse ingestion/worker -> ClickHouse/PostgreSQL/MinIO
 
 端到端结果属于系统级比较，包含接收、队列、转换、schema 和存储实现的共同影响。数据库 JSON 能力比较需要使用独立 loader，或采集分段时延、CPU 和 bytes read，拆分摄入层与数据库执行。系统级结果与引擎级结果分别报告。
 
-阶段一数据规格、workload、指标和运行门槛见 [JSON 存储阶段一实验设计](json-storage-stage1-experiment-design-2026-09-08.md)；residual 统一横向契约见 [JSON 存储阶段二实验设计](json-storage-stage2-experiment-design-2026-09-08.md)；Full/Core、长 payload 和 asset reference 见 [阶段三实验设计](json-storage-stage3-experiment-design-2026-09-08.md)。
+阶段一数据规格、workload、指标和运行门槛见 [JSON 存储阶段一实验设计](json-storage-stage1-experiment-design-2026-09-09.md)；阶段二统一横向契约见 [JSON 存储阶段二实验设计](json-storage-stage2-experiment-design-2026-09-09.md)；Full/Core、长 payload 和 asset reference 见 [阶段三实验设计](json-storage-stage3-experiment-design-2026-09-09.md)。
 
 ### 5.2 证据与修改层次
 
 | 观测 | 需要补充的证据 | 优先修改层次 |
 |---|---|---|
 | 数据到达数据库前已截断或无效 | exporter marker 数、原始/写入 hash | exporter 转换和长值策略 |
-| JSON 路径过滤读取大量无关字节 | query plan、bytes read、路径密度 | 热点列、定向索引、residual 或自动子列 |
+| JSON 路径过滤读取大量无关字节 | query plan、bytes read、路径密度 | 热点列、定向索引、JSON/Map 存储或自动子列 |
 | light/list 查询受 input/output 长度影响 | light/full bytes read 与延迟曲线 | 物化 Core/Full 分层 |
 | 路径数增加导致元数据或 compaction 急剧增长 | 50/500/5000 路径实验 | Map/shared data、路径预算或专用半结构化类型 |
 | 单字段达到 MiB 后内存、网络和行宽上升 | payload 阶梯、LOB/对象分项 | LOB 或 asset reference |
@@ -416,7 +416,7 @@ langfuse: OTLP -> Langfuse ingestion/worker -> ClickHouse/PostgreSQL/MinIO
 3. 使用 truth manifest 校验新旧读取结果、计数和 canonical hash。
 4. 切换读取面并保留回滚窗口，稳定后停止旧写入。
 
-启动时 schema preflight 应拒绝不兼容组合。关系型引擎仍满足稳定列查询和事务要求时，优先调整 schema 与 exporter。完成热点列、residual、Full/Core 和 asset 的单变量验证后，若动态路径规模、列式裁剪或 Trace 关系查询仍超出目标，再比较 ClickHouse、Tempo、文档/搜索引擎或专用存储。更换或开发数据库的收益还需覆盖迁移、查询改写、运维、备份恢复和长期维护成本。
+启动时 schema preflight 应拒绝不兼容组合。关系型引擎仍满足稳定列查询和事务要求时，优先调整 schema 与 exporter。完成热点列、动态属性、Full/Core 和 asset 的单变量验证后，若动态路径规模、列式裁剪或 Trace 关系查询仍超出目标，再比较 ClickHouse、Tempo、文档/搜索引擎或专用存储。更换或开发数据库的收益还需覆盖迁移、查询改写、运维、备份恢复和长期维护成本。
 
 ## 6. 遗留问题
 
@@ -425,7 +425,7 @@ langfuse: OTLP -> Langfuse ingestion/worker -> ClickHouse/PostgreSQL/MinIO
 | P0 | 可比较基线采用哪组 exporter 与 schema/catalog，以及 64 KiB 截断是否启用 | 精确提交映射、DDL/catalog hash、schema preflight、原始与入库 hash |
 | P0 | 真实 Trace 的字段数量、稀疏度、类型冲突、Trace 宽度、payload 分布和查询频率 | 脱敏样本或生产统计直方图，以及可复现的查询样本 |
 | P1 | dstore JSON 的解析、压缩、LOB 隔离和路径读取成本 | 路径数量与 payload 阶梯下的执行计划、bytes read、CPU 和分项空间 |
-| P1 | 哪些路径需要提升，以及动态属性采用 Map、自动子列、KV 还是 residual | 路径密度、基数、类型稳定性、读写成本和结构化嵌套兼容性 |
+| P1 | 哪些路径需要提升，以及未提升属性采用 Map、自动子列、KV 还是 JSON 文档 | 路径密度、基数、类型稳定性、读写成本和结构化嵌套兼容性 |
 | P1 | Core 使用物化视图、双写表还是引擎投影 | 三种机制的写放大、可见性、回填、查询读取量和恢复行为 |
 | P1 | asset 的内联阈值、失败回退和跨系统一致性策略 | 长值大小曲线、故障注入、孤儿/缺失引用核对和恢复目标 |
 | P2 | 脱敏、密钥、租户隔离、保留期限和删除传播规则 | 部署安全策略、合规要求及覆盖数据库、缓存、备份和对象副本的验证 |

@@ -1,9 +1,9 @@
 # Agent Trace JSON 存储阶段三实验设计
 
 > 状态：待执行；阶段二横向报告完成后启动
-> 初始设计日期：2026-09-07；文档修订日期：2026-09-08
-> 数据路径：`independent_loader`
-> 上游边界：[阶段一报告](json-storage-stage1-report-2026-09-08.md)第 6、7 节、[阶段二实验设计](json-storage-stage2-experiment-design-2026-09-08.md)
+> 初始设计日期：2026-09-07；文档修订日期：2026-09-09
+> 数据路径：独立载入程序
+> 上游边界：[阶段一报告](json-storage-stage1-report-2026-09-09.md)第 6、7 节、[阶段二实验设计](json-storage-stage2-experiment-design-2026-09-09.md)
 
 ## 1. 目标与范围
 
@@ -14,7 +14,7 @@
 3. 单个长值与相同总字节的多字段对象是否表现不同；
 4. asset reference 的内容恢复、引用完整性和基本故障行为。
 
-阶段二先确定横向运行基础设施和可比性口径。阶段三复用该契约，主矩阵只包含两引擎相同的稳定列和 payload 相关列，不携带动态 residual。数据库内 payload 使用字节保持的 TEXT/String，JSONB、Map、native JSON 和长 payload 路径查询不进入本阶段变量。
+阶段二已确定横向运行基础设施和可比性口径。阶段三复用该契约，主矩阵只包含两引擎相同的稳定列和 payload 相关列，不携带动态属性。数据库内 payload 使用字节保持的 TEXT/String，openGauss JSONB、Map、ClickHouse Native JSON 和长 payload 路径查询不进入本阶段变量。
 
 实验不经过 Collector、exporter 或 benchmark，不形成端到端系统性能结论。完整对象存储服务、网络、鉴权、保留策略和多租户隔离不进入物理布局主矩阵。
 
@@ -154,11 +154,11 @@ run manifest 至少记录 run ID、状态、完整复现命令、输入与 truth
 - 临时数据库对象或本轮 asset 目录清理失败；
 - 需要修改 exporter、benchmark、数据库镜像或完整产品服务才能继续。
 
-阶段三报告只记录长 payload 数据契约、四布局结果、正确性、原文恢复、asset 故障结果、适用范围和建议。阶段一引擎内机制数据与阶段二 residual 数据只作为引用，不进入阶段三布局比例计算。
+阶段三报告只记录长 payload 数据契约、四种存储结构结果、正确性、原文恢复、asset 故障结果、适用范围和建议。阶段一引擎内机制数据与阶段二动态属性数据只作为引用，不进入阶段三结构比例计算。
 
 ## 10. 参考资料
 
-- [阶段一报告](json-storage-stage1-report-2026-09-08.md)
-- [阶段一实验设计](json-storage-stage1-experiment-design-2026-09-08.md)
-- [阶段二实验设计](json-storage-stage2-experiment-design-2026-09-08.md)
-- [JSON 存储设计调研](json-storage-design-survey-2026-09-08.md)
+- [阶段一报告](json-storage-stage1-report-2026-09-09.md)
+- [阶段一实验设计](json-storage-stage1-experiment-design-2026-09-09.md)
+- [阶段二实验设计](json-storage-stage2-experiment-design-2026-09-09.md)
+- [JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)

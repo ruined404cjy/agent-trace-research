@@ -3,7 +3,7 @@
 > 状态：一次性 Spike 基础设施；openGauss 实验及 ClickHouse 机制与固定行数补充矩阵已完成
 > 范围：确定性数据、truth manifest、标准 openGauss JSON/JSONB 行存验证、固定版本端到端参照
 
-本目录实现 [JSON 存储阶段一实验设计](../../docs/json-storage-stage1-experiment-design-2026-09-08.md) 中的公共正确性与路径组织 profile，并提供标准 openGauss 6.0.0 的独立 loader。正确性探针固定跨数据库实验的输入和判定口径，验证当前 exporter JSON schema 的读写语义；路径组织实验比较同一 openGauss 实例内的 JSONB 索引机制。
+本目录实现 [JSON 存储阶段一实验设计](../../docs/json-storage-stage1-experiment-design-2026-09-09.md) 中的公共正确性与路径组织 profile，并提供标准 openGauss 6.0.0 的独立 loader。正确性探针固定跨数据库实验的输入和判定口径，验证当前 exporter JSON schema 的读写语义；路径组织实验比较同一 openGauss 实例内的 JSONB 索引机制。
 
 ## 数据契约
 
@@ -56,7 +56,7 @@ python3 experiments/json-storage-stage1/generator/generate.py \
 
 `opengauss/run_correctness.py` 使用已经运行的标准 openGauss 6.0.0 容器。每次运行创建唯一临时 schema，使用 exporter `54ca553a7ed09ad1751c82adab3aa52c6e9357b1` 的 26 列 `events` 行存 DDL，其中 `tags`、`input`、`output`、`metadata` 为 `JSON`。探针只创建 `events` 和重复键观察表，不创建索引、去重 view、`ingest_batches` 或 `scores`。
 
-独立 loader 把公共记录投影到 `events`，使用 `span_id` 关联 truth manifest 中的 `event_id`。它验证 JSON 列和查询语义，不经过 Collector、exporter 或 benchmark，不能作为端到端写入或性能基线。蓝区行存与黄区 dstore 属于两个系统环境的部署事实，本探针不输出行存与列存的机制比较结论。
+独立 loader 把公共记录投影到 `events`，使用 `span_id` 关联 truth manifest 中的 `event_id`。它验证 JSON 列和查询语义，不经过 Collector、exporter 或 benchmark，不能作为端到端写入或性能基线。标准 openGauss 行存与 GV dstore 属于两个系统环境的部署事实，本探针不输出行存与列存的机制比较结论。
 
 12 行真实集成测试：
 
@@ -89,7 +89,7 @@ python3 experiments/json-storage-stage1/opengauss/run_correctness.py \
 
 运行 manifest 固定 benchmark `9529c8f389673132757f4da9a96878926f22b94f` 与 exporter `54ca553a7ed09ad1751c82adab3aa52c6e9357b1`。其中提交号是 schema 与后续链路的版本身份；本次数据路径明确记录为 `independent_loader`。
 
-## 蓝区系统级参照
+## 标准 openGauss 系统级参照
 
 ### 固定输入与环境
 
@@ -151,7 +151,7 @@ column "events_dedup.metadata" must appear in the GROUP BY clause or be used in 
 | Q09 | 2.64 ms | 2.20 ms | 4.00 ms |
 | Q15 | 471.31 ms | 476.39 ms | 513.03 ms |
 
-Q08 的五次请求均返回 0 行，只证明空结果路径执行成功，不构成 ERROR/tool 文本正向命中证据。以上数字来自单次本机运行，用于固定蓝区系统参照和发现运行约束，不构成蓝黄性能比较或行列存机制结论。运行期间暂停了 Open-SWE 后台下载，结束后恢复下载。
+Q08 的五次请求均返回 0 行，只证明空结果路径执行成功，不构成 ERROR/tool 文本正向命中证据。以上数字来自单次本机运行，用于固定标准 openGauss 系统参照和发现运行约束，不构成 openGauss 与 GV 的性能比较或行列存机制结论。运行期间暂停了 Open-SWE 后台下载，结束后恢复下载。
 
 ## openGauss JSONB 路径组织实验
 
@@ -224,7 +224,7 @@ runner SHA-256 为 `74f5151f9316fe72f8e0614b97e6c567aedbcf71650bb73c47cb59503b0d
 - 冷路径选择性较低时 GIN 明显缩短查询；`50×95%` 中 GIN 被自然采用但中位数高于顺序扫描，说明通用索引可用性本身不足以保证收益。
 - GIN 索引为 7.711–63.852 MiB，并在全部 9 组中增加载入时间。固定热点索引的空间随行数变化，宽路径数量不直接扩大该索引。
 
-这些数字来自单次本机运行，用于选择下一阶段机制。固定载入顺序、缓存状态和单次载入样本限制了小幅差异的解释；本结果不构成蓝区 openGauss 与黄区 GaussVector 的性能比较。
+这些数字来自单次本机运行，用于选择下一阶段机制。固定载入顺序、缓存状态和单次载入样本限制了小幅差异的解释；本结果不构成 openGauss 与 GaussVector 的性能比较。
 
 从 `agent-trace-research` 根目录生成和运行单组 profile：
 
@@ -247,7 +247,7 @@ runner SHA-256 为 `74f5151f9316fe72f8e0614b97e6c567aedbcf71650bb73c47cb59503b0d
   --measurements 5
 ```
 
-## ClickHouse native JSON 路径组织探针
+## ClickHouse Native JSON 路径组织探针
 
 `clickhouse/run_path_organization.py` 使用与 openGauss JSONB 实验相同的路径 profile 和 truth，建立以下 MergeTree 布局：
 
@@ -257,9 +257,9 @@ runner SHA-256 为 `74f5151f9316fe72f8e0614b97e6c567aedbcf71650bb73c47cb59503b0d
 | `native_limited` | `JSON(max_dynamic_paths=100)` + `metadata_raw String CODEC(ZSTD(3))` |
 | `native_hinted` | `JSON(max_dynamic_paths=1000, hot.tenant String, hot.region String)` + `metadata_raw` |
 
-当前环境固定 ClickHouse `25.12.11.4`，镜像 digest `sha256:8a790dd3468db22b1d4e7b18a176f378ff5ff6053b9c48dd4ea1fa71a24c5ba6`。每张表分四个 INSERT part 载入；零层 part 使用 `map_with_buckets`，`OPTIMIZE FINAL` 后使用 `advanced`。runner 记录 merge 前后空间、dynamic/shared 路径数、热点/冷路径查询、整对象读取和 metadata canonical hash，并在结束时删除临时数据库。分析等价门禁使用 `metadata`；canonical 文档门禁在 String 布局使用 `metadata`，在 native 布局使用 `metadata_raw`。native JSON 自身的完整对象回读单独记录引擎语义差异。
+当前环境固定 ClickHouse `25.12.11.4`，镜像 digest `sha256:8a790dd3468db22b1d4e7b18a176f378ff5ff6053b9c48dd4ea1fa71a24c5ba6`。每张表分四个 INSERT part 载入；零层 part 使用 `map_with_buckets`，`OPTIMIZE FINAL` 后使用 `advanced`。runner 记录 merge 前后空间、dynamic/shared 路径数、热点/冷路径查询、整对象读取和 metadata canonical hash，并在结束时删除临时数据库。分析等价门禁使用 `metadata`；canonical 文档门禁在 String 布局使用 `metadata`，在 native 布局使用 `metadata_raw`。ClickHouse Native JSON 自身的完整对象回读单独记录引擎语义差异。
 
-500 路径×20% 密度、200 行和包含空对象的 50 路径×20% 密度、100 行集成测试均通过。首轮正式语义矩阵使用 `50×20%` 与 `500×1%`，验证了查询 truth、canonical sidecar、路径预算、shared data 和 type hint。`50×20%` 的两个 native JSON 列各有 77,562 条回读差异，均来自空 `metadata.paths` 被省略；canonical sidecar 的 hash 差异为 0。
+500 路径×20% 密度、200 行和包含空对象的 50 路径×20% 密度、100 行集成测试均通过。首轮正式语义矩阵使用 `50×20%` 与 `500×1%`，验证了查询 truth、canonical sidecar、路径预算、shared data 和 type hint。`50×20%` 的两个 ClickHouse Native JSON 列各有 77,562 条回读差异，均来自空 `metadata.paths` 被省略；canonical sidecar 的 hash 差异为 0。
 
 性能补充实验做出以下修正：
 
@@ -293,9 +293,9 @@ runner SHA-256 为 `74f5151f9316fe72f8e0614b97e6c567aedbcf71650bb73c47cb59503b0d
 
 14 个正式运行均为 `complete`，分析等价、文档保真、合并后行数、ID 身份、路径清单和整对象 digest 门禁全部通过，临时数据库均已删除。原始结果位于 gitignored 的 `docs/temp/json-storage-stage1/clickhouse-json-path-followup-direct-20260904/`。热点查询选择性在等宽三组中相同；冷路径选择性随密度变化，冷路径数字只用于组内布局比较。
 
-该矩阵形成以下阶段结论：直接子列查询显著减少扫描量和查询耗时；完整逻辑详情读取应走 String/canonical sidecar，避免从 native 子列重建；native JSON 的载入吞吐低于 String，并承担子列组织和 canonical sidecar 空间；固定每行约 50 个字段时，全局路径数从 50 增至 5000 会把 native merge 中位数从约 0.27–0.29 s 放大到约 32 s；把预算从 100 提高到 1000 对两个已知查询的收益有限，却显著增加 `5000×1%` 的载入和空间成本。5000 路径仍是压力边界，不能作为 Agent Trace 代表性分布。
+该矩阵形成以下阶段结论：直接子列查询显著减少扫描量和查询耗时；完整逻辑详情读取应走 String/canonical sidecar，避免从 native 子列重建；ClickHouse Native JSON 的载入吞吐低于 String，并承担子列组织和 canonical sidecar 空间；固定每行约 50 个字段时，全局路径数从 50 增至 5000 会把 native merge 中位数从约 0.27–0.29 s 放大到约 32 s；把预算从 100 提高到 1000 对两个已知查询的收益有限，却显著增加 `5000×1%` 的载入和空间成本。5000 路径仍是压力边界，不能作为 Agent Trace 代表性分布。
 
-`metadata_raw` 是解析后重新序列化的 canonical JSON，不保留原始空白、键顺序或重复键文本。字节级审计和重放需要在摄入层另存原始输入 bytes。[阶段二](../../docs/json-storage-stage2-experiment-design-2026-09-08.md)审计真实 Trace 的 `P/W/dᵢ/cᵢ/Tᵢ/Lᵢ/E`，并运行 residual 的持续写入、后台 merge、并发查询和横向比较。[阶段三](../../docs/json-storage-stage3-experiment-design-2026-09-08.md)单独运行长 payload 四布局实验。
+`metadata_raw` 是解析后重新序列化的 canonical JSON，不保留原始空白、键顺序或重复键文本。字节级审计和重放需要在摄入层另存原始输入 bytes。[阶段二](../../docs/json-storage-stage2-experiment-design-2026-09-09.md)审计真实 Trace 的 `P/W/dᵢ/cᵢ/Tᵢ/Lᵢ/E`，并运行动态属性的持续写入、后台 merge、并发查询和横向比较。[阶段三](../../docs/json-storage-stage3-experiment-design-2026-09-09.md)单独运行长 payload 四种存储结构实验。
 
 固定行数 profile 和单次 runner 的复现命令示例：
 

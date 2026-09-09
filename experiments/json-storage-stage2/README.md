@@ -1,8 +1,8 @@
 # Agent Trace JSON 存储阶段二实验
 
-本目录比较 openGauss 6.0.0 与 ClickHouse 25.12.11.4 的 residual JSON 布局。数据路径固定为 `independent_loader`，不经过 Collector、exporter、benchmark 或产品服务。
+本目录比较 openGauss 6.0.0 与 ClickHouse 25.12.11.4 的动态属性存储结构。数据路径为独立载入程序，不经过 Collector、exporter、benchmark 或产品服务。
 
-阶段二已完成 6 个正式 run、18 个布局结果。结论见[阶段二横向报告](../../docs/json-storage-stage2-report-2026-09-08.md)。正式统计仅使用 `formal-20260907-retry-3/`；`formal-20260907/`、`formal-20260907-retry-1/`、`formal-20260907-retry-2/` 的全部产物只用于诊断。
+阶段二已完成 6 个正式 run、18 个布局结果。结论见[阶段二横向报告](../../docs/json-storage-stage2-report-2026-09-09.md)。正式统计仅使用 `formal-20260907-retry-3/`；`formal-20260907/`、`formal-20260907-retry-1/`、`formal-20260907-retry-2/` 的全部产物只用于诊断。
 
 ## 依赖与输入
 
@@ -47,7 +47,7 @@ python3 experiments/json-storage-stage2/generator/generate_cross_engine.py \
 
 openGauss 6.0.0 的 `jsonb_ops` GIN 写入递归空字符串时触发 `jsonb_gin.cpp:519` 错误。`og_jsonb_gin` 使用 `jsonb_hash_ops`，Q05 保持 JSONB `@>` 包含查询；DDL、GIN 空间、自然计划与禁用顺扫计划均记录该布局。回归测试同时验证空字符串的 Q04、analysis 和 raw 恢复。源码依据见 [v6.0.0](https://gitee.com/opengauss/openGauss-server/blob/v6.0.0/src/common/backend/utils/adt/jsonb_gin.cpp) 与 [v6.0.2](https://gitee.com/opengauss/openGauss-server/blob/v6.0.2/src/common/backend/utils/adt/jsonb_gin.cpp)。
 
-`formal-20260907/` 保留首次失败轮次 `opengauss-r1-04ca47c0b0d8487db41e2d255efb3875` 的诊断；`formal-20260907-retry-1/` 保留 ClickHouse 第三轮 `clickhouse-r3-83bd945702b64f2291febfa4c6ee5b82` 的 server-total memory limit 诊断及同批次产物。失败整轮排除统计。openGauss 与 ClickHouse 各三轮的六个完整重试 run 全部写入新根 `docs/temp/json-storage-stage2/formal-20260907-retry-3/`，最终汇总仅使用该新根。每次重试选择新的输出目录与 run ID。
+`formal-20260907/` 保留首次 openGauss 失败轮次的诊断；`formal-20260907-retry-1/` 保留 ClickHouse 第三轮 server-total memory limit 诊断及同批次产物。失败整轮排除统计。openGauss 与 ClickHouse 各三轮的六个完整重试结果全部写入 `docs/temp/json-storage-stage2/formal-20260907-retry-3/`，最终汇总仅使用该目录。完整运行标识保存在各运行清单中。
 
 `formal-20260907-retry-2/` 的 ClickHouse worker 在屏障前未显式建立 TCP 连接，首个并发样本存在建连计时风险。静态样本经过预热，为统一 runner 身份仍将整根退出统计。retry-3 的 worker 在连接成功后进入屏障；runner 仅清理本次运行成功创建并取得所有权的对象。
 

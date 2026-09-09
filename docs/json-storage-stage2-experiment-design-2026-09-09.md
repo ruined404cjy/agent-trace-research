@@ -1,9 +1,9 @@
 # Agent Trace JSON 存储阶段二实验设计
 
 > 状态：已完成，六轮正式实验、18 个存储结构结果通过门禁
-> 实验完成日期：2026-09-07；文档修订日期：2026-09-08
-> 数据路径：`independent_loader`
-> 上游边界：[阶段一报告](json-storage-stage1-report-2026-09-08.md)第 6、7 节
+> 实验完成日期：2026-09-07；文档修订日期：2026-09-09
+> 数据路径：独立载入程序
+> 上游边界：[阶段一报告](json-storage-stage1-report-2026-09-09.md)第 6、7 节
 
 ## 1. 目标与证据边界
 
@@ -24,7 +24,7 @@
 
 trace-synthesis 已增加跨 backend 的并发模式、QPS 口径和可比性设计；当前 database 与 Langfuse backend 的 event policy 仍不一致。阶段二采用这些设计中的同输入、同参数计划、同并发模式、阶段屏障、连接复用、计时边界和全成功样本门禁，不复用尚未满足统一语义的系统级结果。
 
-Full/Core、长 payload 和 asset reference 属于独立的物理分层问题，顺延到[阶段三实验设计](json-storage-stage3-experiment-design-2026-09-08.md)。阶段二只回答动态属性存储的跨引擎差异。
+Full/Core、长 payload 和 asset reference 属于独立的物理分层问题，顺延到[阶段三实验设计](json-storage-stage3-experiment-design-2026-09-09.md)。阶段二只回答动态属性存储的跨引擎差异。
 
 ## 2. 产物与目录
 
@@ -39,7 +39,7 @@ experiments/json-storage-stage2/
   tests/
 ```
 
-运行产物位于 gitignored 的 `docs/temp/json-storage-stage2/`。每个产物目录最后写入 `run-manifest.json`；只有状态为 `complete` 且全部门禁通过的运行进入统计。有效结果位于 `formal-20260907-retry-3/`，结果见[阶段二横向报告](json-storage-stage2-report-2026-09-08.md)。
+运行产物位于 gitignored 的 `docs/temp/json-storage-stage2/`。每个产物目录最后写入 `run-manifest.json`；只有状态为 `complete` 且全部门禁通过的运行进入统计。有效结果位于 `formal-20260907-retry-3/`，结果见[阶段二横向报告](json-storage-stage2-report-2026-09-09.md)。
 
 ## 3. 真实 Trace 分布审计
 
@@ -76,7 +76,7 @@ OTel Attribute 键按顶层键统计。键中的点属于键名；分析布局�
 
 ## 4. 公共横向数据契约
 
-审计程序的结果决定 Native JSON 路径预算。预算取大于等于全局 `P` 的最小 2 的幂，并设置 128 的上限；本数据预期使用 32。预算、实际 `P` 和推导公式同时写入 `truth-manifest.json`。
+审计程序的结果决定 ClickHouse Native JSON 路径预算。预算取大于等于全局 `P` 的最小 2 的幂，并设置 128 的上限；本数据预期使用 32。预算、实际 `P` 和推导公式同时写入 `truth-manifest.json`。
 
 公共生成器逐行读取固定输入并输出：
 
@@ -129,7 +129,7 @@ generator 同时输出：
 
 ClickHouse Native JSON 负责路径分析。其分析表同时保存稀疏 `fidelity_values Map(String,String)`：一个原始 Attribute 的值递归包含 `null`、空对象或空数组时，保存该 Attribute 的完整 canonical JSON value。
 
-Q04 先读取 Native JSON，再用 `fidelity_values` 覆盖相应值，从而恢复 Native JSON 不能区分的状态。Sidecar 的字节计入分析表空间。原文表保存逐行原始 UTF-8 bytes；Native JSON 和 Sidecar 只用于分析结构及其逻辑恢复。ClickHouse Map 查询使用原始 Attribute key；ClickHouse String JSON、openGauss JSONB 和 ClickHouse Native JSON 查询使用嵌套分析路径。
+Q04 先读取 ClickHouse Native JSON，再用 `fidelity_values` 覆盖相应值，从而恢复 ClickHouse Native JSON 不能区分的状态。Sidecar 的字节计入分析表空间。原文表保存逐行原始 UTF-8 bytes；ClickHouse Native JSON 和 Sidecar 只用于分析结构及其逻辑恢复。ClickHouse Map 查询使用原始 Attribute key；ClickHouse String JSON、openGauss JSONB 和 ClickHouse Native JSON 查询使用嵌套分析路径。
 
 openGauss 6.0.0 的 `jsonb_ops` GIN 在写入空字符串时触发 `jsonb_gin.cpp:519` 的零长度复制错误，递归对象与数组中的空字符串同样受影响。openGauss JSONB + GIN 使用可保留这些值的 `jsonb_hash_ops`；Q05 保持 `attributes @> %s::jsonb`，并验证 truth、自然计划和禁用顺扫后的 GIN 计划。
 
@@ -197,7 +197,7 @@ ClickHouse 每条测量查询使用唯一 query ID，HTTP 响应完整读取后�
 - 输入或上游清单的文件身份不一致；
 - 点键嵌套投影出现前缀冲突；
 - 任一 truth、记录身份、分析结构摘要或原文摘要门禁失败；
-- Native JSON、Map、JSONB、索引或目标查询在固定版本不可用；
+- ClickHouse Native JSON、Map、JSONB、索引或目标查询在固定版本不可用；
 - 写入期间查询结果与已提交水位 truth 不一致；
 - 临时数据库对象清理失败；
 - 需要修改 exporter、benchmark、容器镜像或完整产品服务才能继续。
@@ -223,8 +223,8 @@ ClickHouse 每条测量查询使用唯一 query ID，HTTP 响应完整读取后�
 
 ## 8. 参考资料
 
-- [阶段一报告](json-storage-stage1-report-2026-09-08.md)
-- [JSON 存储设计调研](json-storage-design-survey-2026-09-08.md)
+- [阶段一报告](json-storage-stage1-report-2026-09-09.md)
+- [JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)
 - [trace-synthesis 跨 backend 可比性分析](https://github.com/zfwang2021/trace-synthesis/blob/ef3be141cc17415de9fb5a9d8003c16a4cd679ac/docs/design/benchmark/cross-backend-comparability-analysis.md)
 - [trace-synthesis 并发模式统一设计](https://github.com/zfwang2021/trace-synthesis/blob/ef3be141cc17415de9fb5a9d8003c16a4cd679ac/docs/design/benchmark/concurrency-mode-unification-design.md)
 - [trace-synthesis QPS 指标统一设计](https://github.com/zfwang2021/trace-synthesis/blob/ef3be141cc17415de9fb5a9d8003c16a4cd679ac/docs/design/benchmark/qps-metric-unification-design.md)

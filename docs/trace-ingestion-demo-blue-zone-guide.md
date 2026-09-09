@@ -4,7 +4,7 @@
 > traces/observations/scores 三表模型。当前 exporter `4cc3bf2...` 已采用
 > events/ingest_batches/scores 单宽表模型，不能与本文命令和旧 benchmark ref
 > 混用。当前 schema 与 JSON 设计见
-> [JSON 存储设计调研](json-storage-design-survey-2026-09-08.md)。
+> [JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)。
 
 本文说明如何将固定的 Agent Trace 样本通过 OpenTelemetry Collector 写入标准 openGauss 6.0.0，并用发送确认清单与数据库记录做精确对账。蓝区步骤已于 2026-08-26 实测。黄区章节给出切换到 xstore 的参数、权限和验收项。
 

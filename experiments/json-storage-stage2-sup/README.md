@@ -2,7 +2,7 @@
 
 本目录在固定真实 Trace 输入上比较 openGauss JSON、openGauss JSONB、ClickHouse String JSON 和 ClickHouse Native JSON 四种基础存储结构。数据路径为 `independent_loader`；实验不经过 Collector、exporter、benchmark 或产品服务。
 
-基础四结构的定义、查询语义、计时边界和证据范围见[阶段二补充实验设计](../../docs/json-storage-stage2-sup-experiment-design-2026-09-08.md)。正式结果由四轮矩阵的原始清单汇总产生；机制观察单独记录，不进入四结构性能排名。
+基础四结构的定义、查询语义、计时边界和证据范围见[阶段二补充实验设计](../../docs/json-storage-stage2-sup-experiment-design-2026-09-09.md)。正式结果由四轮矩阵的原始清单汇总产生；机制观察单独记录，不进入四结构性能排名。
 
 ## 依赖和冻结输入
 
@@ -103,7 +103,7 @@ TRUTH=docs/temp/json-storage-stage2-sup/input-20260908
   --container-name agent-trace-clickhouse-25-12
 ```
 
-本轮无 Sidecar Native JSON 观测到 JSON null 与空对象信息缺失（分别 5,446/10；共 5,456），未观测到空数组缺失；稀疏 Sidecar 规则仍覆盖递归空数组。这些信息缺失必须记录，无 Sidecar 结果不构成完整文档保真通过。稀疏与完整 Sidecar 的完整恢复门禁必须通过。dynamic/shared path inventory 在 merge 前后可变化，只记录物理组织变化，逻辑恢复由完整文档和查询 truth 判定。
+本轮无 Sidecar ClickHouse Native JSON 观测到 JSON null 与空对象信息缺失（分别 5,446/10；共 5,456），未观测到空数组缺失；稀疏 Sidecar 规则仍覆盖递归空数组。这些信息缺失必须记录，无 Sidecar 结果不构成完整文档保真通过。稀疏与完整 Sidecar 的完整恢复门禁必须通过。dynamic/shared path inventory 在 merge 前后可变化，只记录物理组织变化，逻辑恢复由完整文档和查询 truth 判定。
 
 正式结果目录 `formal-20260909/round-1` 保留首次失败运行，不进入有效汇总。以硬链接构建独立的汇总输入：`round-1-retry-1` 映射为 `round-1`，`round-2`至 `round-4` 保持同名。每轮只链接 `run-manifest.json` 和四个 `result-*.json` 的明确文件名。目标目录已存在时命令清晰失败；需要保留多组汇总时，将 `SUMMARY_INPUT` 和 `SUMMARY_OUTPUT` 改为新的显式目录。
 

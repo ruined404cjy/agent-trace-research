@@ -1,10 +1,10 @@
 # Agent Trace JSON 存储阶段一实验设计
 
 > 状态：阶段一已结束；多字段 JSON 机制矩阵已完成，Full/Core 与 asset 实验顺延阶段三
-> 初始设计日期：2026-09-04；文档修订日期：2026-09-08
+> 初始设计日期：2026-09-04；文档修订日期：2026-09-09
 > 范围：多字段 JSON、Full/Core、JSON 长字段与外部引用
-> 配套调研：[json-storage-design-survey-2026-09-08.md](json-storage-design-survey-2026-09-08.md)
-> 阶段一报告：[json-storage-stage1-report-2026-09-08.md](json-storage-stage1-report-2026-09-08.md)
+> 配套调研：[json-storage-design-survey-2026-09-09.md](json-storage-design-survey-2026-09-09.md)
+> 阶段一报告：[json-storage-stage1-report-2026-09-09.md](json-storage-stage1-report-2026-09-09.md)
 
 ## 1. 目标
 
@@ -16,7 +16,7 @@
 
 实验回答机制问题，不对完整产品或数据库作综合排名。现有 exporter、benchmark、Langfuse 和 Tempo 用于提供实现证据。
 
-阶段一完成目标 1 的引擎内机制实验。目标 2、3 已形成实验设计，实验程序和正式运行纳入[阶段三实验设计](json-storage-stage3-experiment-design-2026-09-08.md)。阶段二完成动态属性存储的 openGauss/ClickHouse 统一横向比较。
+阶段一完成目标 1 的引擎内机制实验。目标 2、3 已形成实验设计，实验程序和正式运行纳入[阶段三实验设计](json-storage-stage3-experiment-design-2026-09-09.md)。阶段二完成动态属性存储的 openGauss/ClickHouse 统一横向比较。
 
 ## 2. 当前边界
 
@@ -178,14 +178,14 @@ ClickHouse 使用同一 JSON 文本验证三种存储结构：
 
 - JSONB 通用索引的灵活性与索引放大；
 - 定向索引或强类型列对稳定热点路径的收益；
-- Native JSON 自动子列对多字段、稀疏路径的收益和路径预算成本；
+- ClickHouse Native JSON 自动子列对多字段、稀疏路径的收益和路径预算成本；
 - String 整段解析在冷路径和整对象读取中的基线行为。
 
 结果必须按机制分别解释。openGauss 与 ClickHouse 的事务、并发和完整 SQL 能力不进入本实验结论。
 
-ClickHouse Native `JSON` 按叶路径扁平存储，不能称为 PostgreSQL/openGauss 语义的 `JSONB`。首个 50 路径×20% 密度正式组发现两个 Native JSON 存储结构各有 77,562 条完整对象回读差异，均来自空的 `metadata.paths` 被省略；热点和冷路径过滤命中集合仍与 truth 一致。
+ClickHouse Native `JSON` 按叶路径扁平存储，不能称为 PostgreSQL/openGauss 语义的 `JSONB`。首个 50 路径×20% 密度正式组发现两个 ClickHouse Native JSON 存储结构各有 77,562 条完整对象回读差异，均来自空的 `metadata.paths` 被省略；热点和冷路径过滤命中集合仍与 truth 一致。
 
-修正后的门禁区分分析等价和 canonical 文档保真。Native JSON 负责路径分析，压缩 canonical Sidecar 负责逻辑 metadata 恢复；Native JSON 回读差异保留为引擎语义观察。`50×20%` 和 `500×1%` 语义重跑均通过两项门禁。
+修正后的门禁区分分析等价和 canonical 文档保真。ClickHouse Native JSON 负责路径分析，压缩 canonical Sidecar 负责逻辑 metadata 恢复；ClickHouse Native JSON 回读差异保留为引擎语义观察。`50×20%` 和 `500×1%` 语义重跑均通过两项门禁。
 
 `500×1%` 动态路径预算 100 的存储结构合并后为 100 个 dynamic、402 个 shared 路径；动态路径预算 1000 的存储结构为 500 个 dynamic、0 个 shared 路径。
 
@@ -197,7 +197,7 @@ ClickHouse Native `JSON` 按叶路径扁平存储，不能称为 PostgreSQL/open
 
 混合密度 profile 让 98 条长尾路径先占满业务路径预算；三轮 merge 均换入 50 条高/中密度路径并换出 50 条长尾路径。最终保留全部 10 条 95% 路径、全部 40 条 20% 路径和 48 条 1% 路径，其余 402 条 1% 路径进入 shared data。
 
-固定每行约 50 个动态字段时，路径全集从 50 增至 5000，Native JSON merge 中位数从约 0.27–0.29 秒增至约 32 秒。直接子列查询显著减少读取量，但完整 Native JSON 对象重建比 String JSON 内容读取慢约 65–102 倍；canonical Sidecar 恢复到 String JSON 同量级。Native JSON 载入吞吐低于 String JSON，计入 Sidecar 后的总空间高于 String JSON。详细数字见[阶段一报告](json-storage-stage1-report-2026-09-08.md)。
+固定每行约 50 个动态字段时，路径全集从 50 增至 5000，ClickHouse Native JSON merge 中位数从约 0.27–0.29 秒增至约 32 秒。直接子列查询显著减少读取量，但完整 ClickHouse Native JSON 对象重建比 ClickHouse String JSON 内容读取慢约 65–102 倍；canonical Sidecar 恢复到 ClickHouse String JSON 同量级。ClickHouse Native JSON 载入吞吐低于 ClickHouse String JSON，计入 Sidecar 后的总空间高于 ClickHouse String JSON。详细数字见[阶段一报告](json-storage-stage1-report-2026-09-09.md)。
 
 ## 5. 实验二：Full/Core 物理分层（顺延阶段三）
 
@@ -337,7 +337,7 @@ experiments/json-storage-stage1/
 | 第一阶段证据 | 后续选项 |
 |---|---|
 | 定向索引已满足热点路径需求 | 优先验证热点列或动态属性，不增加通用索引 |
-| Native JSON 在宽路径上稳定降低读取或空间 | 评估 ClickHouse Native JSON 或同类自动子列能力 |
+| ClickHouse Native JSON 在宽路径上稳定降低读取或空间 | 评估 ClickHouse Native JSON 或同类自动子列能力 |
 | Core 明显降低 preview 查询读取，写放大可接受 | 在目标引擎设计最小物化 Core 原型 |
 | 外部引用降低主表压力，resolver 成本可接受 | 设计 asset 状态机、故障注入和保留实验 |
 | 各机制差异小于运行波动 | 保持当前简单存储结构，补充真实查询负载后再评估 |
@@ -345,13 +345,13 @@ experiments/json-storage-stage1/
 
 Tempo dedicated columns、KV/EAV、Parquet Variant、完整 Langfuse 复现和大规模容量实验均作为后续选项，不在第一阶段预先排期。
 
-预算边界、混合密度和等单行宽度组已经完成。[阶段二](json-storage-stage2-experiment-design-2026-09-08.md)审计真实 Trace 窗口并统一比较 openGauss JSONB、ClickHouse String JSON、ClickHouse Map 和 ClickHouse Native JSON，同时加入持续写入、后台 merge 与并发查询。
+预算边界、混合密度和等单行宽度组已经完成。[阶段二](json-storage-stage2-experiment-design-2026-09-09.md)审计真实 Trace 窗口并统一比较 openGauss JSONB、ClickHouse String JSON、ClickHouse Map 和 ClickHouse Native JSON，同时加入持续写入、后台 merge 与并发查询。
 
-[阶段三](json-storage-stage3-experiment-design-2026-09-08.md)比较同表独立列、独立 payload 表、Full/Core 物化和 asset reference。九组均匀密度产物保留为机制资产；`5000×20%` 和 `5000×95%` 缺少场景依据，不进入阶段一结论。
+[阶段三](json-storage-stage3-experiment-design-2026-09-09.md)比较同表独立列、独立 payload 表、Full/Core 物化和 asset reference。九组均匀密度产物保留为机制资产；`5000×20%` 和 `5000×95%` 缺少场景依据，不进入阶段一结论。
 
 ## 11. 参考资料
 
-- [JSON 存储设计调研](json-storage-design-survey-2026-09-08.md)
+- [JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)
 - [Exporter 18 列冻结 ADR-0010](https://github.com/labmemW/exporter_demo/blob/0c26c9ecf03acf0bd6aa3a3c103ba4e7a78b523a/docs/adr/0010-otel-minimal-schema.md)
 - [当前 Benchmark v4 database catalog](https://github.com/zfwang2021/trace-synthesis/blob/6472d8e1ac6cdb42494b79b28d4d5361919d4776/benchmark/schema/v4/database/catalog.json)
 - [Exporter schema](https://github.com/labmemW/exporter_demo/blob/a0b3441d473d5cb4fd7c06767d12b9f611521b9e/docs/SCHEMA.md)
