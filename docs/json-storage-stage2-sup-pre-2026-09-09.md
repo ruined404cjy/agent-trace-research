@@ -68,7 +68,7 @@ INSERT 生成可查询的不可变 data part。后台 merge 重写源 part，并
 | 完整 canonical Sidecar | 81,634,867 | 0 | **2,180.746** | **0** |
 | type hint + 稀疏 Sidecar | 26,698,849 | 48,534 条 / 1,607,879 bytes | 5,076.783 | **0** |
 
-无 Sidecar 的本轮实测差异由 **5,446 个 JSON null、10 个空对象、0 个空数组**构成，普通值内容门禁通过。稀疏规则仍保守覆盖递归包含 JSON null、空对象或空数组的 Attribute。type hint 对缺失声明路径返回类型默认值，恢复时需要 presence marker 区分缺失和值恰好等于默认值。
+无 Sidecar 的本轮实测差异由 **5,446 个 JSON null 和 10 个空对象造成共 5,456 条差异；空数组差异为 0**，普通值内容门禁通过。稀疏规则仍保守覆盖递归包含 JSON null、空对象或空数组的 Attribute。type hint 对缺失声明路径返回类型默认值，恢复时需要 presence marker 区分缺失和值恰好等于默认值。
 
 适用边界：表内恢复时间是一次全语料客户端机制观察，不是查询 latency。稀疏 Sidecar 的条目和字节已经包含 marker。canonical Sidecar 不是摄入原文，不支持原始空白、键顺序、等价转义、数值词法和重复键实例的恢复。
 

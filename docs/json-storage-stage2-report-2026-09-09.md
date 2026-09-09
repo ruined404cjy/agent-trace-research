@@ -116,7 +116,7 @@
 
 ![ClickHouse Native JSON 与 Sidecar 恢复流程](assets/json-storage-native-json-sidecar-flow.svg)
 
-ClickHouse Native JSON 的叶路径表示不能区分 JSON null 与路径缺失，并会省略空对象。本轮无 Sidecar 结构观测到 **5,446 个 JSON null、10 个空对象、0 个空数组**造成的文档差异，共 5,456 条；普通值内容逐行门禁通过。冻结输入包含 12,623 个顶层空数组，未造成差异。
+ClickHouse Native JSON 的叶路径表示不能区分 JSON null 与路径缺失，并会省略空对象。本轮无 Sidecar 结构观测到 **5,446 个 JSON null 和 10 个空对象造成共 5,456 条差异；空数组差异为 0**；普通值内容逐行门禁通过。冻结输入包含 12,623 个顶层空数组，未造成差异。
 
 稀疏 Sidecar 规则仍保守保存递归包含 JSON null、空对象或空数组的 Attribute。该规则覆盖当前未出现损失的空数组，避免恢复契约依赖一次输入和固定版本的观察。
 
@@ -200,7 +200,7 @@ ClickHouse Native JSON 的叶路径表示不能区分 JSON null 与路径缺失�
 | ClickHouse String JSON | **172.42 / 214.07 ms** | 226.935 ms |
 | ClickHouse Native JSON | 173.40 / 243.35 ms | **146.953 ms** |
 
-数据特征：投影 `gen_ai.tool.call.result`，返回非空值数量和 UTF-8 总字节数。
+数据特征：投影 `gen_ai.output.messages`，返回非空值数量和 UTF-8 总字节数。
 
 结论：openGauss JSONB 的 wall latency 低于 openGauss JSON；ClickHouse 两种结构的 wall p50 接近。边界：wall latency 不含客户端恢复；恢复值必须单列，不能与 wall 直接相加后称为服务端延迟。
 
