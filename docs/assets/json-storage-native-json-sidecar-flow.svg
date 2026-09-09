@@ -1,74 +1,92 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600" role="img" aria-labelledby="title desc">
-  <title id="title">ClickHouse Native JSON 与 Sidecar 恢复流程</title>
-  <desc id="desc">Native JSON 提供路径分析，但需要 Sidecar 恢复 JSON null、空对象等逻辑状态。稀疏 Sidecar 保存特殊值和 presence marker，完整 Sidecar 保存整列 canonical JSON；原始字节副本用于逐字节恢复。</desc>
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="840" viewBox="0 0 1500 840" role="img" aria-labelledby="title desc">
+  <title id="title">ClickHouse Native JSON、Sidecar 与原始 bytes 的职责</title>
+  <desc id="desc">图按字段分析、稀疏 Sidecar 恢复、完整 canonical Sidecar 恢复和原始 bytes 恢复四条独立通道展示，避免混淆分析等价、逻辑文档等价与字节等价。</desc>
   <defs>
     <style>
-      .box { fill:#f7f9fc; stroke:#52657a; stroke-width:2; rx:8; }
-      .native { fill:#eef8f1; stroke:#397554; stroke-width:2; rx:8; }
-      .sidecar { fill:#fff8e8; stroke:#9a7725; stroke-width:2; rx:8; }
-      .raw { fill:#f7effc; stroke:#75508e; stroke-width:2; rx:8; }
-      .text { font-family:"Noto Sans CJK SC","Microsoft YaHei",sans-serif; font-size:18px; fill:#1f2933; text-anchor:middle; }
-      .small { font-size:14px; fill:#44515f; }
-      .label { font-size:16px; font-weight:600; }
-      .arrow { stroke:#52657a; stroke-width:2.1; fill:none; marker-end:url(#arrow); }
+      .lane-bg { fill:#fbfcfe; stroke:#d7dee8; stroke-width:1.4; }
+      .box { fill:#f7f9fc; stroke:#52657a; stroke-width:2; }
+      .native { fill:#eef8f1; stroke:#397554; stroke-width:2; }
+      .sidecar { fill:#fff8e8; stroke:#9a7725; stroke-width:2; }
+      .raw { fill:#f7effc; stroke:#75508e; stroke-width:2; }
+      .title { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:25px; font-weight:700; fill:#1f2933; text-anchor:middle; }
+      .lane-title { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:17px; font-weight:700; fill:#334155; }
+      .label { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:16px; font-weight:700; fill:#1f2933; text-anchor:middle; }
+      .text { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:14px; fill:#44515f; text-anchor:middle; }
+      .note { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:14px; fill:#44515f; }
+      .arrow { stroke:#52657a; stroke-width:2.2; fill:none; marker-end:url(#arrow); }
     </style>
-    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth"><path d="M0,0 L0,6 L9,3 z" fill="#52657a"/></marker>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#52657a"/>
+    </marker>
   </defs>
 
-  <rect width="1200" height="600" fill="#ffffff"/>
-  <text x="600" y="38" class="text" font-size="24" font-weight="700">Native JSON、Sidecar 与原始 bytes 的恢复职责</text>
+  <rect width="1500" height="840" fill="#ffffff"/>
+  <text x="750" y="42" class="title">Native JSON、Sidecar 与原始 bytes：三种恢复目标</text>
 
-  <rect x="40" y="98" width="190" height="94" class="box"/>
-  <text x="135" y="132" class="text label">原始 UTF-8 JSON</text>
-  <text x="135" y="159" class="text small">首次解析前的数据</text>
-  <text x="135" y="181" class="text small">可选原始 bytes 副本</text>
+  <rect x="25" y="70" width="1450" height="160" rx="12" class="lane-bg"/>
+  <text x="50" y="103" class="lane-title">A. 字段分析：读取路径值，不要求逐字节恢复</text>
+  <rect x="60" y="125" width="190" height="74" rx="9" class="box"/>
+  <text x="155" y="155" class="label">原始 JSON</text>
+  <text x="155" y="181" class="text">解析输入</text>
+  <rect x="315" y="125" width="220" height="74" rx="9" class="native"/>
+  <text x="425" y="155" class="label">Native JSON</text>
+  <text x="425" y="181" class="text">路径与类型表示</text>
+  <rect x="600" y="125" width="220" height="74" rx="9" class="box"/>
+  <text x="710" y="155" class="label">路径查询</text>
+  <text x="710" y="181" class="text">子列或 shared data</text>
+  <rect x="885" y="125" width="260" height="74" rx="9" class="box"/>
+  <text x="1015" y="155" class="label">分析结果</text>
+  <text x="1015" y="181" class="text">过滤、分组、聚合</text>
+  <path d="M250 162 H315" class="arrow"/>
+  <path d="M535 162 H600" class="arrow"/>
+  <path d="M820 162 H885" class="arrow"/>
 
-  <rect x="295" y="76" width="220" height="122" class="native"/>
-  <text x="405" y="110" class="text label">ClickHouse Native JSON</text>
-  <text x="405" y="137" class="text small">路径分析与子列读取</text>
-  <text x="405" y="160" class="text small">null 与 missing 不可区分</text>
-  <text x="405" y="183" class="text small">本轮空对象被省略</text>
+  <rect x="25" y="250" width="1450" height="170" rx="12" class="lane-bg"/>
+  <text x="50" y="283" class="lane-title">B. 稀疏 Sidecar：恢复 JSON null、空容器和 type hint 缺失状态</text>
+  <rect x="60" y="312" width="190" height="74" rx="9" class="box"/>
+  <text x="155" y="342" class="label">原始 JSON</text>
+  <text x="155" y="368" class="text">识别特殊值与 presence</text>
+  <rect x="315" y="302" width="260" height="94" rx="9" class="native"/>
+  <text x="445" y="333" class="label">Native JSON + 稀疏 Sidecar</text>
+  <text x="445" y="359" class="text">Native 保存普通路径值</text>
+  <text x="445" y="382" class="text">Sidecar 保存特殊值和 marker</text>
+  <rect x="640" y="312" width="220" height="74" rx="9" class="sidecar"/>
+  <text x="750" y="342" class="label">客户端覆盖</text>
+  <text x="750" y="368" class="text">按路径恢复特殊状态</text>
+  <rect x="925" y="312" width="250" height="74" rx="9" class="box"/>
+  <text x="1050" y="342" class="label">canonical 逻辑文档</text>
+  <text x="1050" y="368" class="text">本轮 mismatch = 0</text>
+  <path d="M250 349 H315" class="arrow"/>
+  <path d="M575 349 H640" class="arrow"/>
+  <path d="M860 349 H925" class="arrow"/>
 
-  <rect x="295" y="244" width="220" height="112" class="sidecar"/>
-  <text x="405" y="278" class="text label">稀疏 Sidecar</text>
-  <text x="405" y="305" class="text small">特殊值 canonical 内容</text>
-  <text x="405" y="328" class="text small">+ presence marker</text>
-  <text x="405" y="349" class="text small">读取后覆盖对应路径</text>
+  <rect x="25" y="440" width="1450" height="150" rx="12" class="lane-bg"/>
+  <text x="50" y="473" class="lane-title">C. 完整 canonical Sidecar：直接恢复整列逻辑内容</text>
+  <rect x="60" y="500" width="190" height="64" rx="9" class="box"/>
+  <text x="155" y="528" class="label">原始 JSON</text>
+  <text x="155" y="551" class="text">规范化序列化</text>
+  <rect x="315" y="490" width="260" height="84" rx="9" class="sidecar"/>
+  <text x="445" y="522" class="label">完整 canonical Sidecar</text>
+  <text x="445" y="550" class="text">保存整列确定性 JSON 文本</text>
+  <rect x="640" y="500" width="250" height="64" rx="9" class="box"/>
+  <text x="765" y="528" class="label">canonical 逻辑文档</text>
+  <text x="765" y="551" class="text">直接读取 Sidecar</text>
+  <path d="M250 532 H315" class="arrow"/>
+  <path d="M575 532 H640" class="arrow"/>
 
-  <rect x="295" y="407" width="220" height="94" class="sidecar"/>
-  <text x="405" y="441" class="text label">完整 canonical Sidecar</text>
-  <text x="405" y="468" class="text small">整列确定性 JSON 文本</text>
-  <text x="405" y="490" class="text small">直接用于逻辑恢复</text>
+  <rect x="25" y="610" width="1450" height="150" rx="12" class="lane-bg"/>
+  <text x="50" y="643" class="lane-title">D. 原始 bytes：逐字节恢复、签名校验和精确重放</text>
+  <rect x="60" y="670" width="190" height="64" rx="9" class="box"/>
+  <text x="155" y="698" class="label">原始 UTF-8 JSON</text>
+  <text x="155" y="721" class="text">尚未进入 JSON 解析</text>
+  <rect x="315" y="660" width="260" height="84" rx="9" class="raw"/>
+  <text x="445" y="692" class="label">首次解析前复制 bytes</text>
+  <text x="445" y="720" class="text">独立原文列或对象存储</text>
+  <rect x="640" y="670" width="250" height="64" rx="9" class="raw"/>
+  <text x="765" y="698" class="label">逐字节恢复</text>
+  <text x="765" y="721" class="text">空白、键顺序、转义均保留</text>
+  <path d="M250 702 H315" class="arrow"/>
+  <path d="M575 702 H640" class="arrow"/>
 
-  <path d="M230 132 H295" class="arrow"/>
-  <path d="M230 150 C260 150,260 300,295 300" class="arrow"/>
-  <path d="M230 168 C260 168,260 454,295 454" class="arrow"/>
-
-  <rect x="605" y="92" width="230" height="94" class="box"/>
-  <text x="720" y="126" class="text label">字段分析结果</text>
-  <text x="720" y="153" class="text small">过滤、分组、聚合</text>
-  <text x="720" y="176" class="text small">按直接子列读取</text>
-  <path d="M515 137 H605" class="arrow"/>
-
-  <rect x="605" y="256" width="230" height="94" class="box"/>
-  <text x="720" y="290" class="text label">逻辑文档恢复</text>
-  <text x="720" y="317" class="text small">Native JSON + 稀疏覆盖</text>
-  <text x="720" y="340" class="text small">canonical 内容校验</text>
-  <path d="M515 168 C560 168,560 282,605 282" class="arrow"/>
-  <path d="M515 300 H605" class="arrow"/>
-
-  <rect x="605" y="407" width="230" height="94" class="box"/>
-  <text x="720" y="441" class="text label">逻辑文档恢复</text>
-  <text x="720" y="468" class="text small">读取完整 Sidecar</text>
-  <text x="720" y="490" class="text small">canonical 内容校验</text>
-  <path d="M515 454 H605" class="arrow"/>
-
-  <rect x="930" y="315" width="225" height="112" class="raw"/>
-  <text x="1042" y="349" class="text label">原始 bytes 恢复</text>
-  <text x="1042" y="376" class="text small">签名、字节级审计</text>
-  <text x="1042" y="399" class="text small">精确重放</text>
-  <text x="1042" y="420" class="text small">直接读取原始副本</text>
-  <path d="M135 192 V545 H1042 V427" class="arrow"/>
-
-  <text x="600" y="565" class="text small">canonical Sidecar 保存逻辑内容，不保存原始空白、键顺序、等价转义、数值词法形式或重复键实例。</text>
+  <text x="50" y="808" class="note">canonical Sidecar 保存逻辑内容；原始 bytes 副本才保存原始空白、键顺序、等价转义、数值词法形式和重复键实例。</text>
 </svg>
