@@ -23,7 +23,7 @@
 
 **一句结论：openGauss JSON 保存进入 datum 后的文本表示，openGauss JSONB 保存二进制文档表示；两者均由 heap/TOAST 存储，索引只服务匹配查询。**
 
-![openGauss JSON 与 JSONB 处理流程](assets/json-storage-opengauss-jsonb-flow.svg)
+![openGauss JSON 与 JSONB 处理流程](./assets/json-storage-opengauss-jsonb-flow.svg)
 
 | 补充四结构场景 | openGauss JSON | openGauss JSONB |
 |---|---:|---:|
@@ -40,7 +40,7 @@
 
 **一句结论：ClickHouse String JSON 的处理路径更直接，ClickHouse Native JSON 用类型识别和子列组织换取路径读取能力，并承担 data part 与 merge 生命周期成本。**
 
-![ClickHouse String JSON 与 ClickHouse Native JSON 处理流程](assets/json-storage-clickhouse-native-json-flow.svg)
+![ClickHouse String JSON 与 ClickHouse Native JSON 处理流程](./assets/json-storage-clickhouse-native-json-flow.svg)
 
 | 补充四结构场景 | ClickHouse String JSON | ClickHouse Native JSON |
 |---|---:|---:|
@@ -59,7 +59,7 @@ INSERT 生成可查询的不可变 data part。后台 merge 重写源 part，并
 
 **一句结论：ClickHouse Native JSON 负责路径分析，Sidecar 负责补充逻辑文档状态，原始 bytes 副本负责逐字节恢复。**
 
-![ClickHouse Native JSON 与 Sidecar 恢复流程](assets/json-storage-native-json-sidecar-flow.svg)
+![ClickHouse Native JSON 与 Sidecar 恢复流程](./assets/json-storage-native-json-sidecar-flow.svg)
 
 | 方案 | Sidecar bytes | presence marker | 恢复 ms | 文档差异 |
 |---|---:|---:|---:|---:|

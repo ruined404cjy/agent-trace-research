@@ -44,7 +44,7 @@
 
 ## 3. openGauss JSON 与 openGauss JSONB
 
-![openGauss JSON 与 JSONB 处理流程](assets/json-storage-opengauss-jsonb-flow.svg)
+![openGauss JSON 与 JSONB 处理流程](./assets/json-storage-opengauss-jsonb-flow.svg)
 
 客户端读取原始 UTF-8 JSON 文本，经 COPY 或 SQL 输入数据库。openGauss JSON 和 openGauss JSONB 都执行 JSON 语法校验。openGauss JSON 保存进入 JSON datum 后的文本表示；逐字节原始事件仍由首次解析前保存的原文表承担。openGauss JSONB 将输入分解为二进制文档表示，不保留对象键顺序；重复对象键仅保留最后一个值。
 
@@ -72,7 +72,7 @@
 
 ## 4. ClickHouse String JSON 与 ClickHouse Native JSON
 
-![ClickHouse String JSON 与 ClickHouse Native JSON 处理流程](assets/json-storage-clickhouse-native-json-flow.svg)
+![ClickHouse String JSON 与 ClickHouse Native JSON 处理流程](./assets/json-storage-clickhouse-native-json-flow.svg)
 
 客户端使用 JSONEachRow 输入，每行被解析为独立 JSON 对象。ClickHouse String JSON 把动态属性保存为压缩 String，查询路径时调用 JSON 提取函数。ClickHouse Native JSON 在输入时识别路径和值类型。
 
@@ -114,7 +114,7 @@
 
 ## 5. ClickHouse Native JSON 与 Sidecar
 
-![ClickHouse Native JSON 与 Sidecar 恢复流程](assets/json-storage-native-json-sidecar-flow.svg)
+![ClickHouse Native JSON 与 Sidecar 恢复流程](./assets/json-storage-native-json-sidecar-flow.svg)
 
 ClickHouse Native JSON 的叶路径表示不能区分 JSON null 与路径缺失，并会省略空对象。本轮无 Sidecar 结构观测到 **5,446 个 JSON null 和 10 个空对象造成共 5,456 条差异；空数组差异为 0**；普通值内容逐行门禁通过。冻结输入包含 12,623 个顶层空数组，未造成差异。
 
