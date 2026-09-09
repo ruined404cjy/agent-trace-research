@@ -7,7 +7,7 @@
 
 ## 1. 结论与适用范围
 
-阶段二在同一份 48,534 行 Agent Trace 数据上完成两批实验。原实验比较六种带索引或 Sidecar 的动态属性存储结构；补充实验比较 openGauss JSON、openGauss JSONB、ClickHouse String JSON、ClickHouse Native JSON 四种基础存储结构。两批实验的查询、轮次和计时边界不同，本文分别报告，**不直接混算两批样本**。
+阶段二在同一份 48,534 行 Agent Trace 数据上完成基础结构、索引与 Sidecar 扩展实验。结果统一按载入、稳定列、高频路径、低密度路径、完整 Trace、完整文档和持续写入等场景组织。查询、轮次或计时边界不同时在表内标明，**不直接混算或计算跨批次变化比例**。
 
 补充四结构实验表明：openGauss JSONB 在高频路径、低密度路径和单路径投影上低于 openGauss JSON 的延迟；openGauss JSON 在本次完整文档分页上更低。ClickHouse Native JSON 在高频路径和低密度路径上低于 ClickHouse String JSON；ClickHouse String JSON 在完整 Trace 和完整文档分页上更低。稳定列聚合主要反映引擎及执行路径，不能判断 JSON 表示本身。
 
@@ -19,6 +19,10 @@
 
 ### 2.1 输入特征
 
+数据源是 Hugging Face `Leoxx/whowhen_pro` 的 text split。源数据的 6,257 条失败轨迹记录经 `trace-synthesis` 投影为 6,257 条 Trace 和 48,534 个 Span。投影按 trajectory 事件生成 Trace 根 Span、LLM Span 和 Tool Span，并保留任务、framework、benchmark、failure ground truth 和事件内容。
+
+该投影由输入、配置和 `seed=42` 共同确定。Trace ID 根据 split 和源记录 ID 使用 UUID5 派生，Span ID 根据 Trace ID 和固定局部名称派生；时间、token、部署环境和 telemetry dialect 等补充字段使用 seed 与 ID 的哈希计算。相同输入、配置和 seed 生成相同的行序、标识和字段值。阶段二生成器再抽取稳定列，把点分隔的 Attribute key 可逆投影为嵌套 JSON，并生成 canonical 内容、原始事件 bytes 和独立查询 truth。
+
 固定输入包含 48,534 个 span、6,257 个 trace 和 29 个顶层 Attribute key。每行 Attribute key 数的 p50/p95/p99/最大值为 8/14/15/15。输入按 256 行分块，共 190 个 block，末 block 为 150 行。
 
 | 数据特征 | 结果 |
@@ -29,7 +33,7 @@
 | raw event UTF-8 长度 | p50 1,480；p95 5,087；p99 8,121；最大 62,626 bytes |
 | 混合类型 | `failure.mistake_agent` 和 `failure.mistake_step` 均含 JSON null 与普通值 |
 
-数据中的时间戳由生成器构造，只用于固定时间窗口。tenant、真实 project 和 instrumentation scope 在源数据中不可观测。29 个顶层 Attribute key 代表较窄样本，不能支撑 5000 路径的生产分布假设。
+数据中的时间戳从 2030-01-01 起构造，只用于固定时间窗口，不代表原数据的生产到达时间。当前输入只覆盖 text split。tenant、真实 project 和 instrumentation scope 在源数据中不可观测。29 个顶层 Attribute key 代表较窄样本，不能支撑 5000 路径的生产分布假设。
 
 ### 2.2 两批正式实验
 
@@ -46,11 +50,15 @@
 
 ![openGauss JSON 与 JSONB 处理流程](./assets/json-storage-opengauss-jsonb-flow.svg)
 
-客户端读取原始 UTF-8 JSON 文本，经 COPY 或 SQL 输入数据库。openGauss JSON 和 openGauss JSONB 都执行 JSON 语法校验。openGauss JSON 保存进入 JSON datum 后的文本表示；逐字节原始事件仍由首次解析前保存的原文表承担。openGauss JSONB 将输入分解为二进制文档表示，不保留对象键顺序；重复对象键仅保留最后一个值。
+处理流程分为五步：
 
-两种 datum 均由 heap/TOAST 存储，大值可能压缩或移出主行。写入或更新时，数据库同时维护主键索引，以及显式创建的热点表达式 B-tree 或 JSONB GIN。索引服务于匹配查询，完整文档从基列返回，不从索引重建。
+1. 客户端把 UTF-8 JSON 通过 COPY 或 SQL 发送给数据库；openGauss JSON 和 openGauss JSONB 都先校验 JSON 语法。
+2. openGauss JSON 保存进入 JSON datum 后的文本表示。路径查询时执行 JSON 操作符并处理文本内容。
+3. openGauss JSONB 在写入时解析对象和数组，生成二进制文档表示；对象键顺序不再保留，重复键只保留最后一个值。
+4. 两种 datum 都写入 heap；较大值由 TOAST 压缩或移出主行。显式创建的表达式 B-tree 或 JSONB GIN 在写入时同步维护。
+5. 字段查询使用基列操作符，优化器按谓词和选择率决定是否使用索引；完整文档始终读取基列并序列化返回，不从索引重建。
 
-路径读取对基列使用 JSON/JSONB 操作符，优化器决定自然计划是否采用索引。openGauss JSONB 避免查询时重复执行 JSON 文本词法解析，并支持 JSONB 索引；实际收益取决于操作、选择率、索引和返回量。完整回读满足本实验的 canonical 文档等价，不保留原始空白、对象键顺序、等价转义和重复键文本。
+openGauss JSONB 避免查询时反复执行 JSON 文本词法解析，并支持 JSONB 索引；实际收益取决于操作、选择率、索引和返回量。完整回读满足本实验的 canonical 文档等价，不保留原始空白、对象键顺序、等价转义和重复键文本。逐字节恢复由首次解析前保存的原文表承担。
 
 ### 3.1 机制观察
 
@@ -74,13 +82,26 @@
 
 ![ClickHouse String JSON 与 ClickHouse Native JSON 处理流程](./assets/json-storage-clickhouse-native-json-flow.svg)
 
-客户端使用 JSONEachRow 输入，每行被解析为独立 JSON 对象。ClickHouse String JSON 把动态属性保存为压缩 String，查询路径时调用 JSON 提取函数。ClickHouse Native JSON 在输入时识别路径和值类型。
+处理流程按写入、组织、维护和读取展开：
 
-声明了 type hint 的路径写入固定类型子列；缺失的声明路径按该类型返回默认值。其余路径在单个 data part 内受 `max_dynamic_paths=32` 约束：预算内路径进入 dynamic subcolumn，预算外路径进入 shared data。INSERT 生成可立即查询的不可变 data part；多个 active part 的路径集合并集可以超过单 part 的 32 路径预算。
+1. JSONEachRow 解析每个输入对象并找到目标列。ClickHouse String JSON 把动态属性保存为压缩 String，字段查询时再调用 JSON 提取函数。
+2. ClickHouse Native JSON 在写入时展开叶路径并识别值类型。手动声明的 type hint 路径进入固定类型子列，不参与本实验的动态路径预算。
+3. 未声明路径成为 dynamic path 候选。每个 data part 独立应用 `max_dynamic_paths=32`：预算内路径保存为 dynamic subcolumn，其余路径保存到 shared data。
+4. INSERT 写出不可变的零层 data part，提交后即可查询。多个 active parts 各自拥有路径集合，因此全表可见的 dynamic path 并集可以超过 32。
+5. 后台 merge 读取多个源 part 并写出目标 part，同时重新组织 dynamic subcolumn 与 shared data。本版本实测中，非空出现量较高的路径通常保留为 dynamic subcolumn。
+6. 路径查询先根据 part 元数据确定读取固定子列、dynamic subcolumn 还是 shared data；完整对象读取需要组合这些物理表示。
+7. `OPTIMIZE TABLE ... FINAL` 强制执行物理 part 合并；`SELECT ... FINAL` 只在查询时应用表引擎的合并语义，不改写磁盘上的 part。
 
-后台 merge 读取若干源 part 并写出目标 part。本版本观察到目标 part 通常按非空出现量重新选择 dynamic subcolumn，其余路径进入 shared data；这不是所有 merge 的固定结果。路径在两类物理表示之间移动不表示逻辑数据丢失。
+| dynamic subcolumn 影响因素 | 对物理组织的影响 |
+|---|---|
+| type hint | 手动指定稳定路径和类型，形成固定类型子列；本版本实测不占 32 个 dynamic path 名额 |
+| 单个 part 的未声明路径数 | 与 `max_dynamic_paths` 比较；超过预算的路径进入 shared data |
+| 路径在源 part 中的非空出现量 | merge 生成目标 part 时用于路径统计；本轮观察到高频路径通常优先成为 dynamic subcolumn |
+| block 与 part 组成 | 每个零层 part 独立选路；不同 part 的 dynamic path 集合可以不同 |
+| 同一路径的值类型数量 | 由 Dynamic/Variant 表示及 `max_dynamic_types` 约束，影响类型子流、转换和读取成本，不等同于 dynamic path 名额 |
+| merge 后目标 part 的上限 | 目标 part 仍受 JSON 类型参数和相关 MergeTree 设置约束，路径可在 dynamic 与 shared 之间移动 |
 
-`OPTIMIZE TABLE ... FINAL` 是存储操作，强制把 active part 物理合并。`SELECT ... FINAL` 在读取阶段应用表引擎的合并语义，不重写底层 part。两者用途和成本不同。路径查询可直接读取子列；完整对象读取需要组合 hinted、dynamic 和 shared 表示，并遵循 ClickHouse Native JSON 的叶路径语义。
+`max_dynamic_paths` 是容量上限，不是按出现频率触发建列的阈值。频率是 merge 重组时的选择依据之一。路径是否值得声明为 type hint，还应结合查询频率、类型稳定性和缺失值语义判断。缺失的 hinted 路径按声明类型返回默认值。
 
 ### 4.1 data part 与 merge 观察
 
@@ -116,6 +137,12 @@
 
 ![ClickHouse Native JSON 与 Sidecar 恢复流程](./assets/json-storage-native-json-sidecar-flow.svg)
 
+恢复流程分为三个目标：
+
+1. 字段分析直接读取 ClickHouse Native JSON 的路径表示，执行过滤、分组和聚合。
+2. 逻辑文档恢复读取 Native JSON 后，再用稀疏 Sidecar 覆盖 JSON null 和空容器；type hint 路径还需要 presence marker 区分缺失和值等于类型默认值。完整 canonical Sidecar 可以直接提供整列逻辑内容。
+3. 字节级恢复直接读取首次解析前保存的原始 UTF-8 bytes，用于签名校验、精确重放和字节级审计。
+
 ClickHouse Native JSON 的叶路径表示不能区分 JSON null 与路径缺失，并会省略空对象。本轮无 Sidecar 结构观测到 **5,446 个 JSON null 和 10 个空对象造成共 5,456 条差异；空数组差异为 0**；普通值内容逐行门禁通过。冻结输入包含 12,623 个顶层空数组，未造成差异。
 
 稀疏 Sidecar 规则仍保守保存递归包含 JSON null、空对象或空数组的 Attribute。该规则覆盖当前未出现损失的空数组，避免恢复契约依赖一次输入和固定版本的观察。
@@ -133,11 +160,15 @@ ClickHouse Native JSON 的叶路径表示不能区分 JSON null 与路径缺失�
 
 边界：恢复时间是一次客户端全语料机制观察，不是查询 latency。canonical Sidecar 保存逻辑键值、数组顺序和空容器，不保存原始空白、原始键顺序、等价转义、数值词法形式或重复键实例，也不是 RFC 8785 JCS。签名、字节级审计和精确重放依赖首次解析前保存的原始 UTF-8 bytes。
 
-## 6. 补充四结构场景化比较
+## 6. 场景化结果与分析
 
-以下小节均来自补充四结构的四轮正式结果。每个 p50/p95 先在单轮计算，再取四轮中位数。四种结构均通过 2,080 个正式查询样本、S01～S06 truth、分析恢复、原文恢复和清理门禁。
+以下小节把基础结构、索引与 Sidecar 扩展结果统一放入对应场景。补充四结构每种结构执行四轮，每个 p50/p95 先在单轮计算，再取四轮中位数；原六结构每种结构执行三轮，表中为三轮中位数。两组实验使用同一 48,534 行输入，但查询、轮次和计时边界不同，只在各自表内比较。
 
 ### 6.1 基础载入与空间
+
+场景设计：四种基础结构按相同行序写入 190 个 block，每个 block 同时写分析表和原文表。计时从提交预生成 block 开始，到该 block 成功且可见结束，不含客户端预处理、openGauss `ANALYZE` 或 ClickHouse merge 等待。该场景隔离 JSON 表示、索引和 Sidecar 对写入及表空间的影响，不代表饱和并发写入吞吐。
+
+基础四结构结果：
 
 | 存储结构 | 载入 rows/s | 分析数据 MiB | 原文 MiB | 合计 MiB |
 |---|---:|---:|---:|---:|
@@ -146,13 +177,28 @@ ClickHouse Native JSON 的叶路径表示不能区分 JSON null 与路径缺失�
 | ClickHouse String JSON | **5,754.01** | 15.352 | 17.653 | 33.005 |
 | ClickHouse Native JSON | 5,105.91 | 35.840 | 17.653 | 53.494 |
 
-数据特征：48,534 行、190 个固定 block；按引擎内同口径比较。
+带索引、Map 或 Sidecar 的扩展结构结果：
 
-关键数字与结论：openGauss JSON 和 ClickHouse String JSON 在各自引擎内的载入速率较高。**空间只作引擎内说明**。
+| 存储结构 | 载入 rows/s | 分析 / 原文 / 合计 MiB |
+|---|---:|---:|
+| openGauss JSONB | **4,747** | 73.64 / 83.28 / 156.92 |
+| openGauss JSONB + 表达式索引 | 4,638 | 75.88 / 83.28 / 159.16 |
+| openGauss JSONB + GIN | 4,523 | 81.28 / 83.28 / 164.56 |
+| ClickHouse String JSON | **5,860** | 15.35 / 17.65 / 33.01 |
+| ClickHouse Map | 5,482 | 24.99 / 17.65 / 42.65 |
+| ClickHouse Native JSON + 稀疏 Sidecar | 3,688 | 27.69 / 17.65 / 45.34 |
+
+数据特征：48,534 行、190 个固定 block。基础结构载入计时包含分析表和原文表写入；扩展结构还包含对应索引、Map 或 Sidecar 的维护成本。
+
+分析结论：**openGauss JSON 和 ClickHouse String JSON 在各自引擎的基础结构中载入较高**。表达式索引与 GIN 增加 openGauss 写入维护和空间；ClickHouse Map 与 Native JSON 增加动态属性组织成本。空间只作引擎内说明。
 
 边界：载入包含原文表和分析表写入，不含客户端预处理与维护等待。openGauss 为 heap、TOAST 和 index 的 allocated bytes；ClickHouse 为 active parts compressed bytes，二者不能用于跨引擎压缩率排名。
 
 ### 6.2 稳定列聚合
+
+场景设计：S01 在固定半程时间窗口内读取 27,561 行，只按强类型 `span_type` 分组，返回 llm、tool、trace 三行计数。Q01 和 Q03 同样只读取稳定列，分别返回分组计数和 `count + sum(duration_ms)`。该场景是控制组，用于确认 JSON 表示、索引或 Sidecar 在动态属性未参与查询时是否引入额外影响。
+
+基础四结构 S01：
 
 | 存储结构 | S01 p50 / p95 |
 |---|---:|
@@ -161,11 +207,26 @@ ClickHouse Native JSON 的叶路径表示不能区分 JSON null 与路径缺失�
 | ClickHouse String JSON | **91.14 / 96.03 ms** |
 | ClickHouse Native JSON | 91.71 / 96.07 ms |
 
-数据特征：按 `span_type` 分组，只读取稳定列。
+扩展结构 Q01 / Q03：
 
-结论：同一引擎的两种 JSON 表示接近。边界：该查询不读取动态属性，**不能用来判断 JSON 类型优劣或作通用跨引擎排名**。
+| 存储结构 | Q01 p50 | Q03 p50 |
+|---|---:|---:|
+| openGauss JSONB | 26.93 ms | **32.26 ms** |
+| openGauss JSONB + 表达式索引 | **26.89 ms** | 32.42 ms |
+| openGauss JSONB + GIN | 26.96 ms | 32.37 ms |
+| ClickHouse String JSON | **7.88 ms** | 9.14 ms |
+| ClickHouse Map | 7.91 ms | **8.55 ms** |
+| ClickHouse Native JSON + 稀疏 Sidecar | 8.12 ms | 8.69 ms |
+
+数据特征：S01、Q01 和 Q03 均只读取稳定列，分组维度不同。
+
+分析结论：同一引擎中的不同 JSON 表示或索引结构接近，差异主要来自查询和执行路径。该场景**不能判断动态 JSON 表示本身的优劣，也不用于通用跨引擎排名**。
 
 ### 6.3 高频路径
+
+场景设计：S02 和 Q02 都读取 `gen_ai.operation.name`，筛选 `execute_tool` 后按稳定列分组。固定窗口内命中 **20,155 行**，属于高频、较高命中量路径；结果集只有一行聚合。基础结构比较文本解析、JSONB 操作符与 Native JSON 路径读取，扩展结构再观察表达式索引、GIN、Map 和 Native JSON 子列的差异。
+
+基础四结构 S02：
 
 | 存储结构 | S02 p50 / p95 |
 |---|---:|
@@ -174,11 +235,26 @@ ClickHouse Native JSON 的叶路径表示不能区分 JSON null 与路径缺失�
 | ClickHouse String JSON | 121.78 / 128.32 ms |
 | ClickHouse Native JSON | **91.91 / 98.30 ms** |
 
-数据特征：`gen_ai.operation.name=execute_tool` 等值过滤并按稳定列分组；基础结构不含表达式索引、GIN 或 type hint。
+扩展结构 Q02：
 
-结论：**openGauss JSONB 和 ClickHouse Native JSON 在本查询中分别低于同引擎文本表示**。边界：结果依赖路径密度、直接子列语法、返回量和热缓存。
+| 存储结构 | Q02 p50 |
+|---|---:|
+| openGauss JSONB | 112.49 ms |
+| openGauss JSONB + 表达式索引 | **20.59 ms** |
+| openGauss JSONB + GIN | 110.97 ms |
+| ClickHouse String JSON | 85.31 ms |
+| ClickHouse Map | 51.34 ms |
+| ClickHouse Native JSON + 稀疏 Sidecar | **9.83 ms** |
+
+数据特征：S02 与 Q02 都过滤高频路径；基础结构不含表达式索引、GIN 或 type hint，扩展结构用于验证定向优化。
+
+分析结论：**openGauss JSONB 和 ClickHouse Native JSON 在基础查询中分别低于同引擎文本表示；稳定热点进一步受益于表达式索引或直接子列**。GIN 没有改善不匹配的等值表达式查询。结果仍依赖路径密度、谓词、返回量和热缓存。
 
 ### 6.4 低密度路径
+
+场景设计：S03 和 Q05 筛选 `failure.mistake_mode=A.3`，固定窗口内只命中 **741 行**，返回计数和排序后身份摘要，避免把大量明细传输混入计时。S03 使用各基础类型的自然路径谓词；Q05 使用可与 `jsonb_hash_ops` GIN 匹配的 containment 谓词，并同时比较 ClickHouse Map 与 Native JSON。
+
+基础四结构 S03：
 
 | 存储结构 | S03 p50 / p95 |
 |---|---:|
@@ -187,11 +263,24 @@ ClickHouse Native JSON 的叶路径表示不能区分 JSON null 与路径缺失�
 | ClickHouse String JSON | 68.60 / 76.25 ms |
 | ClickHouse Native JSON | **47.60 / 54.60 ms** |
 
-数据特征：`failure.mistake_mode=A.3`，返回 count 和 identity digest；不使用 GIN containment。
+扩展结构 Q05：
 
-结论：两引擎的结构化表示均降低了本次低密度路径查询延迟。边界：路径选择率和谓词形式变化会改变索引或子列收益。
+| 存储结构 | Q05 p50 |
+|---|---:|
+| openGauss JSONB | 88.77 ms |
+| openGauss JSONB + 表达式索引 | 88.67 ms |
+| openGauss JSONB + GIN | **3.84 ms** |
+| ClickHouse String JSON | 69.58 ms |
+| ClickHouse Map | 35.11 ms |
+| ClickHouse Native JSON + 稀疏 Sidecar | **7.57 ms** |
+
+数据特征：S03 使用 `failure.mistake_mode=A.3` 并返回 count 和 identity digest，不使用 GIN containment；Q05 使用与 GIN 匹配的低密度 containment 查询。
+
+分析结论：两引擎的结构化表示均降低了本次低密度路径查询延迟；**匹配谓词的 GIN 和 Native JSON 直接子列进一步降低 Q05 延迟**。选择率或谓词形式变化会改变收益。
 
 ### 6.5 单路径投影
+
+场景设计：S04 只投影 `gen_ai.output.messages`，固定窗口内返回 **4,277 个非空值、6,973,065 UTF-8 bytes**。查询 wall latency 统计到响应 bytes 读取完成；客户端再规范化返回值并核对数量和字节数。该场景强调单个较宽 JSON 路径的列裁剪、解析和传输成本，不包含整文档重建。
 
 | 存储结构 | S04 wall p50 / p95 | 客户端恢复 p50 |
 |---|---:|---:|
@@ -206,6 +295,10 @@ ClickHouse Native JSON 的叶路径表示不能区分 JSON null 与路径缺失�
 
 ### 6.6 完整 Trace
 
+场景设计：S05 和 Q04 使用同一个代表性 `trace_id`，回查 **6 条 Span**，按 `start_time,event_id` 排序并返回完整 canonical attributes。该场景同时读取稳定列和完整动态文档，数据量小，主要观察点查、文档序列化、Sidecar 返回和客户端恢复的组合成本。
+
+基础四结构 S05：
+
 | 存储结构 | S05 wall p50 / p95 | 客户端恢复 p50 |
 |---|---:|---:|
 | openGauss JSON | **20.95 / 25.97 ms** | 0.174 ms |
@@ -213,11 +306,24 @@ ClickHouse Native JSON 的叶路径表示不能区分 JSON null 与路径缺失�
 | ClickHouse String JSON | **54.38 / 62.28 ms** | **0.310 ms** |
 | ClickHouse Native JSON | 62.92 / 106.71 ms | 0.647 ms |
 
-数据特征：按固定 trace 回查六条记录，返回排序身份和完整 canonical attributes。
+扩展结构 Q04：
 
-结论：openGauss 两种结构接近；ClickHouse String JSON 在本次完整 Trace 回查中较低。边界：Native 结果包含稀疏 Sidecar 返回，恢复在计时区间外。
+| 存储结构 | Q04 p50 |
+|---|---:|
+| openGauss JSONB | **22.93 ms** |
+| openGauss JSONB + 表达式索引 | 23.05 ms |
+| openGauss JSONB + GIN | 23.37 ms |
+| ClickHouse String JSON | **13.38 ms** |
+| ClickHouse Map | 14.24 ms |
+| ClickHouse Native JSON + 稀疏 Sidecar | 29.57 ms |
+
+数据特征：S05 与 Q04 均按固定 trace 回查六条记录，返回排序身份和完整 canonical attributes。
+
+分析结论：openGauss JSON 与 JSONB 基础结构接近，索引对本次完整 Trace 回查没有明显收益；**ClickHouse String JSON 在两组完整 Trace 结果中均低于 Native JSON**。Native JSON 结果包含稀疏 Sidecar 返回，客户端恢复在 wall 计时区间外。
 
 ### 6.7 完整文档分页
+
+场景设计：S06 在固定窗口 27,561 行中按 `start_time,event_id` 排序，读取固定 **256 行**页面，并返回每行完整 canonical attributes。它模拟详情页或批量导出的有界页面读取，突出完整文档序列化、响应体传输和客户端恢复；本输入 attributes 最大约 62 KiB，不覆盖超长 payload。
 
 | 存储结构 | S06 wall p50 / p95 | 客户端恢复 p50 |
 |---|---:|---:|
@@ -232,7 +338,9 @@ ClickHouse Native JSON 的叶路径表示不能区分 JSON null 与路径缺失�
 
 ### 6.8 持续写入与后台 merge
 
-原六结构实验在写入期间运行查询；每个样本使用启动查询前的已提交水位。样本数和水位分布受写入持续时间与查询耗时共同影响。
+场景设计：每种扩展结构按 256 行 block 持续提交，前五个 block 完成后启动两个已建立连接的查询 worker，循环执行稳定列、高频路径、聚合和低密度路径查询。每个样本绑定启动查询前的已提交水位，并与该水位的独立 truth 核对；后续 INSERT 不改变该样本的期望结果。该场景观察写入干扰下的查询行为和 ClickHouse 后台 merge，不形成固定并发压力或饱和吞吐结论。
+
+每轮样本数和水位分布受写入持续时间与查询耗时共同影响。
 
 | 原六结构实验存储结构 | 每轮并发样本中位数 | Q02 p50 | Q05 p50 |
 |---|---:|---:|---:|
@@ -249,6 +357,8 @@ ClickHouse Native JSON 的叶路径表示不能区分 JSON null 与路径缺失�
 
 ### 6.9 索引或 type hint 扩展
 
+场景设计：openGauss 表达式索引只覆盖稳定高频路径，GIN 只覆盖与 containment 谓词匹配的低密度路径；ClickHouse type hint 手动固定两条已知路径的类型，并与相同 `max_dynamic_paths=32` 和稀疏 Sidecar 对照。该场景回答定向物理优化何时有效，以及需要承担多少写入、空间和恢复语义成本。
+
 | 扩展 | 对照与关键数字 | 结论 | 边界 |
 |---|---|---|---|
 | openGauss 表达式索引 | 原六结构 Q02：112.49 → **20.59 ms** | 匹配稳定高频路径时收益明确 | 索引不匹配 Q05 |
@@ -257,24 +367,7 @@ ClickHouse Native JSON 的叶路径表示不能区分 JSON null 与路径缺失�
 
 扩展结果不进入四种基础结构排名。openGauss 数字来自原六结构的三轮静态查询；ClickHouse type hint 来自一次机制观察，两者不能直接比较。
 
-## 7. 原六结构实验保留结果
-
-原实验的 18 个存储结构结果全部通过正确性与原文恢复门禁。下表保留其主要静态结果，防止补充四结构覆盖原证据边界。
-
-| 存储结构 | 载入 rows/s | 分析/原文/总计 MiB | Q01 | Q02 | Q03 | Q04 | Q05 |
-|---|---:|---:|---:|---:|---:|---:|---:|
-| openGauss JSONB | 4,747 | 73.64/83.28/156.92 | 26.93 | 112.49 | 32.26 | 22.93 | 88.77 |
-| openGauss JSONB + 表达式索引 | 4,638 | 75.88/83.28/159.16 | 26.89 | **20.59** | 32.42 | 23.05 | 88.67 |
-| openGauss JSONB + GIN | 4,523 | 81.28/83.28/164.56 | 26.96 | 110.97 | 32.37 | 23.37 | **3.84** |
-| ClickHouse String JSON | **5,860** | 15.35/17.65/33.01 | **7.88** | 85.31 | 9.14 | **13.38** | 69.58 |
-| ClickHouse Map | 5,482 | 24.99/17.65/42.65 | 7.91 | 51.34 | **8.55** | 14.24 | 35.11 |
-| ClickHouse Native JSON | 3,688 | 27.69/17.65/45.34 | 8.12 | **9.83** | 8.69 | 29.57 | **7.57** |
-
-查询列均为 p50 ms。Q01/Q03 是稳定列聚合，Q02 是高频路径，Q04 是六行完整 Trace，Q05 是低密度路径。数据特征、查询返回和计时范围以[阶段二实验设计](json-storage-stage2-experiment-design-2026-09-09.md)为准。
-
-空间仍采用两引擎不同的原生口径。ClickHouse Native JSON 在该实验中包含稀疏 Sidecar。补充四结构改变了查询集、轮次、载入流程和 ClickHouse Native JSON 存储结构，因此不得与本表逐格计算变化比例。
-
-## 8. 正确性、异常与建议
+## 7. 正确性、异常与建议
 
 补充四结构共 16/16 个结果完成；每个结果含 190 个 block 和 520 个正式查询样本。原六结构共 18/18 个结果完成，静态与写入期间查询、分析恢复、原文恢复和清理均通过。
 
