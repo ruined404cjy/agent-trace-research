@@ -1,5 +1,8 @@
+import contextlib
+import io
 import os
 import sys
+import tempfile
 import unittest
 import uuid
 import hashlib
@@ -108,6 +111,160 @@ class OpenGaussMechanismUnitTest(unittest.TestCase):
         load.assert_called_once_with(Path("input"), Path("truth"))
         run.assert_called_once()
         self.assertEqual(result["status"], "complete")
+
+    def test_cli_parses_required_paths_namespace_and_fixed_defaults(self):
+        """捕获机制程序缺少可复现入口或默认固定容器端点漂移。"""
+        args = mechanisms.parse_args([
+            "--input", "input", "--truth", "truth", "--output", "output",
+            "--namespace", "s2sup_cli",
+        ])
+
+        self.assertEqual(args.input, Path("input"))
+        self.assertEqual(args.truth, Path("truth"))
+        self.assertEqual(args.output, Path("output"))
+        self.assertEqual(args.namespace, "s2sup_cli")
+        self.assertEqual(args.host, "127.0.0.1")
+        self.assertEqual(args.port, 15432)
+        self.assertEqual(args.container_name, "agent-trace-opengauss-v6")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), self.assertRaises(SystemExit) as stopped:
+            mechanisms.parse_args(["--help"])
+        self.assertEqual(stopped.exception.code, 0)
+        self.assertIn("--input", output.getvalue())
+        self.assertIn("--container-name", output.getvalue())
+
+    def test_cli_publishes_result_before_complete_manifest_and_forwards_arguments(self):
+        """捕获 CLI 未透传参数、未记录 artifact 身份或覆盖输出目录其他文件。"""
+        result = {
+            "status": "complete", "cleanup_confirmed": True,
+            "input": {"dataset": {"bytes": 3, "sha256": "input"}},
+            "layouts": {
+                layout: {"queries_ok": True, "documents": {"ok": True}}
+                for layout in mechanisms.LAYOUTS
+            },
+        }
+        environment = {
+            "endpoint": {"host": "db.example", "port": 15433},
+            "container": {"name": "og-container", "database_version": "(openGauss 6.0.0 build abc)"},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            call_order = []
+            (output / "keep.txt").write_text("keep", encoding="utf-8")
+            (output / "run-manifest.json").write_text('{"status":"complete","stale":true}', encoding="utf-8")
+            args = mechanisms.parse_args([
+                "--input", "input", "--truth", "truth", "--output", str(output),
+                "--namespace", "s2sup_cli", "--host", "db.example", "--port", "15433",
+                "--container-name", "og-container",
+            ])
+            args.command = ["python", "run_opengauss_mechanisms.py", "--namespace", "s2sup_cli"]
+            with mock.patch.object(
+                    mechanisms, "collect_environment_identity",
+                    side_effect=lambda *unused: call_order.append("environment") or environment,
+            ), mock.patch.object(
+                    mechanisms, "run_opengauss_mechanisms",
+                    side_effect=lambda *unused: call_order.append("run") or result,
+            ) as run:
+                mechanisms.execute(args)
+
+            manifest = json.loads((output / "run-manifest.json").read_bytes())
+            artifact = output / "mechanism-result.json"
+            expected_bytes = mechanisms.canonical_bytes(result) + b"\n"
+            self.assertEqual(artifact.read_bytes(), expected_bytes)
+            self.assertEqual(manifest["status"], "complete")
+            self.assertEqual(manifest["engine"], "opengauss")
+            self.assertEqual(manifest["command"], args.command)
+            self.assertEqual(manifest["input"], result["input"])
+            self.assertEqual(manifest["environment"], environment)
+            self.assertTrue(manifest["correctness"]["truth_ok"])
+            self.assertTrue(manifest["correctness"]["cleanup_confirmed"])
+            self.assertIn("s2sup_cli", manifest["run_id"])
+            self.assertEqual(manifest["mechanism"]["query_ids"], list(mechanisms.QUERY_IDS))
+            self.assertIn("runner/run_opengauss_mechanisms.py", manifest["mechanism"]["files"])
+            self.assertEqual(manifest["artifacts"]["mechanism-result.json"], {
+                "bytes": len(expected_bytes), "sha256": hashlib.sha256(expected_bytes).hexdigest(),
+            })
+            self.assertEqual((output / "keep.txt").read_text(encoding="utf-8"), "keep")
+            self.assertEqual(call_order, ["environment", "run"])
+            run.assert_called_once_with(
+                Path("input"), Path("truth"), "db.example", 15433, "og-container", "s2sup_cli",
+            )
+
+    def test_cli_publishes_failed_manifest_without_running_when_environment_check_fails(self):
+        """捕获环境身份失败后仍创建 schema、写入或遗留旧 complete artifact。"""
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            (output / "run-manifest.json").write_text('{"status":"complete"}', encoding="utf-8")
+            (output / "mechanism-result.json").write_text('{"status":"complete"}', encoding="utf-8")
+            args = mechanisms.parse_args([
+                "--input", "input", "--truth", "truth", "--output", str(output),
+                "--namespace", "s2sup_cli",
+            ])
+            with mock.patch.object(
+                    mechanisms, "collect_environment_identity",
+                    side_effect=RuntimeError("invalid environment"),
+            ), mock.patch.object(
+                    mechanisms,
+                    "run_opengauss_mechanisms",
+                    return_value={
+                        "status": "complete", "cleanup_confirmed": True, "input": {},
+                        "layouts": {
+                            layout: {"queries_ok": True, "documents": {"ok": True}}
+                            for layout in mechanisms.LAYOUTS
+                        },
+                    },
+            ) as run:
+                with self.assertRaisesRegex(RuntimeError, "invalid environment"):
+                    mechanisms.execute(args)
+
+            manifest = json.loads((output / "run-manifest.json").read_bytes())
+            self.assertEqual(manifest["status"], "failed")
+            self.assertFalse((output / "mechanism-result.json").exists())
+            run.assert_not_called()
+
+    def test_cli_replaces_stale_complete_with_failed_manifest_for_run_or_cleanup_failure(self):
+        """捕获执行异常或未确认清理后遗留 complete manifest。"""
+        environment = {
+            "endpoint": {"host": "127.0.0.1", "port": 15432},
+            "container": {"name": "agent-trace-opengauss-v6", "database_version": "(openGauss 6.0.0 build abc)"},
+        }
+        failures = (
+            RuntimeError("database unavailable"),
+            {"status": "complete", "cleanup_confirmed": False, "input": {}, "layouts": {}},
+        )
+        for failure in failures:
+            with self.subTest(failure=type(failure).__name__), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory)
+                (output / "run-manifest.json").write_text('{"status":"complete"}', encoding="utf-8")
+                args = mechanisms.parse_args([
+                    "--input", "input", "--truth", "truth", "--output", str(output),
+                    "--namespace", "s2sup_cli",
+                ])
+                patch_value = ({"side_effect": failure} if isinstance(failure, Exception)
+                               else {"return_value": failure})
+                with mock.patch.object(mechanisms, "collect_environment_identity", return_value=environment), \
+                        mock.patch.object(mechanisms, "run_opengauss_mechanisms", **patch_value):
+                    with self.assertRaises(RuntimeError):
+                        mechanisms.execute(args)
+                manifest = json.loads((output / "run-manifest.json").read_bytes())
+                self.assertEqual(manifest["status"], "failed")
+                self.assertNotIn("stale", manifest)
+                if isinstance(failure, Exception):
+                    self.assertFalse((output / "mechanism-result.json").exists())
+                else:
+                    self.assertIn("mechanism-result.json", manifest["artifacts"])
+
+    def test_environment_identity_rejects_wrong_server_version(self):
+        """捕获容器身份存在但服务端版本不属于固定 openGauss 6.0.0。"""
+        identity = {"name": "og", "ports": {"5432/tcp": [{"HostPort": "15432"}]}}
+        adapter = mock.MagicMock()
+        adapter.database_version.return_value = "(openGauss 7.0.0 build future)"
+        with mock.patch.object(mechanisms, "_container_identity", return_value=identity), \
+                mock.patch.object(mechanisms, "OpenGaussFourLayoutAdapter", return_value=adapter):
+            with self.assertRaisesRegex(RuntimeError, "database version"):
+                mechanisms.collect_environment_identity(
+                    "127.0.0.1", 15432, "og", "s2sup_cli"
+                )
 
 
 @unittest.skipUnless(os.environ.get("RUN_OPENGAUSS_INTEGRATION") == "1", "set RUN_OPENGAUSS_INTEGRATION=1")

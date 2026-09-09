@@ -1,7 +1,12 @@
+import contextlib
+import io
 import os
 import sys
+import tempfile
 import unittest
 import uuid
+import hashlib
+import json
 from pathlib import Path
 from unittest import mock
 
@@ -92,6 +97,44 @@ class ClickHouseMechanismUnitTest(unittest.TestCase):
         )
 
         self.assertTrue(result["logical_paths_preserved"])
+
+    def test_mechanism_query_sql_matches_layout_specific_execution_and_identity(self):
+        """捕获查询身份遗漏 Sidecar、完整文档或 hint 路径类型改写。"""
+        expected = {}
+        for layout in mechanisms.LAYOUTS:
+            expected[layout] = {}
+            for query_id in mechanisms.QUERY_IDS:
+                statement = mechanisms.ClickHouseFourLayoutAdapter.query_sql("ch_native", query_id)
+                if layout == "ch_native_auto32_none":
+                    statement = statement.replace(", fidelity_values", "")
+                elif layout == "ch_native_auto32_full":
+                    statement = statement.replace(", fidelity_values", ", attributes_raw")
+                elif layout == "ch_native_hinted32_sparse":
+                    statement = statement.replace(
+                        "attributes.gen_ai.operation.name.:String", "attributes.gen_ai.operation.name"
+                    ).replace(
+                        "attributes.failure.mistake_mode.:String", "attributes.failure.mistake_mode"
+                    )
+                expected[layout][query_id] = statement
+                self.assertEqual(mechanisms.mechanism_query_sql(layout, query_id), statement)
+
+        identity = mechanisms._mechanism_identity("s2sup_identity")
+        self.assertEqual(
+            identity["queries_sha256"],
+            hashlib.sha256(mechanisms.canonical_bytes(expected)).hexdigest(),
+        )
+        original = mechanisms.mechanism_query_sql
+        with mock.patch.object(
+                mechanisms,
+                "mechanism_query_sql",
+                side_effect=lambda layout, query_id: (
+                    original(layout, query_id) + " /* changed */"
+                    if (layout, query_id) == ("ch_native_hinted32_sparse", "S02")
+                    else original(layout, query_id)
+                ),
+        ):
+            changed_identity = mechanisms._mechanism_identity("s2sup_identity")
+        self.assertNotEqual(changed_identity["queries_sha256"], identity["queries_sha256"])
 
     def test_complete_document_evidence_keeps_logical_path_when_inventory_exits(self):
         """完整内容仍通过时，inventory 退出单列记录且不误报逻辑丢失。"""
@@ -517,6 +560,169 @@ class ClickHouseMechanismUnitTest(unittest.TestCase):
         load.assert_called_once_with(Path("input"), Path("truth"))
         run.assert_called_once()
         self.assertEqual(result["status"], "complete")
+
+    def test_cli_parses_required_paths_namespace_and_fixed_defaults(self):
+        """捕获机制程序缺少可复现入口或默认固定容器端点漂移。"""
+        args = mechanisms.parse_args([
+            "--input", "input", "--truth", "truth", "--output", "output",
+            "--namespace", "s2sup_cli",
+        ])
+
+        self.assertEqual(args.input, Path("input"))
+        self.assertEqual(args.truth, Path("truth"))
+        self.assertEqual(args.output, Path("output"))
+        self.assertEqual(args.namespace, "s2sup_cli")
+        self.assertEqual(args.host, "127.0.0.1")
+        self.assertEqual(args.port, 18123)
+        self.assertEqual(args.container_name, "agent-trace-clickhouse-25-12")
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output), self.assertRaises(SystemExit) as stopped:
+            mechanisms.parse_args(["--help"])
+        self.assertEqual(stopped.exception.code, 0)
+        self.assertIn("--input", output.getvalue())
+        self.assertIn("--container-name", output.getvalue())
+
+    def test_cli_publishes_result_identity_and_forwards_arguments(self):
+        """捕获 CLI 未透传参数、未记录 artifact 身份或覆盖输出目录其他文件。"""
+        result = {
+            "status": "complete", "cleanup_confirmed": True,
+            "input": {"dataset": {"bytes": 3, "sha256": "input"}},
+            "layouts": {
+                layout: {"transitions": [], "stages": {"ddl": {"analysis_truth_ok": True}}}
+                for layout in mechanisms.LAYOUTS
+            },
+            "sidecars": {
+                layout: {"mismatch_count": 1 if layout.endswith("_none") else 0}
+                for layout in mechanisms.LAYOUTS
+            },
+            "final_probe": {"cleanup_confirmed": True},
+        }
+        environment = {
+            "endpoint": {"host": "db.example", "port": 18124},
+            "container": {"name": "ch-container", "database_version": "25.12.11.4"},
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            call_order = []
+            (output / "keep.txt").write_text("keep", encoding="utf-8")
+            args = mechanisms.parse_args([
+                "--input", "input", "--truth", "truth", "--output", str(output),
+                "--namespace", "s2sup_cli", "--host", "db.example", "--port", "18124",
+                "--container-name", "ch-container",
+            ])
+            args.command = ["python", "run_clickhouse_mechanisms.py", "--namespace", "s2sup_cli"]
+            with mock.patch.object(
+                    mechanisms, "collect_environment_identity",
+                    side_effect=lambda *unused: call_order.append("environment") or environment,
+            ), mock.patch.object(
+                    mechanisms, "run_clickhouse_mechanisms",
+                    side_effect=lambda *unused: call_order.append("run") or result,
+            ) as run:
+                mechanisms.execute(args)
+
+            manifest = json.loads((output / "run-manifest.json").read_bytes())
+            artifact = output / "mechanism-result.json"
+            expected_bytes = mechanisms.canonical_bytes(result) + b"\n"
+            self.assertEqual(manifest["status"], "complete")
+            self.assertEqual(manifest["engine"], "clickhouse")
+            self.assertEqual(manifest["command"], args.command)
+            self.assertEqual(manifest["input"], result["input"])
+            self.assertEqual(manifest["environment"], environment)
+            self.assertTrue(all(manifest["correctness"].values()))
+            self.assertIn("s2sup_cli", manifest["run_id"])
+            self.assertEqual(manifest["mechanism"]["query_ids"], list(mechanisms.QUERY_IDS))
+            self.assertIn("runner/run_clickhouse_mechanisms.py", manifest["mechanism"]["files"])
+            self.assertEqual(manifest["artifacts"]["mechanism-result.json"], {
+                "bytes": len(expected_bytes), "sha256": hashlib.sha256(expected_bytes).hexdigest(),
+            })
+            self.assertEqual((output / "keep.txt").read_text(encoding="utf-8"), "keep")
+            self.assertEqual(call_order, ["environment", "run"])
+            run.assert_called_once_with(
+                Path("input"), Path("truth"), "db.example", 18124, "ch-container", "s2sup_cli",
+            )
+
+    def test_cli_publishes_failed_manifest_without_running_when_environment_check_fails(self):
+        """捕获环境身份失败后仍建库、写入或遗留旧 complete artifact。"""
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            (output / "run-manifest.json").write_text('{"status":"complete"}', encoding="utf-8")
+            (output / "mechanism-result.json").write_text('{"status":"complete"}', encoding="utf-8")
+            args = mechanisms.parse_args([
+                "--input", "input", "--truth", "truth", "--output", str(output),
+                "--namespace", "s2sup_cli",
+            ])
+            with mock.patch.object(
+                    mechanisms, "collect_environment_identity",
+                    side_effect=RuntimeError("invalid environment"),
+            ), mock.patch.object(
+                    mechanisms,
+                    "run_clickhouse_mechanisms",
+                    return_value={
+                        "status": "complete", "cleanup_confirmed": True, "input": {},
+                        "layouts": {
+                            layout: {"stages": {"ddl": {"analysis_truth_ok": True}}}
+                            for layout in mechanisms.LAYOUTS
+                        },
+                        "sidecars": {
+                            layout: {"mismatch_count": 1 if layout.endswith("_none") else 0}
+                            for layout in mechanisms.LAYOUTS
+                        },
+                        "final_probe": {"cleanup_confirmed": True},
+                    },
+            ) as run:
+                with self.assertRaisesRegex(RuntimeError, "invalid environment"):
+                    mechanisms.execute(args)
+
+            manifest = json.loads((output / "run-manifest.json").read_bytes())
+            self.assertEqual(manifest["status"], "failed")
+            self.assertFalse((output / "mechanism-result.json").exists())
+            run.assert_not_called()
+
+    def test_cli_replaces_stale_complete_with_failed_manifest_for_run_or_cleanup_failure(self):
+        """捕获执行异常或未确认清理后遗留 complete manifest。"""
+        environment = {
+            "endpoint": {"host": "127.0.0.1", "port": 18123},
+            "container": {"name": "agent-trace-clickhouse-25-12", "database_version": "25.12.11.4"},
+        }
+        failures = (
+            RuntimeError("database unavailable"),
+            {"status": "complete", "cleanup_confirmed": False, "input": {}, "layouts": {}, "sidecars": {}},
+        )
+        for failure in failures:
+            with self.subTest(failure=type(failure).__name__), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory)
+                (output / "run-manifest.json").write_text('{"status":"complete"}', encoding="utf-8")
+                args = mechanisms.parse_args([
+                    "--input", "input", "--truth", "truth", "--output", str(output),
+                    "--namespace", "s2sup_cli",
+                ])
+                patch_value = ({"side_effect": failure} if isinstance(failure, Exception)
+                               else {"return_value": failure})
+                with mock.patch.object(mechanisms, "collect_environment_identity", return_value=environment), \
+                        mock.patch.object(mechanisms, "run_clickhouse_mechanisms", **patch_value):
+                    with self.assertRaises(RuntimeError):
+                        mechanisms.execute(args)
+                manifest = json.loads((output / "run-manifest.json").read_bytes())
+                self.assertEqual(manifest["status"], "failed")
+                if isinstance(failure, Exception):
+                    self.assertFalse((output / "mechanism-result.json").exists())
+                else:
+                    self.assertIn("mechanism-result.json", manifest["artifacts"])
+
+    def test_environment_identity_rejects_wrong_server_version(self):
+        """捕获容器身份存在但 ClickHouse 服务端版本偏离固定版本。"""
+        identity = {"name": "ch", "ports": {"8123/tcp": [{"HostPort": "18123"}]}}
+        adapter = mock.MagicMock()
+        adapter.database_version.return_value = "25.13.1.1"
+        task4 = mock.MagicMock()
+        task4._container_identity.return_value = identity
+        task4._require_host_port.side_effect = lambda *args: None
+        with mock.patch.object(mechanisms, "_task4_runner", return_value=task4), \
+                mock.patch.object(mechanisms, "ClickHouseFourLayoutAdapter", return_value=adapter):
+            with self.assertRaisesRegex(RuntimeError, "database version"):
+                mechanisms.collect_environment_identity(
+                    "127.0.0.1", 18123, "ch", "s2sup_cli"
+                )
 
 
 @unittest.skipUnless(os.environ.get("RUN_CLICKHOUSE_INTEGRATION") == "1", "set RUN_CLICKHOUSE_INTEGRATION=1")

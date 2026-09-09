@@ -1,15 +1,22 @@
 #!/usr/bin/env python3
 """观察 openGauss JSON/JSONB 自然读写与索引机制。"""
 
+import argparse
 import json
 import hashlib
 import re
+import sys
 import time
+import uuid
 from collections import Counter
+from pathlib import Path
 
 from opengauss_four_layout import OpenGaussFourLayoutAdapter, validate_identifier
-from supplement_common import QUERY_IDS, canonical_bytes
-from run_four_layouts import load_inputs
+from supplement_common import (
+    QUERY_IDS, canonical_bytes, file_identity, write_failed_manifest,
+    write_manifest_last,
+)
+from run_four_layouts import _container_identity, _require_host_port, load_inputs
 
 
 LAYOUTS = ("og_json", "og_json_hot", "og_jsonb", "og_jsonb_hot", "og_jsonb_gin")
@@ -177,6 +184,110 @@ def run_opengauss_mechanisms(input_dir, truth_dir, host, port, container_name, s
     return _run_loaded(*loaded, host, port, container_name, schema)
 
 
+def collect_environment_identity(host, port, container_name, namespace):
+    """核对固定 openGauss 服务端与容器身份。"""
+    validate_identifier(namespace, "namespace")
+    container = _container_identity(container_name)
+    _require_host_port(container, "5432/tcp", port, "openGauss")
+    adapter = OpenGaussFourLayoutAdapter(host, port, container_name, "s2sup_identity")
+    version = adapter.database_version()
+    if not isinstance(version, str) or not version.startswith("(openGauss 6.0.0 "):
+        raise RuntimeError("invalid openGauss database version")
+    return {
+        "container": {**container, "database_version": version},
+        "endpoint": {"host": host, "port": port},
+    }
+
+
+def _mechanism_identity(namespace):
+    """记录机制程序、生成 DDL 与 S01-S06 查询身份。"""
+    queries = {
+        layout: {
+            query_id: OpenGaussFourLayoutAdapter.query_sql(
+                "og_json" if layout.startswith("og_json_") or layout == "og_json" else "og_jsonb",
+                query_id,
+            )
+            for query_id in QUERY_IDS
+        }
+        for layout in LAYOUTS
+    }
+    runner_dir = Path(__file__).resolve().parent
+    return {
+        "ddl_sha256": hashlib.sha256(canonical_bytes(opengauss_mechanism_ddls(namespace))).hexdigest(),
+        "files": {
+            "runner/run_opengauss_mechanisms.py": file_identity(__file__),
+            "runner/opengauss_four_layout.py": file_identity(runner_dir / "opengauss_four_layout.py"),
+            "runner/run_four_layouts.py": file_identity(runner_dir / "run_four_layouts.py"),
+            "runner/supplement_common.py": file_identity(runner_dir / "supplement_common.py"),
+        },
+        "query_ids": list(QUERY_IDS),
+        "queries_sha256": hashlib.sha256(canonical_bytes(queries)).hexdigest(),
+    }
+
+
+def _correctness_summary(result):
+    """从完整机制结果提取 truth 与清理门禁摘要。"""
+    layouts = result.get("layouts", {}) if isinstance(result, dict) else {}
+    truth_ok = set(layouts) == set(LAYOUTS) and all(
+        item.get("queries_ok") is True and item.get("documents", {}).get("ok") is True
+        for item in layouts.values()
+    )
+    return {
+        "cleanup_confirmed": result.get("cleanup_confirmed") is True,
+        "layout_count": len(layouts),
+        "truth_ok": truth_ok,
+    }
+
+
+def execute(args):
+    """执行机制链，并以公共状态机最后发布 manifest。"""
+    output = Path(args.output)
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "run-manifest.json").unlink(missing_ok=True)
+    (output / "mechanism-result.json").unlink(missing_ok=True)
+    manifest = {
+        "command": list(getattr(args, "command", [Path(sys.executable).name, *sys.argv])),
+        "engine": "opengauss",
+        "format": "agent-trace-opengauss-json-mechanism-run",
+        "format_version": 1,
+        "namespace": args.namespace,
+        "run_id": f"opengauss-mechanism-{args.namespace}-{uuid.uuid4().hex}",
+    }
+    artifacts = {}
+    try:
+        manifest["environment"] = collect_environment_identity(
+            args.host, args.port, args.container_name, args.namespace
+        )
+        manifest["mechanism"] = _mechanism_identity(args.namespace)
+        result = run_opengauss_mechanisms(
+            args.input, args.truth, args.host, args.port, args.container_name, args.namespace
+        )
+        artifacts["mechanism-result.json"] = canonical_bytes(result) + b"\n"
+        manifest["input"] = result.get("input")
+        manifest["correctness"] = _correctness_summary(result)
+        if (result.get("status") != "complete" or result.get("cleanup_confirmed") is not True
+                or manifest["correctness"]["truth_ok"] is not True):
+            raise RuntimeError("openGauss mechanism run incomplete, incorrect, or cleanup unconfirmed")
+    except Exception as error:
+        write_failed_manifest(output, manifest, artifacts, error)
+        raise
+    write_manifest_last(output, manifest, artifacts)
+    return result
+
+
+def parse_args(argv=None):
+    """解析 openGauss 机制观察程序参数。"""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--input", required=True, type=Path)
+    parser.add_argument("--truth", required=True, type=Path)
+    parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--namespace", required=True)
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", default=15432, type=int)
+    parser.add_argument("--container-name", default="agent-trace-opengauss-v6")
+    return parser.parse_args(argv)
+
+
 def _run_loaded(rows, source_truth, catalog, truth, identity, host, port, container_name, schema):
     """对已通过 Task 4 身份门禁的输入执行 openGauss 机制流程。"""
     validate_identifier(schema, "schema")
@@ -311,3 +422,9 @@ def _run_loaded(rows, source_truth, catalog, truth, identity, host, port, contai
             connection.close()
     result["status"] = "complete"
     return result
+
+
+if __name__ == "__main__":
+    arguments = parse_args()
+    arguments.command = [Path(sys.executable).name, *sys.argv]
+    execute(arguments)

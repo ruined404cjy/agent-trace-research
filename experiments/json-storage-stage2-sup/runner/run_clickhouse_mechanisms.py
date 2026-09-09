@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """观察 ClickHouse Native JSON 路径、Sidecar、merge 与 FINAL 机制。"""
 
+import argparse
 import hashlib
 import importlib.util
 import json
 import sys
 import time
 import types
+import uuid
 from pathlib import Path
 
 from clickhouse_four_layout import (
@@ -14,7 +16,10 @@ from clickhouse_four_layout import (
     merge_fidelity,
     validate_identifier,
 )
-from supplement_common import QUERY_IDS, canonical_bytes
+from supplement_common import (
+    QUERY_IDS, canonical_bytes, file_identity, write_failed_manifest,
+    write_manifest_last,
+)
 
 
 LAYOUTS = (
@@ -38,18 +43,23 @@ HINT_PATHS = ("gen_ai.operation.name", "failure.mistake_mode")
 HINT_MISSING_PREFIX = "@missing:"
 
 
-def load_inputs(input_dir, truth_dir):
-    """惰性复用 Task 4 输入门禁，避免 ClickHouse-only 导入 openGauss 驱动。"""
+def _task4_runner():
+    """惰性加载 Task 4 runner，保持 ClickHouse-only 导入可用。"""
     if importlib.util.find_spec("psycopg") is not None:
-        from run_four_layouts import load_inputs as task4_load_inputs
-        return task4_load_inputs(input_dir, truth_dir)
+        import run_four_layouts
+        return run_four_layouts
     stub = types.ModuleType("psycopg")
     sys.modules["psycopg"] = stub
     try:
-        from run_four_layouts import load_inputs as task4_load_inputs
-        return task4_load_inputs(input_dir, truth_dir)
+        import run_four_layouts
+        return run_four_layouts
     finally:
         sys.modules.pop("psycopg", None)
+
+
+def load_inputs(input_dir, truth_dir):
+    """惰性复用 Task 4 输入门禁，避免 ClickHouse-only 导入 openGauss 驱动。"""
+    return _task4_runner().load_inputs(input_dir, truth_dir)
 
 
 def _truth_generator():
@@ -80,6 +90,26 @@ def mechanism_ddls(database: str) -> dict[str, str]:
             "ENGINE=MergeTree ORDER BY (project_id,start_time,event_id) SETTINGS " + TABLE_SETTINGS
         )
     return definitions
+
+
+def mechanism_query_sql(layout: str, query_id: str) -> str:
+    """返回指定机制结构实际执行的 S01 至 S06 SQL 模板。"""
+    if layout not in LAYOUTS:
+        raise ValueError("invalid mechanism layout")
+    if query_id not in QUERY_IDS:
+        raise ValueError("invalid query id")
+    statement = ClickHouseFourLayoutAdapter.query_sql("ch_native", query_id)
+    if layout == "ch_native_auto32_none":
+        return statement.replace(", fidelity_values", "")
+    if layout == "ch_native_auto32_full":
+        return statement.replace(", fidelity_values", ", attributes_raw")
+    if layout == "ch_native_hinted32_sparse":
+        return statement.replace(
+            "attributes.gen_ai.operation.name.:String", "attributes.gen_ai.operation.name"
+        ).replace(
+            "attributes.failure.mistake_mode.:String", "attributes.failure.mistake_mode"
+        )
+    return statement
 
 
 def validate_truth_contract(catalog, truth, digests=None):
@@ -518,14 +548,7 @@ def _execute_truth_queries(adapter, table, layout, catalog, expected_results):
     matches = {}
     diagnostics = {}
     for query_id in QUERY_IDS:
-        statement = adapter.query_sql("ch_native", query_id).replace("{analytics}", table)
-        if layout == "ch_native_auto32_none":
-            statement = statement.replace(", fidelity_values", "")
-        elif layout == "ch_native_auto32_full":
-            statement = statement.replace(", fidelity_values", ", attributes_raw")
-        elif layout == "ch_native_hinted32_sparse":
-            statement = statement.replace("attributes.gen_ai.operation.name.:String", "attributes.gen_ai.operation.name")
-            statement = statement.replace("attributes.failure.mistake_mode.:String", "attributes.failure.mistake_mode")
+        statement = mechanism_query_sql(layout, query_id).replace("{analytics}", table)
         body = _request(
             adapter, statement,
             parameters=adapter._query_parameters(query_id, contract["parameters"][query_id]),
@@ -791,6 +814,125 @@ def run_clickhouse_mechanisms(input_dir, truth_dir, host, port, container_name, 
     return _run_loaded(*loaded, host, port, container_name, database)
 
 
+def collect_environment_identity(host, port, container_name, namespace):
+    """核对固定 ClickHouse 服务端与容器身份。"""
+    validate_identifier(namespace, "namespace")
+    task4 = _task4_runner()
+    container = task4._container_identity(container_name)
+    task4._require_host_port(container, "8123/tcp", port, "ClickHouse")
+    adapter = ClickHouseFourLayoutAdapter(host, port, container_name, "s2sup_identity")
+    version = adapter.database_version()
+    if version != "25.12.11.4":
+        raise RuntimeError("invalid ClickHouse database version")
+    return {
+        "container": {**container, "database_version": version},
+        "endpoint": {"host": host, "port": port},
+    }
+
+
+def _mechanism_identity(database):
+    """记录机制程序、生成 DDL 与 S01-S06 查询身份。"""
+    queries = {
+        layout: {
+            query_id: mechanism_query_sql(layout, query_id)
+            for query_id in QUERY_IDS
+        }
+        for layout in LAYOUTS
+    }
+    runner_dir = Path(__file__).resolve().parent
+    return {
+        "ddl_sha256": hashlib.sha256(canonical_bytes(mechanism_ddls(database))).hexdigest(),
+        "files": {
+            "runner/run_clickhouse_mechanisms.py": file_identity(__file__),
+            "runner/clickhouse_four_layout.py": file_identity(runner_dir / "clickhouse_four_layout.py"),
+            "runner/run_four_layouts.py": file_identity(runner_dir / "run_four_layouts.py"),
+            "runner/supplement_common.py": file_identity(runner_dir / "supplement_common.py"),
+            "generator/generate_supplement_truth.py": file_identity(
+                runner_dir.parent / "generator" / "generate_supplement_truth.py"
+            ),
+        },
+        "query_ids": list(QUERY_IDS),
+        "queries_sha256": hashlib.sha256(canonical_bytes(queries)).hexdigest(),
+    }
+
+
+def _correctness_summary(result):
+    """从完整机制结果提取 truth、FINAL 与清理门禁摘要。"""
+    layouts = result.get("layouts", {}) if isinstance(result, dict) else {}
+    sidecars = result.get("sidecars", {}) if isinstance(result, dict) else {}
+    sidecar_ok = set(sidecars) == set(LAYOUTS) and all(
+        layout == "ch_native_auto32_none" or item.get("mismatch_count") == 0
+        for layout, item in sidecars.items()
+    )
+    stage_results = [
+        stage
+        for layout in layouts.values()
+        for name, stage in layout.get("stages", {}).items()
+        if name != "merge_wait"
+    ]
+    return {
+        "analysis_truth_ok": bool(stage_results) and all(
+            stage.get("analysis_truth_ok") is True for stage in stage_results
+        ),
+        "cleanup_confirmed": result.get("cleanup_confirmed") is True,
+        "final_cleanup_confirmed": result.get("final_probe", {}).get("cleanup_confirmed") is True,
+        "layout_count": len(layouts),
+        "layouts_complete": set(layouts) == set(LAYOUTS),
+        "sidecar_ok": sidecar_ok,
+    }
+
+
+def execute(args):
+    """执行机制链，并以公共状态机最后发布 manifest。"""
+    output = Path(args.output)
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "run-manifest.json").unlink(missing_ok=True)
+    (output / "mechanism-result.json").unlink(missing_ok=True)
+    manifest = {
+        "command": list(getattr(args, "command", [Path(sys.executable).name, *sys.argv])),
+        "engine": "clickhouse",
+        "format": "agent-trace-clickhouse-native-json-mechanism-run",
+        "format_version": 1,
+        "namespace": args.namespace,
+        "run_id": f"clickhouse-mechanism-{args.namespace}-{uuid.uuid4().hex}",
+    }
+    artifacts = {}
+    try:
+        manifest["environment"] = collect_environment_identity(
+            args.host, args.port, args.container_name, args.namespace
+        )
+        manifest["mechanism"] = _mechanism_identity(args.namespace)
+        result = run_clickhouse_mechanisms(
+            args.input, args.truth, args.host, args.port, args.container_name, args.namespace
+        )
+        artifacts["mechanism-result.json"] = canonical_bytes(result) + b"\n"
+        manifest["input"] = result.get("input")
+        manifest["correctness"] = _correctness_summary(result)
+        if (result.get("status") != "complete" or result.get("cleanup_confirmed") is not True
+                or not all(manifest["correctness"].get(name) is True for name in (
+                    "analysis_truth_ok", "final_cleanup_confirmed", "layouts_complete", "sidecar_ok",
+                ))):
+            raise RuntimeError("ClickHouse mechanism run incomplete, incorrect, or cleanup unconfirmed")
+    except Exception as error:
+        write_failed_manifest(output, manifest, artifacts, error)
+        raise
+    write_manifest_last(output, manifest, artifacts)
+    return result
+
+
+def parse_args(argv=None):
+    """解析 ClickHouse 机制观察程序参数。"""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--input", required=True, type=Path)
+    parser.add_argument("--truth", required=True, type=Path)
+    parser.add_argument("--output", required=True, type=Path)
+    parser.add_argument("--namespace", required=True)
+    parser.add_argument("--host", default="127.0.0.1")
+    parser.add_argument("--port", default=18123, type=int)
+    parser.add_argument("--container-name", default="agent-trace-clickhouse-25-12")
+    return parser.parse_args(argv)
+
+
 def _run_loaded(rows, source_truth, catalog, truth, identity, host, port, container_name, database):
     """对已通过 Task 4 身份门禁的输入执行 ClickHouse 机制流程。"""
     validate_identifier(database, "database")
@@ -918,3 +1060,9 @@ def _run_loaded(rows, source_truth, catalog, truth, identity, host, port, contai
                 owned_tables.clear()
     result["status"] = "complete"
     return result
+
+
+if __name__ == "__main__":
+    arguments = parse_args()
+    arguments.command = [Path(sys.executable).name, *sys.argv]
+    execute(arguments)
