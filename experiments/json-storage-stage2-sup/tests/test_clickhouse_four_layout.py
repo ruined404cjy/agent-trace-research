@@ -202,6 +202,32 @@ class ClickHouseFourLayoutUnitTest(unittest.TestCase):
 
         self.assertEqual(self.adapter.cleanup("ch_native"), {"database": "jsons2sup_test_ch_native", "removed": False})
 
+    def test_collect_plan_uses_bound_formal_query_and_returns_natural_plan(self):
+        """防止正式 runner 收集 ClickHouse 自然计划时缺少 adapter 接口。"""
+        connection = mock.MagicMock()
+        parameters = {
+            "project_id": "project-a",
+            "start_time": "2030-01-01T00:00:00.000Z",
+            "end_time": "2030-01-01T00:01:00.000Z",
+            "operation_name": "chat",
+        }
+        with mock.patch.object(self.adapter, "connect_worker", return_value=connection), mock.patch.object(
+            self.adapter, "_request", return_value="Expression (Projection + Before ORDER BY)\n"
+        ) as request:
+            result = self.adapter.collect_plan("ch_string", "S02", parameters)
+
+        self.assertEqual(result, {"natural": "Expression (Projection + Before ORDER BY)"})
+        statement = request.call_args.args[1]
+        self.assertTrue(statement.startswith("EXPLAIN SELECT span_type, count() AS count FROM jsons2sup_test_ch_string.analytics"))
+        self.assertIn("JSONExtractString(attributes, 'gen_ai', 'operation', 'name')", statement)
+        self.assertEqual(request.call_args.kwargs["parameters"], {
+            "project_id": "project-a",
+            "start_time": "2030-01-01 00:00:00.000",
+            "end_time": "2030-01-01 00:01:00.000",
+            "operation_name": "chat",
+        })
+        connection.close.assert_called_once()
+
 
 @unittest.skipUnless(os.environ.get("RUN_CLICKHOUSE_INTEGRATION") == "1", "set RUN_CLICKHOUSE_INTEGRATION=1")
 class ClickHouseFourLayoutIntegrationTest(unittest.TestCase):
@@ -310,6 +336,15 @@ class ClickHouseFourLayoutIntegrationTest(unittest.TestCase):
             native_value = self.adapter._load_attributes(actual_by_id[event_id]["attributes"])
             self.assertNotEqual(native_value, expected)
             self.assertEqual(clickhouse.merge_fidelity(native_value, actual_by_id[event_id]["fidelity_values"]), expected)
+
+    def test_collect_plan_accepts_clickhouse_25_bound_query_syntax(self):
+        """验证固定 ClickHouse 25.12 对正式绑定查询的 EXPLAIN 语法。"""
+        self.adapter.create_layout("ch_string", 32)
+
+        plan = self.adapter.collect_plan("ch_string", "S02", self.parameters["S02"])
+
+        self.assertIsInstance(plan["natural"], str)
+        self.assertTrue(plan["natural"].strip())
 
     @staticmethod
     def _capability_row(ingest_seq, event_id, attributes):

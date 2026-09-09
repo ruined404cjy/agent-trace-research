@@ -492,6 +492,22 @@ class ClickHouseFourLayoutAdapter:
                 "result_sha256": hashlib.sha256(canonical_bytes(result)).hexdigest(), "row_count": row_count,
                 "query_log_id": server_query_id}
 
+    def collect_plan(self, layout, query_id, params):
+        """返回与正式查询使用相同绑定参数的 ClickHouse 自然执行计划。"""
+        validate_layout(layout)
+        connection = self.connect_worker()
+        try:
+            plan = self._request(
+                connection,
+                "EXPLAIN " + self._statement(layout, query_id),
+                parameters=self._query_parameters(query_id, params),
+            ).strip()
+            if not plan:
+                raise RuntimeError("empty ClickHouse natural plan")
+            return {"natural": plan}
+        finally:
+            connection.close()
+
     def collect_query_logs(self, query_ids, attempts=20):
         """阶段结束后批量获取每个 query ID 的 QueryFinish 指标。"""
         if not isinstance(query_ids, list) or len(set(query_ids)) != len(query_ids) or any(not isinstance(value, str) or not QUERY_LOG_ID.fullmatch(value) for value in query_ids):
