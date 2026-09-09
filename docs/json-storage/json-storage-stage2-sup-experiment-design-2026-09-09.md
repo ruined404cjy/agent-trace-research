@@ -5,6 +5,7 @@
 > 数据路径：独立载入程序
 > 基础契约：`json-storage-cross-engine-v1`
 > 补充契约：`json-storage-four-layout-v1`
+> 原理说明：[openGauss JSONB 与 ClickHouse Native JSON](json-storage-principles-2026-09-09.md)
 
 ## 1. 目标与证据边界
 
@@ -49,7 +50,7 @@ docs/temp/json-storage-stage2-sup/
   clickhouse-mechanisms-*/
 ```
 
-`input-20260908/` 只保存补充 truth、查询 catalog 和来源运行清单，不复制阶段二 dataset。来源文件路径、字节数和内容摘要写入运行清单。正式结果完成后更新阶段二报告，并生成 `docs/json-storage-stage2-sup-pre-YYYY-MM-DD.md` 作为组内进展汇报辅助材料。
+`input-20260908/` 只保存补充 truth、查询 catalog 和来源运行清单，不复制阶段二 dataset。来源文件路径、字节数和内容摘要写入运行清单。正式结果完成后更新阶段二报告，并生成 `docs/json-storage/json-storage-stage2-sup-pre-YYYY-MM-DD.md` 作为组内进展汇报辅助材料。
 
 ## 3. 输入与预处理边界
 
@@ -232,6 +233,7 @@ Docker 服务、固定镜像或端口不可用时停止数据库小数据验证�
 
 ## 11. 参考资料
 
+- [JSON 存储原理](json-storage-principles-2026-09-09.md)
 - [阶段一实验设计](json-storage-stage1-experiment-design-2026-09-09.md)
 - [阶段一报告](json-storage-stage1-report-2026-09-09.md)
 - [阶段二实验设计](json-storage-stage2-experiment-design-2026-09-09.md)

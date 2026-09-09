@@ -3,6 +3,7 @@
 > 状态：已完成，六轮正式实验、18 个存储结构结果通过门禁
 > 实验完成日期：2026-09-07；文档修订日期：2026-09-09
 > 数据路径：独立载入程序
+> 原理说明：[openGauss JSONB 与 ClickHouse Native JSON](json-storage-principles-2026-09-09.md)
 > 上游边界：[阶段一报告](json-storage-stage1-report-2026-09-09.md)第 6、7 节
 
 ## 1. 目标与证据边界
@@ -223,6 +224,7 @@ ClickHouse 每条测量查询使用唯一 query ID，HTTP 响应完整读取后�
 
 ## 8. 参考资料
 
+- [JSON 存储原理](json-storage-principles-2026-09-09.md)
 - [阶段一报告](json-storage-stage1-report-2026-09-09.md)
 - [JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)
 - [trace-synthesis 跨 backend 可比性分析](https://github.com/zfwang2021/trace-synthesis/blob/ef3be141cc17415de9fb5a9d8003c16a4cd679ac/docs/design/benchmark/cross-backend-comparability-analysis.md)

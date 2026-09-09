@@ -2,7 +2,7 @@
 
 本目录比较 openGauss 6.0.0 与 ClickHouse 25.12.11.4 的动态属性存储结构。数据路径为独立载入程序，不经过 Collector、exporter、benchmark 或产品服务。
 
-阶段二已完成 6 个正式 run、18 个布局结果。结论见[阶段二横向报告](../../docs/json-storage-stage2-report-2026-09-09.md)。正式统计仅使用 `formal-20260907-retry-3/`；`formal-20260907/`、`formal-20260907-retry-1/`、`formal-20260907-retry-2/` 的全部产物只用于诊断。
+阶段二已完成 6 个正式 run、18 个布局结果。结论见[阶段二横向报告](../../docs/json-storage/json-storage-stage2-report-2026-09-09.md)。正式统计仅使用 `formal-20260907-retry-3/`；`formal-20260907/`、`formal-20260907-retry-1/`、`formal-20260907-retry-2/` 的全部产物只用于诊断。
 
 ## 依赖与输入
 

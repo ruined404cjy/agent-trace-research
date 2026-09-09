@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.11、Python 标准库、psycopg 3.3.5、openGauss 6.0.0、ClickHouse 25.12.11.4、Docker
 
-**Spec:** `docs/json-storage-stage2-experiment-design.md`
+**Spec:** `docs/json-storage/json-storage-stage2-experiment-design.md`
 
 ## Global Constraints
 
@@ -38,7 +38,7 @@
 | `experiments/json-storage-stage2/report/summarize_results.py` | 校验 6 个完成 run，生成跨轮汇总 JSON 和 Markdown 表 |
 | `experiments/json-storage-stage2/tests/` | 审计、生成器、公共契约、adapter 和真实数据库集成测试 |
 | `experiments/json-storage-stage2/README.md` | 复现命令、产物说明和运行门禁 |
-| `docs/json-storage-stage2-cross-engine-report-2026-09-07.md` | 阶段二证据、横向结果、适用范围和建议 |
+| `docs/json-storage/json-storage-stage2-cross-engine-report-2026-09-07.md` | 阶段二证据、横向结果、适用范围和建议 |
 
 ## Spec Coverage
 
@@ -500,7 +500,7 @@
 **Files:**
 - Create: `experiments/json-storage-stage2/report/summarize_results.py`
 - Create: `experiments/json-storage-stage2/tests/test_summarize_results.py`
-- Create: `docs/json-storage-stage2-cross-engine-report-2026-09-07.md`
+- Create: `docs/json-storage/json-storage-stage2-cross-engine-report-2026-09-07.md`
 - Modify: `README.md`
 - Modify: `experiments/json-storage-stage2/README.md`
 
@@ -543,7 +543,7 @@
     -s experiments/json-storage-stage2/tests -v
   git diff --check
   rg -n "run-manifest|json-storage-cross-engine-v1|independent_loader" \
-    docs/json-storage-stage2-cross-engine-report-2026-09-07.md \
+    docs/json-storage/json-storage-stage2-cross-engine-report-2026-09-07.md \
     experiments/json-storage-stage2/README.md
   ```
 
@@ -552,6 +552,6 @@
 - [ ] **Step 5: 提交汇总器和报告**
 
   ```bash
-  git add experiments/json-storage-stage2/report/summarize_results.py experiments/json-storage-stage2/tests/test_summarize_results.py experiments/json-storage-stage2/README.md docs/json-storage-stage2-cross-engine-report-2026-09-07.md README.md
+  git add experiments/json-storage-stage2/report/summarize_results.py experiments/json-storage-stage2/tests/test_summarize_results.py experiments/json-storage-stage2/README.md docs/json-storage/json-storage-stage2-cross-engine-report-2026-09-07.md README.md
   git commit -m "docs: report JSON storage stage two results"
   ```

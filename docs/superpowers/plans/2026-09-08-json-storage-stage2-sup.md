@@ -8,7 +8,7 @@
 
 **Tech Stack:** Python 3.11、Python 标准库、psycopg 3.3.5、openGauss 6.0.0、ClickHouse 25.12.11.4、Docker、Markdown、SVG
 
-**Spec:** `docs/json-storage-stage2-sup-experiment-design-2026-09-08.md`
+**Spec:** `docs/json-storage/json-storage-stage2-sup-experiment-design-2026-09-08.md`
 
 ## Global Constraints
 
@@ -39,8 +39,8 @@
 | `experiments/json-storage-stage2-sup/report/summarize_results.py` | 校验四轮 16 个结果并生成确定性 JSON/Markdown 汇总 |
 | `experiments/json-storage-stage2-sup/tests/` | truth、适配、运行、汇总和数据库集成测试 |
 | `experiments/json-storage-stage2-sup/README.md` | 环境要求、命令、输出和复现说明 |
-| `docs/json-storage-stage2-report-2026-09-08.md` | 阶段二完整报告，按 JSONB、Native JSON 和四结构场景重组 |
-| `docs/json-storage-stage2-sup-pre-2026-09-08.md` | 组内进展汇报辅助材料 |
+| `docs/json-storage/json-storage-stage2-report-2026-09-08.md` | 阶段二完整报告，按 JSONB、Native JSON 和四结构场景重组 |
+| `docs/json-storage/json-storage-stage2-sup-pre-2026-09-08.md` | 组内进展汇报辅助材料 |
 | `docs/assets/json-storage-*.svg` | JSONB、Native JSON 与 Sidecar 流程图 |
 
 ---
@@ -440,15 +440,15 @@
 ### Task 7: 阶段二报告、流程图与汇报辅助材料
 
 **Files:**
-- Modify: `docs/json-storage-stage2-report-2026-09-08.md`
-- Modify: `docs/json-storage-stage2-experiment-design-2026-09-08.md`
-- Modify: `docs/json-storage-stage1-report-2026-09-08.md`
-- Modify: `docs/json-storage-stage1-experiment-design-2026-09-08.md`
-- Modify: `docs/json-storage-design-survey-2026-09-08.md`
+- Modify: `docs/json-storage/json-storage-stage2-report-2026-09-08.md`
+- Modify: `docs/json-storage/json-storage-stage2-experiment-design-2026-09-08.md`
+- Modify: `docs/json-storage/json-storage-stage1-report-2026-09-08.md`
+- Modify: `docs/json-storage/json-storage-stage1-experiment-design-2026-09-08.md`
+- Modify: `docs/json-storage/json-storage-design-survey-2026-09-08.md`
 - Modify: `README.md`
 - Modify: `experiments/json-storage-stage1/README.md`
 - Modify: `experiments/json-storage-stage2/README.md`
-- Create: `docs/json-storage-stage2-sup-pre-2026-09-08.md`
+- Create: `docs/json-storage/json-storage-stage2-sup-pre-2026-09-08.md`
 - Create: `docs/assets/json-storage-opengauss-jsonb-flow.svg`
 - Create: `docs/assets/json-storage-clickhouse-native-json-flow.svg`
 - Create: `docs/assets/json-storage-native-json-sidecar-flow.svg`

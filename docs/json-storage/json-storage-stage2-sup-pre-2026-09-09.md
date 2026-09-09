@@ -2,6 +2,7 @@
 
 > 日期：2026-09-09
 > 范围：openGauss JSON、openGauss JSONB、ClickHouse String JSON、ClickHouse Native JSON
+> 原理说明：[openGauss JSONB 与 ClickHouse Native JSON](json-storage-principles-2026-09-09.md)
 > 详细证据：[阶段二报告](json-storage-stage2-report-2026-09-09.md)
 
 ## 1. 当前结论

@@ -2,7 +2,7 @@
 
 本目录在固定真实 Trace 输入上比较 openGauss JSON、openGauss JSONB、ClickHouse String JSON 和 ClickHouse Native JSON 四种基础存储结构。数据路径为 `independent_loader`；实验不经过 Collector、exporter、benchmark 或产品服务。
 
-基础四结构的定义、查询语义、计时边界和证据范围见[阶段二补充实验设计](../../docs/json-storage-stage2-sup-experiment-design-2026-09-09.md)。正式结果由四轮矩阵的原始清单汇总产生；机制观察单独记录，不进入四结构性能排名。
+基础四结构的定义、查询语义、计时边界和证据范围见[阶段二补充实验设计](../../docs/json-storage/json-storage-stage2-sup-experiment-design-2026-09-09.md)。正式结果由四轮矩阵的原始清单汇总产生；机制观察单独记录，不进入四结构性能排名。
 
 ## 依赖和冻结输入
 

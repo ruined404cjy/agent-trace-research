@@ -3,6 +3,7 @@
 > 状态：调研结论，供方案选择和穿刺实验使用
 > 调研日期：2026-09-04；文档修订日期：2026-09-09
 > 范围：多字段 JSON、JSON 内长值、Trace 大 payload、热点字段、半结构化查询
+> 原理说明：[openGauss JSONB 与 ClickHouse Native JSON](json-storage-principles-2026-09-09.md)
 > 阶段一实验设计：[json-storage-stage1-experiment-design-2026-09-09.md](json-storage-stage1-experiment-design-2026-09-09.md)
 > 阶段一报告：[json-storage-stage1-report-2026-09-09.md](json-storage-stage1-report-2026-09-09.md)
 

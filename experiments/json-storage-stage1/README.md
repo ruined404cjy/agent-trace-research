@@ -3,7 +3,7 @@
 > 状态：一次性 Spike 基础设施；openGauss 实验及 ClickHouse 机制与固定行数补充矩阵已完成
 > 范围：确定性数据、truth manifest、标准 openGauss JSON/JSONB 行存验证、固定版本端到端参照
 
-本目录实现 [JSON 存储阶段一实验设计](../../docs/json-storage-stage1-experiment-design-2026-09-09.md) 中的公共正确性与路径组织 profile，并提供标准 openGauss 6.0.0 的独立 loader。正确性探针固定跨数据库实验的输入和判定口径，验证当前 exporter JSON schema 的读写语义；路径组织实验比较同一 openGauss 实例内的 JSONB 索引机制。
+本目录实现 [JSON 存储阶段一实验设计](../../docs/json-storage/json-storage-stage1-experiment-design-2026-09-09.md) 中的公共正确性与路径组织 profile，并提供标准 openGauss 6.0.0 的独立 loader。正确性探针固定跨数据库实验的输入和判定口径，验证当前 exporter JSON schema 的读写语义；路径组织实验比较同一 openGauss 实例内的 JSONB 索引机制。
 
 ## 数据契约
 
@@ -295,7 +295,7 @@ runner SHA-256 为 `74f5151f9316fe72f8e0614b97e6c567aedbcf71650bb73c47cb59503b0d
 
 该矩阵形成以下阶段结论：直接子列查询显著减少扫描量和查询耗时；完整逻辑详情读取应走 String/canonical sidecar，避免从 native 子列重建；ClickHouse Native JSON 的载入吞吐低于 String，并承担子列组织和 canonical sidecar 空间；固定每行约 50 个字段时，全局路径数从 50 增至 5000 会把 native merge 中位数从约 0.27–0.29 s 放大到约 32 s；把预算从 100 提高到 1000 对两个已知查询的收益有限，却显著增加 `5000×1%` 的载入和空间成本。5000 路径仍是压力边界，不能作为 Agent Trace 代表性分布。
 
-`metadata_raw` 是解析后重新序列化的 canonical JSON，不保留原始空白、键顺序或重复键文本。字节级审计和重放需要在摄入层另存原始输入 bytes。[阶段二](../../docs/json-storage-stage2-experiment-design-2026-09-09.md)审计真实 Trace 的 `P/W/dᵢ/cᵢ/Tᵢ/Lᵢ/E`，并运行动态属性的持续写入、后台 merge、并发查询和横向比较。[阶段三](../../docs/json-storage-stage3-experiment-design-2026-09-09.md)单独运行长 payload 四种存储结构实验。
+`metadata_raw` 是解析后重新序列化的 canonical JSON，不保留原始空白、键顺序或重复键文本。字节级审计和重放需要在摄入层另存原始输入 bytes。[阶段二](../../docs/json-storage/json-storage-stage2-experiment-design-2026-09-09.md)审计真实 Trace 的 `P/W/dᵢ/cᵢ/Tᵢ/Lᵢ/E`，并运行动态属性的持续写入、后台 merge、并发查询和横向比较。[阶段三](../../docs/json-storage/json-storage-stage3-experiment-design-2026-09-09.md)单独运行长 payload 四种存储结构实验。
 
 固定行数 profile 和单次 runner 的复现命令示例：
 
