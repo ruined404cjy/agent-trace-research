@@ -1,28 +1,30 @@
 # Agent Trace JSON 存储阶段二实验设计
 
-> 状态：已完成，6 个正式 run、18 个布局结果通过门禁
+> 状态：已完成，六轮正式实验、18 个存储结构结果通过门禁
 > 实验完成日期：2026-09-07；文档修订日期：2026-09-08
 > 数据路径：`independent_loader`
 > 上游边界：[阶段一报告](json-storage-stage1-report-2026-09-08.md)第 6、7 节
 
 ## 1. 目标与证据边界
 
-本实验使用同一 Agent Trace 数据、逻辑记录、查询、正确性门禁和原文恢复契约，比较标准 openGauss 6.0.0 与 ClickHouse 25.12.11.4 的 residual 布局。实验覆盖真实 Trace 分布审计、持续分批写入、写入期间并发查询、后台维护、静态查询和空间统计。
+本实验使用同一 Agent Trace 数据、逻辑记录、查询、正确性门禁和原文恢复契约，比较 openGauss 6.0.0 与 ClickHouse 25.12.11.4 的动态属性存储结构。
+
+实验覆盖真实 Trace 分布审计、持续分批写入、写入期间并发查询、后台维护、静态查询和空间统计。重点回答三类问题：稳定列查询是否受动态属性结构影响、路径查询如何受索引或子列组织影响、完整 Trace 回查需要承担哪些读取和恢复成本。
 
 截至 2026-09-07，两仓远端状态为：
 
-| 仓库 | 远端 `main` | 冻结状态 |
+| 仓库 | 检查时间与提交 | 状态 |
 |---|---|---|
-| exporter_demo | `81b55be6d6912d18c4e2ac7102fd7906e9dac3e8` | SPEC v1.8 冻结 18 列；`schema.go` SHA-256 为 `e624c680a3a0d6e9137075e9c0d49809872a4ec95aed8ad43feab84eef70340b` |
-| trace-synthesis | `ef3be141cc17415de9fb5a9d8003c16a4cd679ac` | v4 database catalog revision `2026-09-02.3` 仍定义 28 列；catalog SHA-256 为 `8cddfb40af5bb2df302318a5d64f2906ecf904290ea56cd0d4155a7cbdd4e19c` |
+| exporter_demo | 2026-09-07 · `81b55be` | SPEC v1.8 冻结 18 列 |
+| trace-synthesis | 2026-09-07 · `ef3be14` | v4 database catalog revision `2026-09-02.3` 仍定义 28 列 |
 
-两仓尚未形成联合冻结。实验不经过 Collector、exporter 或 benchmark，不形成当前两仓 `main` 的系统级性能结论。所有 run manifest 记录 `data_path=independent_loader`。
+两仓尚未形成联合冻结。实验不经过 Collector、exporter 或 benchmark，不形成当前两仓 `main` 的系统级性能结论。实验使用独立载入程序；完整提交和文件身份保存在运行清单中。
 
 本阶段不修改 exporter_demo、trace-synthesis、数据库容器配置或公开数据集。实验使用现有单机容器，记录其实际资源限制；当前两个容器均未设置显式 CPU 或内存上限。
 
 trace-synthesis 已增加跨 backend 的并发模式、QPS 口径和可比性设计；当前 database 与 Langfuse backend 的 event policy 仍不一致。阶段二采用这些设计中的同输入、同参数计划、同并发模式、阶段屏障、连接复用、计时边界和全成功样本门禁，不复用尚未满足统一语义的系统级结果。
 
-Full/Core、长 payload 和 asset reference 属于独立的物理分层问题，顺延到 [阶段三实验设计](json-storage-stage3-experiment-design-2026-09-08.md)。阶段二结果只回答 residual 的跨引擎差异。
+Full/Core、长 payload 和 asset reference 属于独立的物理分层问题，顺延到[阶段三实验设计](json-storage-stage3-experiment-design-2026-09-08.md)。阶段二只回答动态属性存储的跨引擎差异。
 
 ## 2. 产物与目录
 
@@ -37,7 +39,7 @@ experiments/json-storage-stage2/
   tests/
 ```
 
-运行产物位于 gitignored 的 `docs/temp/json-storage-stage2/`。每个产物目录最后写入 `run-manifest.json`；缺少该文件或 `status` 不是 `complete` 的目录不构成有效运行。唯一正式统计根为 `formal-20260907-retry-3/`，结果见[阶段二横向报告](json-storage-stage2-report-2026-09-08.md)。
+运行产物位于 gitignored 的 `docs/temp/json-storage-stage2/`。每个产物目录最后写入 `run-manifest.json`；只有状态为 `complete` 且全部门禁通过的运行进入统计。有效结果位于 `formal-20260907-retry-3/`，结果见[阶段二横向报告](json-storage-stage2-report-2026-09-08.md)。
 
 ## 3. 真实 Trace 分布审计
 
@@ -47,13 +49,13 @@ experiments/json-storage-stage2/
 
 | 项目 | 固定值 |
 |---|---|
-| 输入 | `/home/omm/work/agent-trace/trace-synthesis/output/whowhen-pro/traces-00001.jsonl` |
+| 输入 | trace-synthesis `whowhen-pro` text split |
 | spans | 48,534 |
 | traces | 6,257 |
-| 数据 SHA-256 | `3ff85d5060c765b3606cb2d620c3c5fd1815520c93153a61245e91d83b35c683` |
-| 上游 manifest SHA-256 | `f46bbe843c5578faea9ddfb5e8eb3aac8b6dc4c2f4fb89beabab503043505e38` |
 | 生成 seed | `42` |
-| 生成器基线 | trace-synthesis `6472d8e1ac6cdb42494b79b28d4d5361919d4776` |
+| 生成器基线 | 2026-09-03 · trace-synthesis `6472d8e` |
+
+输入文件、上游清单和生成结果的完整文件身份保存在运行清单中。报告正文只使用已经通过身份校验的数据。
 
 数据来自真实公开 Agent 轨迹的确定性 Span 投影。时间戳由生成器构造，范围为 2030-01-01 00:00:00 至 01:44:17 UTC；时间分布只用于固定窗口，不代表生产到达过程。
 
@@ -74,7 +76,7 @@ OTel Attribute 键按顶层键统计。键中的点属于键名；分析布局�
 
 ## 4. 公共横向数据契约
 
-审计程序的结果决定 native JSON 路径预算。预算取大于等于全局 `P` 的最小 2 的幂，并设置 128 的上限；本数据预期使用 32。预算、实际 `P` 和推导公式同时进入 truth manifest。
+审计程序的结果决定 Native JSON 路径预算。预算取大于等于全局 `P` 的最小 2 的幂，并设置 128 的上限；本数据预期使用 32。预算、实际 `P` 和推导公式同时写入 `truth-manifest.json`。
 
 公共生成器逐行读取固定输入并输出：
 
@@ -87,49 +89,53 @@ framework, level, attributes_analysis, attributes_map, raw_event
 - `event_id` 为 `trace_id:span_id`，并执行唯一性门禁。
 - `project_id` 固定为数据来源标识 `Leoxx/whowhen_pro`，只用于相同查询选择性，不解释为生产租户。
 - `framework` 缺失时写入空字符串；`level` 由 Span status 确定。
-- `attributes_analysis` 把点分隔的 Attribute 键可逆投影为嵌套 JSON。生成器拒绝标量/对象前缀冲突，并在 manifest 中保存键映射。
+- `attributes_analysis` 把点分隔的 Attribute 键可逆投影为嵌套 JSON。生成器拒绝标量/对象前缀冲突，并在运行清单中保存键映射。
 - `attributes_map` 使用原始 Attribute 键作为 Map key，value 为该 Attribute 值的 canonical JSON 字符串，保持类型和数组顺序。
 - `raw_event` 为输入 JSONL 去除行结束符后的原始 UTF-8 bytes。
 
 generator 同时输出：
 
 - canonical `dataset.jsonl`；
-- `truth-manifest.json`，包含每行身份、analysis/canonical/raw SHA-256、查询参数、最终结果和每个 INSERT block 水位结果；
-- `run-manifest.json`，包含输入与产物 SHA-256、字节数、行数、block size、代码 SHA-256 和生成命令。
+- `truth-manifest.json`，包含每行身份、分析结构、canonical JSON 与原文摘要，以及查询参数、最终结果和每个 INSERT block 水位结果；
+- `run-manifest.json`，包含输入与产物身份、字节数、行数、block size、实验程序身份和生成命令。
 
 固定 INSERT block 为 256 行，共 190 个 block。最后一个 block 保存剩余 150 行。各布局使用相同行序和 block 边界。
 
 ### 4.1 横向可比性契约
 
-可比性契约版本固定为 `json-storage-cross-engine-v1`，所有完成 manifest 记录以下语义：
+可比性契约版本固定为 `json-storage-cross-engine-v1`，所有完成状态运行清单记录以下语义：
 
 - 两引擎使用相同输入、查询 catalog、参数计划、并发数、预热策略和返回内容；
 - 每个 worker 在一个阶段内建立并复用一条独立连接；连接建立完成后，全部 worker 通过阶段屏障同时进入预热或正式测量；
 - 查询延迟从语句提交开始，至结果完整读取结束；连接建立、正确性校验、结果排序规范化和 hash 计算不进入延迟；
 - QPS 定义为 `成功样本数 × 1000 / 成功样本延迟总和(ms)`，报告名称为“请求等价速率”，不解释为饱和吞吐量；
-- 正式轮次要求查询和正确性门禁全部成功。失败轮次保存诊断 manifest，重试结果使用新的 run ID，失败轮次不进入横向统计；
+- 正式轮次要求查询和正确性门禁全部成功。失败轮次保存诊断运行清单，重试结果使用新的运行标识，失败轮次不进入横向统计；
 - 查询结果先完整读取，再在计时区间外完成规范化和 truth 核对。
 
-## 5. Residual 横向矩阵
+## 5. 动态属性存储横向矩阵
 
-### 5.1 布局
+### 5.1 存储结构
 
-所有布局保留相同强类型列。分析表与 raw 表按 `event_id` 一一对应；raw 表只承担字节级恢复，其空间单列并在总空间中计入。
+所有存储结构保留相同强类型列。分析表与原文表按 `event_id` 一一对应；原文表只承担字节级恢复，其空间单列并在总空间中计入。
 
-| 引擎 | layout ID | residual 组织 |
+| 引擎 | 存储结构 | 动态属性组织 |
 |---|---|---|
-| openGauss | `og_jsonb` | `JSONB`，无 residual 索引 |
-| openGauss | `og_jsonb_hot` | 同一 `JSONB`，增加 `gen_ai.operation.name` 表达式索引 |
-| openGauss | `og_jsonb_gin` | 同一 `JSONB`，增加 `jsonb_hash_ops` GIN 包含查询索引 |
-| ClickHouse | `ch_string` | nested canonical JSON `String CODEC(ZSTD(3))` |
-| ClickHouse | `ch_map` | `Map(String,String)`，value 为 canonical JSON 字符串 |
-| ClickHouse | `ch_native` | 审计派生 `max_dynamic_paths` 的 native `JSON`，加稀疏 `fidelity_values Map(String,String)` |
+| openGauss | openGauss JSONB | `JSONB`，无动态属性索引 |
+| openGauss | openGauss JSONB + 表达式索引 | 同一 `JSONB`，增加 `gen_ai.operation.name` 表达式索引 |
+| openGauss | openGauss JSONB + GIN | 同一 `JSONB`，增加 `jsonb_hash_ops` GIN 包含查询索引 |
+| ClickHouse | ClickHouse String JSON | nested canonical JSON `String CODEC(ZSTD(3))` |
+| ClickHouse | ClickHouse Map | `Map(String,String)`，value 为 canonical JSON 字符串 |
+| ClickHouse | ClickHouse Native JSON | 审计派生 `max_dynamic_paths` 的 Native `JSON`，加稀疏 `fidelity_values Map(String,String)` |
 
-ClickHouse native JSON 负责路径分析。`ch_native` 的 analytics 表同时保存稀疏 `fidelity_values Map(String,String)`：仅当一个原始 Attribute 的值递归包含 `null`、空对象或空数组时，保存该原始 Attribute key 与完整 canonical JSON value。Q04 先从 native JSON residual 恢复，再以该 Map 覆盖对应 key，从而恢复 native JSON 无法区分的状态；该 Map 作为 analytics residual 的可逆状态补充，其字节计入 analytics 空间。raw 表只承担逐行原始 UTF-8 bytes 恢复，native JSON 和 `fidelity_values` 都不承担原文恢复。Map 查询使用原始 Attribute key；String、JSONB 和 native JSON 查询使用嵌套分析路径。
+ClickHouse Native JSON 负责路径分析。其分析表同时保存稀疏 `fidelity_values Map(String,String)`：一个原始 Attribute 的值递归包含 `null`、空对象或空数组时，保存该 Attribute 的完整 canonical JSON value。
 
-openGauss 6.0.0 的 `jsonb_ops` GIN 在写入空字符串时触发 `jsonb_gin.cpp:519` 的零长度复制错误，递归对象与数组中的空字符串同样受影响。`og_jsonb_gin` 使用可保留这些值的 `jsonb_hash_ops`；Q05 保持 `attributes @> %s::jsonb`，并验证 truth、自然计划和禁用顺扫后的 GIN 计划。DDL 与索引空间记录此 opclass，阶段一 `jsonb_ops` 结果保持其原有实验范围。根因与修复条件见 openGauss [v6.0.0 源码](https://gitee.com/opengauss/openGauss-server/blob/v6.0.0/src/common/backend/utils/adt/jsonb_gin.cpp)和 [v6.0.2 源码](https://gitee.com/opengauss/openGauss-server/blob/v6.0.2/src/common/backend/utils/adt/jsonb_gin.cpp)。
+Q04 先读取 Native JSON，再用 `fidelity_values` 覆盖相应值，从而恢复 Native JSON 不能区分的状态。Sidecar 的字节计入分析表空间。原文表保存逐行原始 UTF-8 bytes；Native JSON 和 Sidecar 只用于分析结构及其逻辑恢复。ClickHouse Map 查询使用原始 Attribute key；ClickHouse String JSON、openGauss JSONB 和 ClickHouse Native JSON 查询使用嵌套分析路径。
 
-首次 openGauss 正式轮次 `opengauss-r1-04ca47c0b0d8487db41e2d255efb3875` 因该错误失败；其诊断保存在 `docs/temp/json-storage-stage2/formal-20260907/opengauss-round-1/`，按失败轮次规则排除整轮统计。兼容布局的正式轮次使用新的 run ID 与输出目录。
+openGauss 6.0.0 的 `jsonb_ops` GIN 在写入空字符串时触发 `jsonb_gin.cpp:519` 的零长度复制错误，递归对象与数组中的空字符串同样受影响。openGauss JSONB + GIN 使用可保留这些值的 `jsonb_hash_ops`；Q05 保持 `attributes @> %s::jsonb`，并验证 truth、自然计划和禁用顺扫后的 GIN 计划。
+
+DDL 与索引空间记录此 opclass，阶段一 `jsonb_ops` 结果保持其原有实验范围。根因与修复条件见 openGauss [v6.0.0 源码](https://gitee.com/opengauss/openGauss-server/blob/v6.0.0/src/common/backend/utils/adt/jsonb_gin.cpp)和 [v6.0.2 源码](https://gitee.com/opengauss/openGauss-server/blob/v6.0.2/src/common/backend/utils/adt/jsonb_gin.cpp)。
+
+首次 openGauss 运行因该错误失败，整轮结果已排除。诊断目录、运行标识和完整错误保存在实验 README 与运行清单中。
 
 ### 5.2 公共查询
 
@@ -143,53 +149,55 @@ openGauss 6.0.0 的 `jsonb_ops` GIN 在写入空字符串时触发 `jsonb_gin.cp
 | Q04 | 固定代表性 `trace_id` 回查完整 Trace | 按 `start_time,event_id` 排序的身份和 attributes 内容摘要 |
 | Q05 | `failure.mistake_mode = A.3` 的低密度路径过滤 | count 和 identity digest |
 
-生成器独立计算每个查询在最终水位和每个 block 水位的预期结果及 SHA-256。runner 只消费 truth，不复用 SQL 结果计算期望值。
+生成器独立计算每个查询在最终水位和每个 block 水位的预期结果及内容摘要。实验程序只读取 truth，不复用 SQL 结果计算期望值。
 
 ### 5.3 写入、并发和静态测量
 
-每个布局执行三轮，布局顺序采用平衡轮换。每轮流程为：
+每种存储结构执行三轮，执行顺序采用平衡轮换。每轮流程为：
 
-1. 创建唯一临时 schema 或 database，记录 DDL SHA-256。
+1. 创建唯一临时 schema 或 database，记录 DDL 内容摘要。
 2. 按 256 行 block 持续写入并逐 block 提交。
 3. 前五个 block 提交后启动两个查询 worker，循环执行 Q01、Q02、Q03、Q05；每次固定启动前水位并核对对应 truth。
-4. 记录 190 个 block 的 wall time、rows/s、MiB/s、p50、p95、p99 和可见延迟。
-5. 写入期间记录查询 wall time、p50、p95、p99、错误数及结果门禁。
+4. 记录 190 个 block 的写入耗时、rows/s、MiB/s、p50、p95、p99 和可见延迟。
+5. 写入期间记录查询耗时、p50、p95、p99、错误数及结果门禁。
 6. 写入结束后等待 ClickHouse merge backlog 连续三次为零或达到 120 秒上限；openGauss 完成 `ANALYZE`。等待行为计入后台维护，不计入载入时间。
 7. 每条查询预热一次并正式测量 100 次；记录每次 wall time、median、p95、p99、执行计划和引擎可提供的 read rows/bytes、CPU、内存。
-8. 核对行数、缺失/额外/重复 ID、analysis canonical hash、raw SHA-256 和 Q01～Q05 truth。
-9. 记录分析表、raw 表、索引/part 的分项空间，以及 ClickHouse active part、merge backlog、dynamic/shared path 数。
-10. 清理临时 schema 或 database；清理成功后发布完成 manifest。
+8. 核对行数、缺失/额外/重复 ID、分析结构摘要、原文摘要和 Q01～Q05 truth。
+9. 记录分析表、原文表、索引或 part 的分项空间，以及 ClickHouse active part、merge backlog、dynamic/shared path 数。
+10. 清理临时 schema 或 database；清理成功后发布完成运行清单。
 
-缓存状态固定为 `query_warmup_1_no_os_cache_drop`。实验不清理宿主机页缓存。两引擎顺序执行，另一个容器保持空闲；manifest 记录宿主 CPU、内存、磁盘和容器资源配置。并发与静态查询均遵循 `json-storage-cross-engine-v1` 的连接、阶段屏障、计时和成功样本规则。
+缓存状态固定为 `query_warmup_1_no_os_cache_drop`。实验不清理宿主机页缓存。两引擎顺序执行，另一个容器保持空闲；运行清单记录宿主 CPU、内存、磁盘和容器资源配置。并发与静态查询均遵循 `json-storage-cross-engine-v1` 的连接、阶段屏障、计时和成功样本规则。
 
-ClickHouse 每条测量查询使用唯一 query ID，HTTP 响应完整读取后结束延迟计时。每个写入并发阶段和静态阶段结束后，各执行一次 `SYSTEM FLUSH LOGS query_log`，随后批量读取本阶段全部 query ID 的 `QueryFinish`；静态阶段同时核对预热查询日志。采集和轮询均在延迟计时外，最终样本保留 `query_log` 的 duration、read rows/bytes、memory、result rows/bytes 和 SelectedRows/SelectedBytes。缺失或重复终态、异常状态、缺失或无效指标均使阶段失败；全部日志回填并通过 truth 后生成摘要。
+ClickHouse 每条测量查询使用唯一 query ID，HTTP 响应完整读取后结束延迟计时。每个写入并发阶段和静态阶段结束后，各执行一次 `SYSTEM FLUSH LOGS query_log`，随后批量读取本阶段全部 query ID 的 `QueryFinish`；静态阶段同时核对预热查询日志。采集和轮询均在延迟计时外。
 
-测量请求通过 HTTP 参数设置 `log_queries=1`、`log_processors_profiles=0`、`memory_profiler_step=0`、`log_query_settings=0`。DDL、INSERT、日志采集、计划、空间、merge 和清理等管理请求使用相同观测开关，并设置 `log_queries=0`。业务参数继续通过 `param_*` 绑定。该配置限制观测日志引入的后台写入与 merge。
+最终样本保留 `query_log` 的 duration、read rows/bytes、memory、result rows/bytes 和 SelectedRows/SelectedBytes。缺失或重复终态、异常状态、缺失或无效指标均使阶段失败；全部日志回填并通过 truth 后生成摘要。
 
-`formal-20260907-retry-1/` 中的 ClickHouse 第三轮 `clickhouse-r3-83bd945702b64f2291febfa4c6ee5b82` 触发 server-total memory limit。逐查询全局日志 flush 产生的 system log part 与 merge 构成本次观测扰动。该根保留诊断产物，失败整轮排除；全部六轮在 `formal-20260907-retry-3/` 使用上述批量日志采集配置和新 run ID 完整运行，最终统计仅消费该新根。
+测量请求启用查询日志，管理请求关闭查询日志；具体 HTTP 参数保存在实验 README。该配置限制观测日志引入的后台写入和 merge。
 
-`formal-20260907-retry-2/` 的 ClickHouse worker 在屏障前未显式 connect，首个并发样本存在建连计时风险；静态样本已预热。为统一 runner 身份，整根退出统计。`formal-20260907/`、`formal-20260907-retry-1/`、`formal-20260907-retry-2/` 的全部产物仅保留诊断。retry-3 的 worker 在 TCP 连接成功后进入屏障，runner 只清理本次运行成功创建并取得所有权的 layout；ClickHouse 本次创建的 database 在后续建表失败时由 adapter 清理。
+早期 ClickHouse 运行因逐查询刷新全局日志而增加 system log part 和 merge，最终触发服务端总内存限制。实验程序改为阶段结束后批量采集查询日志，失败轮次全部排除。
 
-## 6. Manifest 与停止条件
+另一组早期运行未在阶段屏障前显式建立 ClickHouse 连接，首个并发样本可能包含 TCP 建连时间，因此整组排除。有效运行均在连接成功后进入屏障。实验程序只清理本次创建并取得所有权的 schema 或 database。完整诊断见实验 README 与运行清单。
 
-run manifest 至少记录：
+## 6. 运行清单与停止条件
 
-- run ID、状态、开始/结束时间、完整复现命令和异常；
+运行清单至少记录：
+
+- 运行标识、状态、开始/结束时间、复现命令和异常；
 - research、exporter_demo、trace-synthesis 的本地 HEAD 与远端 `main`；
-- 数据路径、输入文件、输入/数据/truth SHA-256、seed、行数和 block 边界；
-- DDL、查询 catalog 和 runner SHA-256；
-- 数据库版本、镜像 digest、容器配置、端口和宿主资源；
-- layout、运行轮次、布局顺序、缓存状态和后台维护等待结果；
+- 数据路径、输入与 truth 文件身份、seed、行数和 block 边界；
+- DDL、查询 catalog 和实验程序的内容摘要；
+- 数据库版本、容器镜像与资源配置、端口和宿主资源；
+- 存储结构、运行轮次、执行顺序、缓存状态和后台维护等待结果；
 - `comparability_contract_version`、连接复用方式、阶段屏障、延迟边界和 QPS 语义；
 - correctness、raw recovery、cleanup 的完成状态；
-- 指标文件名、字节数和 SHA-256。
+- 结果文件名和文件身份。
 
-出现以下情况时停止对应候选并发布 `status=failed` 的诊断 manifest：
+出现以下情况时停止对应候选并发布 `status=failed` 的诊断运行清单：
 
-- 输入或上游 manifest SHA-256 不一致；
+- 输入或上游清单的文件身份不一致；
 - 点键嵌套投影出现前缀冲突；
-- 任一 truth、identity、canonical hash 或 raw SHA-256 门禁失败；
-- native JSON、Map、JSONB、索引或目标查询在固定版本不可用；
+- 任一 truth、记录身份、分析结构摘要或原文摘要门禁失败；
+- Native JSON、Map、JSONB、索引或目标查询在固定版本不可用；
 - 写入期间查询结果与已提交水位 truth 不一致；
 - 临时数据库对象清理失败；
 - 需要修改 exporter、benchmark、容器镜像或完整产品服务才能继续。
@@ -198,14 +206,16 @@ run manifest 至少记录：
 
 ## 7. 报告约束
 
-阶段二报告只包含：
+阶段二报告正文只包含：
 
-1. 两仓与环境基线增量；
+1. 两仓检查日期、短提交号与环境版本；
 2. 真实 Trace 审计结果和可观测性限制；
-3. 统一契约与 run ID；
-4. residual 横向结果；
+3. 统一数据、查询、计时、正确性和恢复契约；
+4. 按稳定列、路径过滤和完整 Trace 回查组织的横向结果；
 5. 正确性、原文恢复和异常；
-6. residual 布局建议和仍需系统级验证的事项。
+6. 动态属性存储建议和仍需系统级验证的事项。
+
+完整提交、运行标识、镜像摘要、文件身份和诊断参数保存在运行清单或实验 README，不在报告正文展开。
 
 报告引用阶段一，不重复阶段一背景或单引擎机制过程。阶段一数据不进入横向比例计算。跨引擎数字只在本阶段相同数据、查询、轮次、返回内容和门禁下比较。
 

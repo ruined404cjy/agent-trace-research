@@ -10,25 +10,27 @@
 
 第一阶段通过小型、可独立执行的实验验证三类存储机制：
 
-1. 标准 openGauss JSONB 索引与 ClickHouse native JSON 动态子列各自在多字段 JSON 上的机制和边界。
+1. openGauss JSONB 索引与 ClickHouse Native JSON 动态子列各自在多字段 JSON 上的机制和边界。
 2. Full/Core 物理分层对列表查询、预览读取和完整详情读取的影响。
 3. 数据库内联大值与外部 asset 引用在空间、读取和完整性方面的差异。
 
-实验回答机制问题，不对完整产品或数据库作综合排名。现有 exporter、benchmark、 Langfuse 和 Tempo 用于提供实现证据，不要求直接改造、替换或完整复现。
+实验回答机制问题，不对完整产品或数据库作综合排名。现有 exporter、benchmark、Langfuse 和 Tempo 用于提供实现证据。
 
-阶段一实际完成目标 1 的引擎内机制实验。目标 2、3 已形成实验设计，尚未实现 runner 或正式运行；两项目标合并进入 [阶段三实验设计](json-storage-stage3-experiment-design-2026-09-08.md)。阶段二只执行 residual 的 openGauss/ClickHouse 统一横向比较。
+阶段一完成目标 1 的引擎内机制实验。目标 2、3 已形成实验设计，实验程序和正式运行纳入[阶段三实验设计](json-storage-stage3-experiment-design-2026-09-08.md)。阶段二完成动态属性存储的 openGauss/ClickHouse 统一横向比较。
 
 ## 2. 当前边界
 
 ### 2.1 现有项目状态
 
-exporter 的 ADR-0010 在提交 `0c26c9ecf03acf0bd6aa3a3c103ba4e7a78b523a` 冻结 18 列最小 OTel 单表，删除 `tags` 等 10 个 Langfuse 导向列及 split 模型；当前 main 为 `9a49c8a9d6091633112fe793fcf12310859aeb7f`。`input`、`output`、`metadata` 继续保存动态内容。默认 `max_attr_value_length=65536` 在入库前截断属性，不能用于验证数据库的大值容量。
+exporter_demo 的 ADR-0010 在 **2026-09-02 · `0c26c9e`** 冻结 18 列最小 OTel 单表，删除 `tags` 等 10 个 Langfuse 导向列及 split 模型；本阶段检查的 main 为 **2026-09-03 · `9a49c8a`**。
 
-trace-synthesis 当前 main `6472d8e1ac6cdb42494b79b28d4d5361919d4776` 的 v4 database catalog 仍定义 28 列，因此两仓 main 尚未形成联合冻结。系统级回归继续使用已经验证的 benchmark `9529c8f389673132757f4da9a96878926f22b94f` 与 exporter `54ca553a7ed09ad1751c82adab3aa52c6e9357b1`；机制实验使用明确记录为 `independent_loader` 的独立路径。两类结果分别报告。
+`input`、`output`、`metadata` 继续保存动态内容。默认 `max_attr_value_length=65536` 在入库前截断属性，不能用于验证数据库的大值容量。
+
+trace-synthesis 的 **2026-09-03 · `6472d8e`** v4 database catalog 仍定义 28 列，因此两仓 main 尚未形成联合冻结。系统级回归使用已经验证的 **2026-09-01 · benchmark `9529c8f`** 与 **2026-08-28 · exporter `54ca553`** 配对；机制实验使用记录为 `independent_loader` 的独立载入路径。完整提交保存在实验运行清单中。
 
 benchmark 已提供查询参数 catalog、查询 type 参数化和 database/Langfuse backend，但输入覆盖门禁仍处于候选设计阶段。公开数据的字段分布、ERROR 状态、provider 值域和多模态覆盖不足，不能直接承担本实验的控制变量。
 
-Langfuse 的可复核机制包括 `events_full/events_core`、metadata names/values、Map、默认 2 MiB field overflow 和 media/object storage。Langfuse 的 input/output 是 String，该实现不能代表 ClickHouse native JSON。
+Langfuse 的可复核机制包括 `events_full/events_core`、metadata names/values、Map、默认 2 MiB field overflow 和 media/object storage。Langfuse 的 input/output 是 String，该实现不能代表 ClickHouse Native JSON。
 
 ### 2.2 第一阶段范围
 
@@ -53,7 +55,7 @@ Langfuse 的可复核机制包括 `events_full/events_core`、metadata names/val
 
 当前项目按实时分析型、append-heavy OLAP 负载设计：Span/Event 持续分批追加，查询主要在 project/tenant 和时间范围内过滤少量字段并执行分组、计数、分位数和特征统计。指定 `trace_id` 的 Trace 回查和完整 payload 读取属于必要的次级路径。批次幂等、可见水位和内容校验继续作为摄入正确性门禁。
 
-第一阶段 runner 使用一次性批量载入隔离 JSON 机制，只能回答正确性、索引、路径组织和静态空间问题。持续摄入能力需要在第二阶段加入并发查询、part/merge 或 compaction 状态、写入字节和可见延迟后单独判断。
+第一阶段实验程序使用一次性批量载入隔离 JSON 机制，只能回答正确性、索引、路径组织和静态空间问题。持续摄入能力由阶段二加入并发查询、part/merge 或 compaction 状态、写入字节和可见延迟后单独判断。
 
 ## 3. 公共数据与测量方法
 
@@ -72,8 +74,8 @@ asset: optional content_type, content_length, sha256
 生成器输出：
 
 - canonical JSONL；
-- 数据配置、seed 和输入 SHA-256；
-- 每条记录的 canonical JSON hash；
+- 数据配置、seed 和输入文件身份；
+- 每条记录的 canonical JSON 内容摘要；
 - 查询参数及预期行数；
 - asset 原始 bytes hash、MIME 和长度。
 
@@ -93,7 +95,7 @@ canonical hash 忽略 object key 顺序，保留数组顺序，并区分路径 m
 | `cᵢ` | 路径 `i` 的 distinct 值数及其相对行数 | 每条路径 |
 | `Tᵢ` | 路径 `i` 的类型集合和冲突比例 | 每条路径及 schema epoch |
 | `Lᵢ` | 路径 `i` 值长度 | p50、p95、p99、最大值 |
-| `Aᵢ` | 路径 `i` 的过滤、排序、分组、聚合和投影访问 | 查询 workload |
+| `Aᵢ` | 路径 `i` 的过滤、排序、分组、聚合和投影访问 | 查询负载 |
 | `E` | 相邻窗口新增、删除、类型变化和稳定路径集合 | schema epoch |
 
 | Profile | 主要变量 | 目的 |
@@ -104,7 +106,11 @@ canonical hash 忽略 object key 顺序，保留数组顺序，并区分路径 m
 | 等总大小 | 一个长值与多个短值形成约 512 KiB JSON | 区分字段数量与单值长度 |
 | 长字段 | 64 KiB、512 KiB、2 MiB | 观察 LOB、Full/Core 和外部引用 |
 
-路径数量与密度矩阵用于观察引擎在受控边界上的行为，不表示 Agent Trace 的已测生产分布。每个动态路径在每 100 行中分别出现 1、20 或 95 次；同组路径采用相同密度，未模拟长尾或 Zipf 分布。`whowhen-pro` text split 的原始属性审计只发现 29 个顶层属性，不能支持 500/5000 路径假设。已下载的 Open-SWE-Traces 是 agent trajectory 数据，顶层及 metadata 使用固定 Parquet schema，也不能直接校准 OTel span attribute 路径。九组产物保留为机制资产；ClickHouse 先用 `50×20%` 和 `500×1%` 完成语义验证，再补充 98/99 路径预算边界、`10×95% + 40×20% + 450×1%` 混合密度以及 `50×95%`、`500×10%`、`5000×1%` 等单行宽度矩阵。真实 Trace 审计完成前，5000 路径只表示压力边界。
+路径数量与密度矩阵用于观察引擎在受控边界上的行为，不表示 Agent Trace 的已测生产分布。每个动态路径在每 100 行中分别出现 1、20 或 95 次；同组路径采用相同密度，未模拟长尾或 Zipf 分布。
+
+`whowhen-pro` text split 的原始属性审计只发现 29 个顶层属性，不能支持 500/5000 路径假设。已下载的 Open-SWE-Traces 是 agent trajectory 数据，顶层及 metadata 使用固定 Parquet schema，也不能直接校准 OTel Span Attribute 路径。
+
+九组产物保留为机制资产。ClickHouse 先用 `50×20%` 和 `500×1%` 完成语义验证，再补充 98/99 路径预算边界、`10×95% + 40×20% + 450×1%` 混合密度，以及 `50×95%`、`500×10%`、`5000×1%` 等单行宽度矩阵。真实 Trace 审计完成前，5000 路径只表示压力边界。
 
 后续组合按用途划分：
 
@@ -113,14 +119,14 @@ canonical hash 忽略 object key 顺序，保留数组顺序，并区分路径 m
 | 代表性候选 | 50 路径混合密度 | 使用少量 95% 稳定字段、部分 20%–50% 可选字段和大量 1%–5% 长尾字段；真实数据审计后固定比例 |
 | 条件性代表候选 | 500 路径混合密度 | tenant/project、Agent/工作流、版本或时间窗口统计支持该基数后运行 |
 | 机制梯度 | `50/500 × 1%/5%/20%/50%/95%` | 固定行数、值长和查询选择性；2% 和 10% 只用于细化已发现的转折 |
-| 路径预算边界 | 98 和 99 个动态路径加两个未提示热点路径 | 精确验证 limited 布局总路径数 100 和 101 的行为 |
+| 路径预算边界 | 98 和 99 个动态路径加两个未提示热点路径 | 精确验证动态路径预算 100 时总路径数 100 和 101 的行为 |
 | 等单行宽度 | `50×95%`、`500×10%`、`5000×1%` | 固定行数和值长，每行约 50 个动态字段 |
 | 压力边界 | `5000×1%` | 验证大路径 namespace、shared data、GIN 放大和路径元数据 |
 | 当前裁剪 | `5000×20%`、`5000×95%` | 数据证据或明确引擎边界目标出现后再运行 |
 
 媒体只使用少量固定 PNG、短音频和随机二进制验证 hash、MIME 与 resolver。媒体吞吐和转码不进入第一阶段性能结果。
 
-### 3.3 公共 workload
+### 3.3 公共查询负载
 
 | 操作 | 测量内容 |
 |---|---|
@@ -131,7 +137,11 @@ canonical hash 忽略 object key 顺序，保留数组顺序，并区分路径 m
 | 列表与预览 | 返回稳定列及 200 字符 preview |
 | 完整解析 | 从 inline、LOB 或 reference 恢复原始内容 |
 
-正确性查询返回排序后的命中 ID 并与 truth 核对。性能查询使用 `count`、分组或聚合，避免把大量 ID 排序、序列化和网络传输计入路径读取耗时。查询执行一次预热和至少五次测量，报告每次结果、median 和范围；布局执行顺序在三轮独立运行中采用平衡轮换。第一阶段不使用少量样本计算 p99。ClickHouse 使用唯一 query ID 从 `system.query_log` 读取最终 `read_rows`、`read_bytes`、内存和 ProfileEvents；其他引擎记录等价执行指标。引擎不提供的指标标为 unavailable，不以估算值代替。
+正确性查询返回排序后的命中 ID 并与 truth 核对。性能查询使用 `count`、分组或聚合，避免把大量 ID 排序、序列化和网络传输计入路径读取耗时。
+
+查询执行一次预热和至少五次测量，报告每次结果、median 和范围；存储结构执行顺序在三轮独立运行中采用平衡轮换。第一阶段不使用少量样本计算 p99。
+
+ClickHouse 使用唯一 query ID 从 `system.query_log` 读取最终 `read_rows`、`read_bytes`、内存和 ProfileEvents；其他引擎记录等价执行指标。引擎不提供的指标标为 unavailable，不以估算值代替。
 
 ClickHouse 补充矩阵已使用 `start_time` 排序键和 50% 时间范围谓词。下一阶段增加 project/tenant 强类型列，并在持续分批写入期间执行相同查询，记录稳态摄入和后台合并后的两组结果；强制 `OPTIMIZE FINAL` 只用于解释物理布局变化，不代表在线稳态。
 
@@ -139,19 +149,19 @@ ClickHouse 补充矩阵已使用 `start_time` 排序键和 50% 时间范围谓�
 
 ### 4.1 比较对象
 
-标准 openGauss 6.0.0 使用同一 `jsonb` 列验证三种布局：
+openGauss 6.0.0 使用同一 `jsonb` 列验证三种存储结构：
 
 1. 无路径索引；
 2. GIN 通用索引；
 3. 一个热点路径的表达式索引或生成列索引。
 
-ClickHouse 使用同一 JSON 文本验证三种布局：
+ClickHouse 使用同一 JSON 文本验证三种存储结构：
 
 1. `String CODEC(ZSTD)`，查询时使用 JSON 提取函数；
-2. native `JSON(max_dynamic_paths=100)` 加压缩 canonical sidecar（列名 `metadata_raw`），使 500 路径进入 shared data；
-3. native `JSON(max_dynamic_paths=1000, hot.tenant String, hot.region String)`，固定两个热点路径并提高动态路径预算，同时保存压缩 canonical sidecar。
+2. Native `JSON(max_dynamic_paths=100)` 加压缩 canonical Sidecar（列名 `metadata_raw`），使 500 路径进入 shared data；
+3. Native `JSON(max_dynamic_paths=1000, hot.tenant String, hot.region String)`，固定两个热点路径并提高动态路径预算，同时保存压缩 canonical Sidecar。
 
-数据库版本、image digest、JSON 参数和索引 DDL 在 run manifest 中固定。第一阶段不穷举 ClickHouse shared data 的所有序列化选项。ClickHouse 25.12.11.4 使用 `map_with_buckets` 写零层 part，并在多 part 合并后使用 `advanced`；runner 固定上述设置，分别记录 merge 前后的 part、空间和 dynamic/shared 路径数。
+数据库版本、容器镜像、JSON 参数和索引 DDL 在运行清单中固定。第一阶段不穷举 ClickHouse shared data 的所有序列化选项。ClickHouse 25.12.11.4 使用 `map_with_buckets` 写零层 part，并在多 part 合并后使用 `advanced`；实验程序固定上述设置，分别记录 merge 前后的 part、空间和 dynamic/shared 路径数。
 
 ### 4.2 测量与判定
 
@@ -168,20 +178,26 @@ ClickHouse 使用同一 JSON 文本验证三种布局：
 
 - JSONB 通用索引的灵活性与索引放大；
 - 定向索引或强类型列对稳定热点路径的收益；
-- native JSON 自动子列对多字段、稀疏路径的收益和路径预算成本；
+- Native JSON 自动子列对多字段、稀疏路径的收益和路径预算成本；
 - String 整段解析在冷路径和整对象读取中的基线行为。
 
 结果必须按机制分别解释。openGauss 与 ClickHouse 的事务、并发和完整 SQL 能力不进入本实验结论。
 
-ClickHouse native `JSON` 按叶路径扁平存储，不能称为 PostgreSQL/openGauss 语义的 `JSONB`。首个 50 路径×20% 密度正式组发现两个 native JSON 布局各有 77,562 条完整对象回读差异，均来自空的 `metadata.paths` 被省略；热点和冷路径过滤命中集合仍与 truth 一致。
+ClickHouse Native `JSON` 按叶路径扁平存储，不能称为 PostgreSQL/openGauss 语义的 `JSONB`。首个 50 路径×20% 密度正式组发现两个 Native JSON 存储结构各有 77,562 条完整对象回读差异，均来自空的 `metadata.paths` 被省略；热点和冷路径过滤命中集合仍与 truth 一致。
 
-修正后的门禁区分分析等价和 canonical 文档保真。native JSON 负责路径分析，压缩 canonical sidecar 负责逻辑 metadata 恢复；native JSON 回读差异保留为引擎语义观察。`50×20%` 和 `500×1%` 语义重跑均通过两项门禁。`500×1%` 低预算布局合并后为 100 个 dynamic、402 个 shared 路径，高预算布局为 500 个 dynamic、0 个 shared 路径。
+修正后的门禁区分分析等价和 canonical 文档保真。Native JSON 负责路径分析，压缩 canonical Sidecar 负责逻辑 metadata 恢复；Native JSON 回读差异保留为引擎语义观察。`50×20%` 和 `500×1%` 语义重跑均通过两项门禁。
 
-当前 sidecar 由解析后的 metadata 重新序列化，字节级审计和重放需要另存原始输入 bytes。
+`500×1%` 动态路径预算 100 的存储结构合并后为 100 个 dynamic、402 个 shared 路径；动态路径预算 1000 的存储结构为 500 个 dynamic、0 个 shared 路径。
+
+当前 Sidecar 由解析后的 metadata 重新序列化，字节级审计和重放需要另存原始输入 bytes。
 
 性能补充实验把正确性 ID 查询与性能查询分离。性能 SQL 使用直接子列语法，在 50% 时间窗口内按热点 region 分组计数；每次使用唯一 query ID，从 `system.query_log` 的 `QueryFinish` 读取最终扫描指标。等宽与混合 profile 分别运行三轮并轮换布局顺序。
 
-预算边界、混合密度和等单行宽度实验达到本阶段目标。limited 布局在 98 条业务路径加两个热点路径时为 100 dynamic / 0 shared，增加一条业务路径后为 100 dynamic / 1 shared。混合密度 profile 让 98 条长尾路径先占满业务路径预算；三轮 merge 均换入 50 条高/中密度路径并换出 50 条长尾路径，排除了按字典序或首次出现顺序保留的解释。最终保留全部 10 条 95% 路径、全部 40 条 20% 路径和 48 条 1% 路径，其余 402 条 1% 路径进入 shared data。固定每行约 50 个动态字段时，路径全集从 50 增至 5000，native merge 中位数从约 0.27–0.29 s 增至约 32 s；直接子列查询显著减少读取量，但完整 native 对象重建比 String 内容读取慢约 65–102 倍，canonical sidecar 恢复到 String 同量级。native 载入吞吐和 sidecar 后总空间高于 String。详细数字见 [9 月 7 日阶段一报告](json-storage-stage1-report-2026-09-08.md)。
+预算边界、混合密度和等单行宽度实验达到本阶段目标。动态路径预算 100 的存储结构在 98 条业务路径加两个热点路径时为 100 dynamic / 0 shared，增加一条业务路径后为 100 dynamic / 1 shared。
+
+混合密度 profile 让 98 条长尾路径先占满业务路径预算；三轮 merge 均换入 50 条高/中密度路径并换出 50 条长尾路径。最终保留全部 10 条 95% 路径、全部 40 条 20% 路径和 48 条 1% 路径，其余 402 条 1% 路径进入 shared data。
+
+固定每行约 50 个动态字段时，路径全集从 50 增至 5000，Native JSON merge 中位数从约 0.27–0.29 秒增至约 32 秒。直接子列查询显著减少读取量，但完整 Native JSON 对象重建比 String JSON 内容读取慢约 65–102 倍；canonical Sidecar 恢复到 String JSON 同量级。Native JSON 载入吞吐低于 String JSON，计入 Sidecar 后的总空间高于 String JSON。详细数字见[阶段一报告](json-storage-stage1-report-2026-09-08.md)。
 
 ## 5. 实验二：Full/Core 物理分层（顺延阶段三）
 
@@ -201,7 +217,9 @@ events_core
   + metadata_names + arrayMap(value -> leftUTF8(value, 200), metadata_values)
 ```
 
-`events_core` 使用物化表或 materialized view。普通 view 不进入比较，因为它不能验证物理空间和读取裁剪。该实验把公共 metadata 确定性转换为 names/values 数组，只复现 Langfuse 的表级机制，不启动 Langfuse web、worker、PostgreSQL 和完整 OTLP 摄入链路。原始内容长度和 hash 保存在 truth manifest；当前 Langfuse Core 表中的 `input_length` 和 `output_length` 由截断后的字符串派生，不作为原始长度使用。
+`events_core` 使用物化表或 materialized view。普通 view 不进入比较，因为它不能验证物理空间和读取裁剪。
+
+该实验把公共 metadata 确定性转换为 names/values 数组，只复现 Langfuse 的表级机制，不启动 Langfuse web、worker、PostgreSQL 和完整 OTLP 摄入链路。原始内容长度和摘要保存在 truth 清单；当前 Langfuse Core 表中的 `input_length` 和 `output_length` 由截断后的字符串派生，不作为原始长度使用。
 
 ### 5.2 对照查询
 
@@ -255,30 +273,30 @@ events_core
 
 ## 7. 当前项目系统级参照
 
-当前项目以蓝区标准开源 openGauss 6.0.0 对标黄区 GaussVector。两端运行同一逻辑数据、 exporter schema 和 benchmark workload。蓝区标准 openGauss 使用行存，黄区 GaussVector 使用其目标存储形态；本阶段把两端作为系统环境比较，不把结果解释为受控的行存与列存机制差异。
+当前项目比较 openGauss 6.0.0 与 GaussVector。两端运行同一逻辑数据、exporter schema 和 benchmark 查询负载。openGauss 使用行存，GaussVector 使用其目标存储形态；系统环境比较不等同于受控的行存与列存机制实验。
 
-18 列冻结与 trace-synthesis 28 列 catalog 配对完成前，使用 benchmark `9529c8f389673132757f4da9a96878926f22b94f` 与 exporter `54ca553a7ed09ad1751c82adab3aa52c6e9357b1` 的已验证历史配对，或运行不依赖列数适配的独立 loader。独立 loader 只形成对应数据库的机制与正确性证据，不形成 exporter、Collector 或 benchmark 的端到端性能结论。
+18 列冻结与 trace-synthesis 28 列 catalog 配对完成前，使用 **2026-09-01 · benchmark `9529c8f`** 与 **2026-08-28 · exporter `54ca553`** 的已验证配对，或运行不依赖列数适配的独立载入程序。独立载入程序只形成对应数据库的机制与正确性证据，不形成 exporter、Collector 或 benchmark 的端到端性能结论。
 
 系统级参照运行必须满足：
 
 - exporter 写入列与 catalog、DDL 完全一致；
-- 关闭 64 KiB 截断，或把截断 run 单独标识为数据丢失对照；
-- schema preflight、输入 hash、写入计数和可见性检查通过；
+- 关闭 64 KiB 截断，或把截断运行单独标识为数据丢失对照；
+- schema 预检、输入身份、写入计数和可见性检查通过；
 - 记录 exporter、Collector 和数据库的分段资源指标。
 
-使用独立 loader 时，manifest 必须记录 `data_path=independent_loader`、引用的 schema 提交、 DDL hash 和输入 hash。使用 exporter 与 benchmark 时，报告必须记录两者的精确提交与配对校验结果。
+使用独立载入程序时，运行清单记录 `data_path=independent_loader`、引用的 schema 提交、DDL 和输入身份。使用 exporter 与 benchmark 时，报告记录检查日期、短提交号和配对校验结果；完整提交保存在运行清单中。
 
-蓝区正确性探针与系统级参照的当前运行记录见 [第一阶段实验基础设施](../experiments/json-storage-stage1/README.md)。
+openGauss 正确性探针与系统级参照的当前运行记录见[第一阶段实验基础设施](../experiments/json-storage-stage1/README.md)。
 
 ## 8. 执行顺序与停止条件
 
 1. 检查数据库和容器能力，固定版本与资源限制。
-2. 生成公共数据、truth manifest 和查询参数。
-3. 先在蓝区 openGauss 6.0.0 运行当前 JSON schema 的正确性 profile；失败时停止系统级参照。
-4. 黄区可用时使用相同输入和 truth 运行 GaussVector 正确性 profile。
-5. 使用已验证提交配对或完成列数适配的版本运行当前项目系统级 workload。
+2. 生成公共数据、truth 清单和查询参数。
+3. 在 openGauss 6.0.0 运行当前 JSON schema 的正确性 profile；失败时停止系统级参照。
+4. GaussVector 可用时使用相同输入和 truth 运行正确性 profile。
+5. 使用已验证提交配对或完成列数适配的版本运行当前项目系统级查询负载。
 6. 运行多字段 JSON 机制实验。
-7. Full/Core 实验未在阶段一执行，按阶段三统一四布局契约实施。
+7. Full/Core 实验未在阶段一执行，按阶段三统一四种存储结构契约实施。
 8. 长 payload 内联与引用实验未在阶段一执行，按阶段三原文恢复和 asset 故障门禁实施。
 9. 正确性契约明确后，运行带时间范围查询和持续分批摄入的第二阶段对照。
 
@@ -312,22 +330,24 @@ experiments/json-storage-stage1/
     notes.md
 ```
 
-`manifest.yaml` 记录数据库版本、image digest、CPU/内存限制、DDL hash、数据 hash、seed、缓存状态、准备命令和异常。比较表引用 run ID，不手工复制未关联的数字。
+`manifest.yaml` 记录数据库版本、容器镜像、CPU/内存限制、DDL 与数据身份、seed、缓存状态、准备命令和异常。比较表引用对应运行清单。
 
 ## 10. 结果解释与后续选项
 
 | 第一阶段证据 | 后续选项 |
 |---|---|
-| 定向索引已满足热点路径需求 | 优先验证热点列或 residual，不增加通用索引 |
-| native JSON 在宽路径上稳定降低读取或空间 | 评估 ClickHouse JSON 或同类自动子列能力 |
+| 定向索引已满足热点路径需求 | 优先验证热点列或动态属性，不增加通用索引 |
+| Native JSON 在宽路径上稳定降低读取或空间 | 评估 ClickHouse Native JSON 或同类自动子列能力 |
 | Core 明显降低 preview 查询读取，写放大可接受 | 在目标引擎设计最小物化 Core 原型 |
 | 外部引用降低主表压力，resolver 成本可接受 | 设计 asset 状态机、故障注入和保留实验 |
-| 各机制差异小于运行波动 | 保持当前简单布局，补充真实 workload 后再评估 |
+| 各机制差异小于运行波动 | 保持当前简单存储结构，补充真实查询负载后再评估 |
 | 当前项目参照主要受 exporter 或 schema 影响 | 先修摄入和版本契约，不更换数据库 |
 
 Tempo dedicated columns、KV/EAV、Parquet Variant、完整 Langfuse 复现和大规模容量实验均作为后续选项，不在第一阶段预先排期。
 
-预算边界、混合密度和等单行宽度组已经完成。[阶段二](json-storage-stage2-experiment-design-2026-09-08.md)审计真实 Trace 窗口并统一比较“强类型列 + String residual”“强类型列 + Map”和“强类型列 + 有路径预算的 native JSON”，同时加入持续写入、后台 merge 与并发查询。[阶段三](json-storage-stage3-experiment-design-2026-09-08.md)比较同表独立列、独立 payload 表、Full/Core 物化和 asset reference。九组均匀密度产物保留为机制资产；`5000×20%` 和 `5000×95%` 缺少场景依据，不进入阶段一结论。
+预算边界、混合密度和等单行宽度组已经完成。[阶段二](json-storage-stage2-experiment-design-2026-09-08.md)审计真实 Trace 窗口并统一比较 openGauss JSONB、ClickHouse String JSON、ClickHouse Map 和 ClickHouse Native JSON，同时加入持续写入、后台 merge 与并发查询。
+
+[阶段三](json-storage-stage3-experiment-design-2026-09-08.md)比较同表独立列、独立 payload 表、Full/Core 物化和 asset reference。九组均匀密度产物保留为机制资产；`5000×20%` 和 `5000×95%` 缺少场景依据，不进入阶段一结论。
 
 ## 11. 参考资料
 
