@@ -97,6 +97,11 @@ class QuerySpec:
             raise ValueError(f"unsupported query kind: {self.kind}")
         if not isinstance(self.parameters, dict):
             raise ValueError("query parameters must be an object")
+        if self.kind == "batch" and (
+            not isinstance(self.parameters.get("cohort"), str)
+            or not self.parameters["cohort"]
+        ):
+            raise ValueError("batch query requires cohort")
 
 
 @dataclass(frozen=True)
@@ -126,8 +131,20 @@ class QueryResult:
     query_id: str
     rows: tuple[dict[str, object], ...]
     response_bytes: int
+    database_response_bytes: int
+    resolver_payload_bytes: int
     query_complete_ms: float
     recovery_ms: float
+
+
+@dataclass(frozen=True)
+class AssetStorageEvidence:
+    """保存事件可达和 orphan 内容对象的数量与已验证 bytes。"""
+
+    available_object_count: int
+    available_bytes: int
+    orphan_object_count: int
+    orphan_bytes: int
 
 
 @dataclass(frozen=True)
@@ -136,6 +153,7 @@ class StorageEvidence:
 
     tables: dict[str, dict[str, object]]
     merges: tuple[dict[str, object], ...] = ()
+    asset_store: AssetStorageEvidence | None = None
 
 
 @dataclass(frozen=True)

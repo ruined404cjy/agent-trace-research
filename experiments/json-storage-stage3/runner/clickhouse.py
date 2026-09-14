@@ -11,8 +11,8 @@ from pathlib import Path
 
 from assets import AssetRecord, AssetReference, AssetResolver, LocalAssetStore
 from common import (
-    AccessEvidence, BlockResult, CleanupResult, LAYOUTS, MaintenanceResult,
-    QueryResult, QuerySpec, StorageEvidence, build_layout_catalog,
+    AccessEvidence, AssetStorageEvidence, BlockResult, CleanupResult, LAYOUTS,
+    MaintenanceResult, QueryResult, QuerySpec, StorageEvidence, build_layout_catalog,
 )
 
 
@@ -20,13 +20,25 @@ IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 QUERY_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 ASSET_STATUSES = ("pending", "available", "failed", "deleting")
 LOGICAL_FIELDS = (
-    "event_id", "trace_id", "project_id", "start_time", "cohort", "profile",
+    "event_id", "trace_id", "project_id", "start_time", "profile",
     "content_type", "encoding", "content_length", "preview", "sha256",
 )
 QUERY_FINISH_FIELDS = (
     "type", "exception_code", "query_duration_ms", "read_rows", "read_bytes",
     "memory_usage", "result_rows", "result_bytes",
 )
+
+
+class _CatalogRow:
+    """向 AssetResolver 提供一次数据库读取所得的固定 catalog 行。"""
+
+    def __init__(self, record):
+        self.record = record
+
+    def get_available(self, asset_id):
+        if self.record is None or self.record.asset_id != asset_id:
+            return None
+        return self.record
 
 
 def validate_identifier(value, name):
@@ -142,6 +154,7 @@ class ClickHouseAdapter:
         self._owned = False
         self._queries = {}
         self._merges_stopped = set()
+        self._target_watermark = 0
 
     def connect_worker(self):
         """建立供一个 worker 复用且由调用方关闭的 HTTP 连接。"""
@@ -293,8 +306,11 @@ class ClickHouseAdapter:
             self._insert(connection, "assets", [asset])
             try:
                 self.asset_store.publish_bytes(row["sha256"], payload)
-            except Exception:
-                self.set_asset_status(row["sha256"], "failed", "publish")
+            except Exception as error:
+                self.set_asset_status(
+                    row["sha256"], "failed",
+                    getattr(error, "category", type(error).__name__),
+                )
                 raise
             self.set_asset_status(row["sha256"], "available")
 
@@ -324,6 +340,7 @@ class ClickHouseAdapter:
         finally:
             connection.close()
         watermark = max(int(row["ingest_seq"]) for row in block) + 1
+        self._target_watermark = watermark
         return BlockResult(len(block), watermark,
                            {table: watermark for table in build_layout_catalog(self.layout).write_tables},
                            (time.perf_counter() - started) * 1000)
@@ -337,7 +354,7 @@ class ClickHouseAdapter:
                 if table == "assets":
                     rows = self._json_rows(self._request(
                         connection,
-                        f"SELECT if(countIf(e.asset_id IS NOT NULL AND a.status!='available')=0,toInt64(coalesce(max(e.ingest_seq)+1,0)),toInt64(-1)) AS watermark "
+                        f"SELECT if(countIf(e.asset_id IS NOT NULL AND (a.asset_id IS NULL OR a.asset_id='' OR a.status!='available'))=0,toInt64(coalesce(max(e.ingest_seq)+1,0)),toInt64(-1)) AS watermark "
                         f"FROM {self.database}.events_analytics e LEFT JOIN {self.database}.assets a ON a.asset_id=e.asset_id FORMAT JSONEachRow",
                     ))
                 else:
@@ -386,7 +403,10 @@ class ClickHouseAdapter:
             stable = stable + 1 if current["merges"] == 0 and current["parts"] == previous else 1 if current["merges"] == 0 else 0
             if stable >= 3:
                 values = self._watermarks()
-                return MaintenanceResult(True, values, tuple(observations),
+                completed = all(
+                    value >= self._target_watermark for value in values.values()
+                )
+                return MaintenanceResult(completed, values, tuple(observations),
                                          (time.monotonic() - started) * 1000)
             if time.monotonic() - started >= timeout_seconds:
                 return MaintenanceResult(False, self._watermarks(), tuple(observations),
@@ -427,27 +447,35 @@ class ClickHouseAdapter:
         finally:
             connection.close()
 
-    def get_available(self, asset_id):
-        """返回匹配 catalog 行的真实状态，不折叠未发布状态。"""
+    def _read_asset_record(self, asset_id):
+        """读取真实 catalog 行，并返回对应 HTTP body bytes。"""
         if self.layout != "asset_ref":
-            return None
+            return None, 0
         connection = self.connect_worker()
         try:
-            rows = self._json_rows(self._request(
+            body = self._request(
                 connection,
                 f"SELECT asset_id,sha256,content_type,encoding,content_length,storage_path,toString(status) AS status,"
                 f"toString(updated_at) AS updated_at,error_category FROM {self.database}.assets "
                 "WHERE asset_id={asset_id:String} ORDER BY updated_at DESC LIMIT 1 FORMAT JSONEachRow",
                 parameters={"asset_id": asset_id},
-            ))
+            )
+            rows = self._json_rows(body)
         finally:
             connection.close()
         if not rows:
-            return None
+            return None, len(body.encode("utf-8"))
         row = rows[0]
-        return AssetRecord(row["asset_id"], row["sha256"], row["content_type"], row["encoding"],
-                           int(row["content_length"]), Path(row["storage_path"]), row["status"],
-                           row["updated_at"], row.get("error_category"))
+        record = AssetRecord(
+            row["asset_id"], row["sha256"], row["content_type"], row["encoding"],
+            int(row["content_length"]), Path(row["storage_path"]), row["status"],
+            row["updated_at"], row.get("error_category"),
+        )
+        return record, len(body.encode("utf-8"))
+
+    def get_available(self, asset_id):
+        """返回匹配 catalog 行的真实状态，不折叠未发布状态。"""
+        return self._read_asset_record(asset_id)[0]
 
     def _query_statement(self, query):
         """生成统一 QuerySpec 对应的 ClickHouse SQL 和绑定参数。"""
@@ -499,7 +527,11 @@ class ClickHouseAdapter:
                       "start_time": clickhouse_timestamp(params["start_time"]),
                       "end_time": clickhouse_timestamp(params["end_time"])}
         else:
-            statement = f"SELECT {select} FROM {source} ORDER BY {prefix}start_time,{prefix}event_id"
+            statement = (
+                f"SELECT {select} FROM {source} WHERE {prefix}cohort={{cohort:String}} "
+                f"AND {prefix}sha256 IS NOT NULL ORDER BY {prefix}start_time,{prefix}event_id"
+            )
+            values = {"cohort": params["cohort"]}
         return statement + " FORMAT JSONEachRow", values
 
     @staticmethod
@@ -513,21 +545,26 @@ class ClickHouseAdapter:
     def _normalize_rows(self, rows):
         """恢复统一逻辑字段，并把完整 String payload 转为原始 bytes。"""
         result = []
+        catalog_response_bytes = 0
         for raw in rows:
             item = {field: raw[field] for field in LOGICAL_FIELDS}
             item["start_time"] = self._timestamp(item["start_time"])
             if self.layout == "asset_ref" and raw["payload_value"] is not None:
+                record, response_bytes = self._read_asset_record(raw["payload_value"])
+                catalog_response_bytes += response_bytes
                 reference = AssetReference(
                     "asset:sha256:" + raw["payload_value"], item["content_type"], item["encoding"],
                     int(item["content_length"]), item["preview"],
                 )
-                item["payload"] = AssetResolver(self, self.asset_store).resolve(reference).payload
+                item["payload"] = AssetResolver(
+                    _CatalogRow(record), self.asset_store,
+                ).resolve(reference).payload
             elif item["sha256"] is None or raw["payload_value"] is None:
                 item["payload"] = None
             else:
                 item["payload"] = raw["payload_value"].encode("utf-8")
             result.append(item)
-        return tuple(result)
+        return tuple(result), catalog_response_bytes
 
     def run_query(self, query: QuerySpec):
         """以唯一 query ID 执行并完整读取、恢复查询结果。"""
@@ -543,10 +580,18 @@ class ClickHouseAdapter:
             connection.close()
         query_ms = (time.perf_counter() - started) * 1000
         recovery_started = time.perf_counter()
-        normalized = self._normalize_rows(self._json_rows(body))
+        normalized, catalog_response_bytes = self._normalize_rows(self._json_rows(body))
         recovery_ms = (time.perf_counter() - recovery_started) * 1000
+        database_response_bytes = len(body.encode("utf-8")) + catalog_response_bytes
+        resolver_payload_bytes = (
+            sum(len(row["payload"] or b"") for row in normalized)
+            if self.layout == "asset_ref" else 0
+        )
         self._queries[query_id] = (statement, values)
-        return QueryResult(query_id, normalized, len(body.encode("utf-8")), query_ms, recovery_ms)
+        return QueryResult(
+            query_id, normalized, database_response_bytes + resolver_payload_bytes,
+            database_response_bytes, resolver_payload_bytes, query_ms, recovery_ms,
+        )
 
     def _collect_query_finish(self, query_ids, attempts=20):
         """单次 flush 后轮询全部正式查询的 QueryFinish。"""
@@ -617,7 +662,45 @@ class ClickHouseAdapter:
             tables.setdefault(table, {"part_count": 0, "rows": 0, "marks": 0,
                                       "compressed_bytes": 0, "uncompressed_bytes": 0,
                                       "columns": columns.get(table, {})})
-        return StorageEvidence(tables, tuple(merge_rows))
+        asset_store = self._collect_asset_storage() if self.layout == "asset_ref" else None
+        return StorageEvidence(tables, tuple(merge_rows), asset_store)
+
+    def _collect_asset_storage(self):
+        """通过事件引用和 LocalAssetStore 统计可达对象及 orphan bytes。"""
+        connection = self.connect_worker()
+        try:
+            rows = self._json_rows(self._request(
+                connection,
+                f"SELECT DISTINCT a.asset_id AS asset_id,a.sha256 AS sha256,a.content_length AS content_length,"
+                f"a.storage_path AS storage_path FROM {self.database}.events_analytics e "
+                f"INNER JOIN {self.database}.assets a ON a.asset_id=e.asset_id "
+                "WHERE a.status='available' FORMAT JSONEachRow",
+            ))
+        finally:
+            connection.close()
+        reachable_paths = set()
+        available_bytes = 0
+        for row in rows:
+            path = Path(row["storage_path"])
+            payload = self.asset_store.read_bytes(row["asset_id"], path)
+            if (
+                row["asset_id"] != row["sha256"]
+                or len(payload) != int(row["content_length"])
+                or hashlib.sha256(payload).hexdigest() != row["asset_id"]
+            ):
+                raise RuntimeError(f"invalid published asset: {row['asset_id']}")
+            reachable_paths.add(path)
+            available_bytes += len(payload)
+        orphans = self.asset_store.find_orphans(reachable_paths)
+        orphan_bytes = 0
+        for path in orphans:
+            payload = self.asset_store.read_bytes(path.name, path)
+            if hashlib.sha256(payload).hexdigest() != path.name:
+                raise RuntimeError(f"invalid orphan asset: {path.name}")
+            orphan_bytes += len(payload)
+        return AssetStorageEvidence(
+            len(rows), available_bytes, len(orphans), orphan_bytes,
+        )
 
     def cleanup(self):
         """恢复本 adapter 暂停的 merge，再删除并确认独占 database。"""

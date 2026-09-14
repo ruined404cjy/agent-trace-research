@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 import uuid
+from dataclasses import fields
 from pathlib import Path
 
 
@@ -12,10 +13,23 @@ sys.path.insert(0, str(STAGE_DIR / "runner"))
 
 import opengauss
 from assets import AssetError, AssetReference, AssetResolver, LocalAssetStore
-from common import QuerySpec, build_layout_catalog
+from common import QueryResult, QuerySpec, StorageEvidence, build_layout_catalog
 
 
 PAYLOAD = b'{"content":"\xe4\xb8\xad\xe6\x96\x87 payload"}'
+CONTROL_PAYLOAD = b'{"content":"control payload"}'
+EXPECTED_KEYS = {
+    "event_id", "trace_id", "project_id", "start_time", "profile",
+    "content_type", "encoding", "content_length", "preview", "sha256", "payload",
+}
+
+
+class FailAfterPublishStore(LocalAssetStore):
+    """发布最终对象后注入故障，模拟 catalog 更新前的失败。"""
+
+    def publish_bytes(self, asset_id, payload):
+        super().publish_bytes(asset_id, payload)
+        raise AssetError("failed")
 
 
 def fixture(root):
@@ -24,6 +38,9 @@ def fixture(root):
     path = root / "payloads" / "one.json"
     path.parent.mkdir()
     path.write_bytes(PAYLOAD)
+    control_digest = hashlib.sha256(CONTROL_PAYLOAD).hexdigest()
+    control_path = root / "payloads" / "control.json"
+    control_path.write_bytes(CONTROL_PAYLOAD)
     common = {
         "trace_id": "trace-a", "project_id": "project-a",
         "end_time": "2030-01-01T00:00:01.000Z", "duration_ms": 1,
@@ -40,6 +57,12 @@ def fixture(root):
          "parent_span_id": "span-a", "start_time": "2030-01-01T00:00:00.500Z",
          "cohort": None, "profile": None, "content_type": None, "encoding": None,
          "content_length": None, "preview": None, "sha256": None, "payload_path": None},
+        {**common, "ingest_seq": 2, "event_id": "event-c", "trace_id": "trace-b",
+         "span_id": "span-c", "parent_span_id": None,
+         "start_time": "2030-01-01T00:00:00.750Z", "cohort": "equal_total_control",
+         "profile": "text_64k", "content_type": "application/json", "encoding": "utf-8",
+         "content_length": len(CONTROL_PAYLOAD), "preview": CONTROL_PAYLOAD.decode(),
+         "sha256": control_digest, "payload_path": "payloads/control.json"},
     ]
 
 
@@ -88,6 +111,20 @@ class OpenGaussAdapterUnitTest(unittest.TestCase):
             opengauss.create_layout_ddls("bad-name", "same_table")
         with self.assertRaises(ValueError):
             build_layout_catalog("view")
+        with self.assertRaisesRegex(ValueError, "batch query requires cohort"):
+            QuerySpec("batch")
+
+    def test_batch_sql_and_evidence_types_expose_fixed_contracts(self):
+        adapter = opengauss.OpenGaussAdapter(
+            "127.0.0.1", 15432, "unused", "jsons3_test", "same_table", Path("."),
+        )
+        statement, values = adapter._query_statement(QuerySpec("batch", {"cohort": "main"}))
+        self.assertIn("cohort=%s", statement)
+        self.assertIn("sha256 IS NOT NULL", statement)
+        self.assertEqual(values, ("main",))
+        self.assertIn("database_response_bytes", {item.name for item in fields(QueryResult)})
+        self.assertIn("resolver_payload_bytes", {item.name for item in fields(QueryResult)})
+        self.assertIn("asset_store", {item.name for item in fields(StorageEvidence)})
 
 
 @unittest.skipUnless(os.environ.get("RUN_OPENGAUSS_INTEGRATION") == "1",
@@ -111,8 +148,8 @@ class OpenGaussAdapterIntegrationTest(unittest.TestCase):
                     adapter.create()
                     try:
                         block = adapter.ingest_block(rows)
-                        self.assertEqual(block.watermark, 2)
-                        ready = adapter.wait_write_complete(2)
+                        self.assertEqual(block.watermark, 3)
+                        ready = adapter.wait_write_complete(3)
                         self.assertTrue(ready.completed)
                         self.assertEqual(set(ready.watermarks), set(build_layout_catalog(layout).write_tables))
                         self.assertTrue(adapter.wait_query_ready(timeout_seconds=30).completed)
@@ -121,7 +158,8 @@ class OpenGaussAdapterIntegrationTest(unittest.TestCase):
                             "project_id": "project-a", "start_time": "2030-01-01T00:00:00.000Z",
                             "end_time": "2030-01-02T00:00:00.000Z", "page_size": 10,
                         }))
-                        self.assertEqual([row["event_id"] for row in listing.rows], ["event-a", "event-b"])
+                        self.assertEqual([row["event_id"] for row in listing.rows], ["event-a", "event-b", "event-c"])
+                        self.assertEqual(set(listing.rows[0]), EXPECTED_KEYS)
                         self.assertTrue(all(row["preview"] is None and row["payload"] is None
                                             for row in listing.rows))
                         preview = adapter.run_query(QuerySpec("preview", {
@@ -136,6 +174,7 @@ class OpenGaussAdapterIntegrationTest(unittest.TestCase):
                             "start_time": "2030-01-01T00:00:00.000Z", "event_id": "event-a",
                         }))
                         self.assertEqual(detail.rows[0]["payload"], PAYLOAD)
+                        self.assertEqual(set(detail.rows[0]), EXPECTED_KEYS)
                         self.assertEqual(detail.rows[0]["sha256"], hashlib.sha256(PAYLOAD).hexdigest())
                         trace = adapter.run_query(QuerySpec("trace", {
                             "project_id": "project-a", "trace_id": "trace-a",
@@ -146,9 +185,12 @@ class OpenGaussAdapterIntegrationTest(unittest.TestCase):
                         self.assertEqual(trace.rows[0]["payload"], PAYLOAD)
                         self.assertIsNone(trace.rows[1]["payload"])
                         self.assertGreaterEqual(trace.response_bytes, len(PAYLOAD))
-                        batch = adapter.run_query(QuerySpec("batch"))
-                        self.assertEqual([row["event_id"] for row in batch.rows], ["event-a", "event-b"])
+                        batch = adapter.run_query(QuerySpec("batch", {"cohort": "main"}))
+                        self.assertEqual([row["event_id"] for row in batch.rows], ["event-a"])
                         self.assertEqual(batch.rows[0]["payload"], PAYLOAD)
+                        self.assertEqual(set(batch.rows[0]), EXPECTED_KEYS)
+                        self.assertEqual(batch.response_bytes,
+                                         batch.database_response_bytes + batch.resolver_payload_bytes)
 
                         evidence = adapter.collect_access_evidence([detail.query_id])
                         self.assertIn("EXPLAIN ANALYZE", evidence.plans[detail.query_id])
@@ -160,12 +202,22 @@ class OpenGaussAdapterIntegrationTest(unittest.TestCase):
                         if layout == "asset_ref":
                             record = adapter.get_available(rows[0]["sha256"])
                             self.assertEqual(record.status, "available")
+                            self.assertIsNotNone(storage.asset_store)
+                            self.assertEqual(storage.asset_store.available_object_count, 2)
+                            self.assertEqual(storage.asset_store.available_bytes,
+                                             len(PAYLOAD) + len(CONTROL_PAYLOAD))
+                            self.assertEqual(storage.asset_store.orphan_object_count, 0)
+                            self.assertEqual(detail.resolver_payload_bytes, len(PAYLOAD))
+                            self.assertGreater(detail.database_response_bytes, 0)
+                            self.assertEqual(detail.response_bytes,
+                                             detail.database_response_bytes + len(PAYLOAD))
                             for status in ("pending", "failed", "deleting", "available"):
                                 adapter.set_asset_status(record.asset_id, status)
                                 actual = adapter.get_available(record.asset_id)
                                 self.assertEqual(actual.status, status)
                                 if status != "available":
-                                    self.assertFalse(adapter.wait_write_complete(2).completed)
+                                    self.assertFalse(adapter.wait_write_complete(3).completed)
+                                    self.assertFalse(adapter.wait_query_ready(timeout_seconds=30).completed)
                                     with self.assertRaisesRegex(AssetError, "^" + status + "$"):
                                         AssetResolver(adapter, store).resolve(
                                             AssetReference(ref="asset:sha256:" + record.asset_id,
@@ -175,7 +227,8 @@ class OpenGaussAdapterIntegrationTest(unittest.TestCase):
                                                 preview=rows[0]["preview"])
                                         )
                                 else:
-                                    self.assertTrue(adapter.wait_write_complete(2).completed)
+                                    self.assertTrue(adapter.wait_write_complete(3).completed)
+                                    self.assertTrue(adapter.wait_query_ready(timeout_seconds=30).completed)
                     finally:
                         cleanup = adapter.cleanup()
                     self.assertTrue(cleanup.removed)
@@ -198,6 +251,39 @@ class OpenGaussAdapterIntegrationTest(unittest.TestCase):
                 cleanup = adapter.cleanup()
             self.assertTrue(cleanup.removed)
             self.assertFalse(adapter.namespace_exists())
+
+    def test_asset_publish_failure_persists_failed_catalog_without_event_reference(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rows = fixture(root)[:1]
+            store = FailAfterPublishStore(root / "failed_assets")
+            adapter = opengauss.OpenGaussAdapter(
+                "127.0.0.1", 15432, "agent-trace-opengauss-v6",
+                "jsons3_" + uuid.uuid4().hex[:10], "asset_ref", root, store,
+            )
+            adapter.create()
+            try:
+                with self.assertRaisesRegex(AssetError, "^failed$"):
+                    adapter.ingest_block(rows)
+                record = adapter.get_available(rows[0]["sha256"])
+                self.assertEqual(record.status, "failed")
+                self.assertEqual(record.error_category, "failed")
+                connection = adapter.connect_worker()
+                try:
+                    count = connection.execute(
+                        f"SELECT count(*) FROM {adapter.schema}.events_analytics"
+                    ).fetchone()[0]
+                finally:
+                    connection.close()
+                self.assertEqual(count, 0)
+                self.assertFalse(adapter.wait_write_complete(1).completed)
+                storage = adapter.collect_storage()
+                self.assertEqual(storage.asset_store.available_object_count, 0)
+                self.assertEqual(storage.asset_store.orphan_object_count, 1)
+                self.assertEqual(storage.asset_store.orphan_bytes, len(PAYLOAD))
+            finally:
+                cleanup = adapter.cleanup()
+            self.assertTrue(cleanup.removed)
 
 
 if __name__ == "__main__":

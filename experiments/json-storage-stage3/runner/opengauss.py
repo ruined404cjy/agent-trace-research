@@ -1,5 +1,6 @@
 """阶段三 openGauss 四种 payload 布局 adapter。"""
 
+import hashlib
 import json
 import re
 import subprocess
@@ -11,17 +12,29 @@ import psycopg
 
 from assets import AssetRecord, AssetReference, AssetResolver, LocalAssetStore
 from common import (
-    AccessEvidence, BlockResult, CleanupResult, LAYOUTS, MaintenanceResult,
-    QueryResult, QuerySpec, StorageEvidence, build_layout_catalog,
+    AccessEvidence, AssetStorageEvidence, BlockResult, CleanupResult, LAYOUTS,
+    MaintenanceResult, QueryResult, QuerySpec, StorageEvidence, build_layout_catalog,
 )
 
 
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 ASSET_STATUSES = ("pending", "available", "failed", "deleting")
 LOGICAL_FIELDS = (
-    "event_id", "trace_id", "project_id", "start_time", "cohort", "profile",
+    "event_id", "trace_id", "project_id", "start_time", "profile",
     "content_type", "encoding", "content_length", "preview", "sha256",
 )
+
+
+class _CatalogRow:
+    """向 AssetResolver 提供一次数据库读取所得的固定 catalog 行。"""
+
+    def __init__(self, record):
+        self.record = record
+
+    def get_available(self, asset_id):
+        if self.record is None or self.record.asset_id != asset_id:
+            return None
+        return self.record
 
 
 def validate_identifier(value, name):
@@ -141,6 +154,7 @@ class OpenGaussAdapter:
         self._password = None
         self._owned = False
         self._queries = {}
+        self._target_watermark = 0
 
     def _password_from_container(self):
         """从已运行容器读取密码并仅缓存在 adapter 内存。"""
@@ -223,7 +237,6 @@ class OpenGaussAdapter:
         except ValueError as error:
             raise ValueError("payload path escapes input root") from error
         payload = candidate.read_bytes()
-        import hashlib
         if len(payload) != row["content_length"] or hashlib.sha256(payload).hexdigest() != row["sha256"]:
             raise ValueError(f"payload identity mismatch: {row['event_id']}")
         return payload
@@ -257,30 +270,48 @@ class OpenGaussAdapter:
                 copy.write_row(tuple(row[field] for field in fields[:-1]) +
                                (None if payload is None else payload.decode("utf-8"),))
 
-    def _insert_assets(self, connection, block, payloads):
-        """依次记录 pending、原子发布对象并转换为 available。"""
+    def _ingest_assets(self, block, payloads):
+        """持久化状态、发布对象，并在全部可用后提交事件引用。"""
+        connection = self.connect_worker()
+        try:
+            with connection.transaction():
+                for row, payload in zip(block, payloads):
+                    if payload is None:
+                        continue
+                    path = self.asset_store.object_path(row["sha256"])
+                    connection.execute(
+                        f"INSERT INTO {self.schema}.assets(asset_id,sha256,content_type,encoding,content_length,storage_path,status) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,'pending')",
+                        (row["sha256"], row["sha256"], row["content_type"], row["encoding"],
+                         row["content_length"], str(path)),
+                    )
+        finally:
+            connection.close()
+
         for row, payload in zip(block, payloads):
             if payload is None:
                 continue
-            path = self.asset_store.object_path(row["sha256"])
-            connection.execute(
-                f"INSERT INTO {self.schema}.assets(asset_id,sha256,content_type,encoding,content_length,storage_path,status) "
-                "VALUES (%s,%s,%s,%s,%s,%s,'pending')",
-                (row["sha256"], row["sha256"], row["content_type"], row["encoding"],
-                 row["content_length"], str(path)),
-            )
             try:
                 self.asset_store.publish_bytes(row["sha256"], payload)
-            except Exception:
-                connection.execute(
-                    f"UPDATE {self.schema}.assets SET status='failed',error_category='publish',updated_at=CURRENT_TIMESTAMP WHERE asset_id=%s",
-                    (row["sha256"],),
+            except Exception as error:
+                self.set_asset_status(
+                    row["sha256"], "failed",
+                    getattr(error, "category", type(error).__name__),
                 )
                 raise
-            connection.execute(
-                f"UPDATE {self.schema}.assets SET status='available',error_category=NULL,updated_at=CURRENT_TIMESTAMP WHERE asset_id=%s",
-                (row["sha256"],),
-            )
+            self.set_asset_status(row["sha256"], "available")
+
+        connection = self.connect_worker()
+        try:
+            with connection.transaction():
+                with connection.cursor() as cursor:
+                    converted = [self._row_values(row, asset_id_marker=True) for row in block]
+                    self._copy(
+                        cursor, f"{self.schema}.events_analytics", converted,
+                        include_asset=True,
+                    )
+        finally:
+            connection.close()
 
     def ingest_block(self, block):
         """在单事务中完成 layout 的一个显式单写或双写 block。"""
@@ -290,6 +321,15 @@ class OpenGaussAdapter:
         started = time.perf_counter()
         catalog = build_layout_catalog(self.layout)
         relation = lambda table: f"{self.schema}.{table}"
+        if self.layout == "asset_ref":
+            self._ingest_assets(block, payloads)
+            watermark = max(int(row["ingest_seq"]) for row in block) + 1
+            self._target_watermark = watermark
+            return BlockResult(
+                len(block), watermark,
+                {table: watermark for table in catalog.write_tables},
+                (time.perf_counter() - started) * 1000,
+            )
         connection = self.connect_worker()
         try:
             try:
@@ -306,10 +346,6 @@ class OpenGaussAdapter:
                                      for row, payload in zip(block, payloads)]
                         self._copy(cursor, relation("events_full"), converted, include_payload=True)
                         self._copy(cursor, relation("events_core"), [self._row_values(row) for row in block])
-                    else:
-                        self._insert_assets(connection, block, payloads)
-                        converted = [self._row_values(row, asset_id_marker=True) for row in block]
-                        self._copy(cursor, relation("events_analytics"), converted, include_asset=True)
                 connection.commit()
             except Exception:
                 connection.rollback()
@@ -317,6 +353,7 @@ class OpenGaussAdapter:
         finally:
             connection.close()
         watermark = max(int(row["ingest_seq"]) for row in block) + 1
+        self._target_watermark = watermark
         return BlockResult(len(block), watermark,
                            {table: watermark for table in catalog.write_tables},
                            (time.perf_counter() - started) * 1000)
@@ -363,7 +400,8 @@ class OpenGaussAdapter:
         finally:
             connection.close()
         values = self._watermarks()
-        return MaintenanceResult(True, values, ({"analyzed": True},),
+        completed = all(value >= self._target_watermark for value in values.values())
+        return MaintenanceResult(completed, values, ({"analyzed": True},),
                                  (time.perf_counter() - started) * 1000)
 
     def set_asset_status(self, asset_id, status, error_category=None):
@@ -382,10 +420,10 @@ class OpenGaussAdapter:
         finally:
             connection.close()
 
-    def get_available(self, asset_id):
-        """返回匹配 catalog 行的真实状态，不在 SQL 中过滤 available。"""
+    def _read_asset_record(self, asset_id):
+        """读取真实 catalog 行，并返回其客户端表示 bytes。"""
         if self.layout != "asset_ref":
-            return None
+            return None, 0
         connection = self.connect_worker()
         try:
             row = connection.execute(
@@ -395,9 +433,20 @@ class OpenGaussAdapter:
         finally:
             connection.close()
         if row is None:
-            return None
-        return AssetRecord(row[0], row[1], row[2], row[3], int(row[4]), Path(row[5]),
-                           row[6], row[7].isoformat() if row[7] else None, row[8])
+            return None, 0
+        record = AssetRecord(
+            row[0], row[1], row[2], row[3], int(row[4]), Path(row[5]),
+            row[6], row[7].isoformat() if row[7] else None, row[8],
+        )
+        response_bytes = len(json.dumps(
+            row, ensure_ascii=False,
+            default=lambda value: value.isoformat() if hasattr(value, "isoformat") else str(value),
+        ).encode("utf-8"))
+        return record, response_bytes
+
+    def get_available(self, asset_id):
+        """返回匹配 catalog 行的真实状态，不在 SQL 中过滤 available。"""
+        return self._read_asset_record(asset_id)[0]
 
     def _query_statement(self, query):
         """生成固定 QuerySpec 的 SQL、参数和 payload 是否来自 Asset。"""
@@ -440,8 +489,11 @@ class OpenGaussAdapter:
                          f"AND {alias}start_time>=%s AND {alias}start_time<%s ORDER BY {alias}start_time,{alias}event_id")
             values = tuple(params[key] for key in ("project_id", "trace_id", "start_time", "end_time"))
         else:
-            statement = f"SELECT {fields} FROM {source} ORDER BY {alias}start_time,{alias}event_id"
-            values = ()
+            statement = (
+                f"SELECT {fields} FROM {source} WHERE {alias}cohort=%s "
+                f"AND {alias}sha256 IS NOT NULL ORDER BY {alias}start_time,{alias}event_id"
+            )
+            values = (params["cohort"],)
         return statement, values
 
     @staticmethod
@@ -451,19 +503,24 @@ class OpenGaussAdapter:
     def _normalize_rows(self, rows):
         """恢复统一逻辑字段并确保 payload bytes 到达调用方。"""
         result = []
+        catalog_response_bytes = 0
         for raw in rows:
             item = dict(zip(LOGICAL_FIELDS, raw[:len(LOGICAL_FIELDS)]))
             item["start_time"] = self._timestamp(item["start_time"])
             if self.layout == "asset_ref" and raw[-1] is not None:
+                record, response_bytes = self._read_asset_record(raw[-1])
+                catalog_response_bytes += response_bytes
                 reference = AssetReference(
                     "asset:sha256:" + raw[-1], item["content_type"], item["encoding"],
                     int(item["content_length"]), item["preview"],
                 )
-                item["payload"] = AssetResolver(self, self.asset_store).resolve(reference).payload
+                item["payload"] = AssetResolver(
+                    _CatalogRow(record), self.asset_store,
+                ).resolve(reference).payload
             else:
                 item["payload"] = raw[-1].encode("utf-8") if isinstance(raw[-1], str) else None
             result.append(item)
-        return tuple(result)
+        return tuple(result), catalog_response_bytes
 
     def run_query(self, query: QuerySpec):
         """执行查询、完整读取响应并保存后续 EXPLAIN ANALYZE 所需绑定。"""
@@ -478,14 +535,23 @@ class OpenGaussAdapter:
         finally:
             connection.close()
         query_ms = (time.perf_counter() - started) * 1000
+        database_response_bytes = len(json.dumps(
+            rows, ensure_ascii=False,
+            default=lambda value: value.isoformat() if hasattr(value, "isoformat") else str(value),
+        ).encode("utf-8"))
         recovery_started = time.perf_counter()
-        normalized = self._normalize_rows(rows)
+        normalized, catalog_response_bytes = self._normalize_rows(rows)
         recovery_ms = (time.perf_counter() - recovery_started) * 1000
-        response_bytes = sum(len(row["payload"] or b"") for row in normalized)
-        response_bytes += len(json.dumps([{k: v for k, v in row.items() if k != "payload"}
-                                         for row in normalized], ensure_ascii=False).encode("utf-8"))
+        database_response_bytes += catalog_response_bytes
+        resolver_payload_bytes = (
+            sum(len(row["payload"] or b"") for row in normalized)
+            if self.layout == "asset_ref" else 0
+        )
         self._queries[query_id] = (statement, values)
-        return QueryResult(query_id, normalized, response_bytes, query_ms, recovery_ms)
+        return QueryResult(
+            query_id, normalized, database_response_bytes + resolver_payload_bytes,
+            database_response_bytes, resolver_payload_bytes, query_ms, recovery_ms,
+        )
 
     def collect_access_evidence(self, query_ids):
         """执行正式查询的 EXPLAIN ANALYZE 并读取累计 idx_scan。"""
@@ -517,9 +583,36 @@ class OpenGaussAdapter:
                     "heap_bytes": int(row[0]), "index_bytes": int(row[1]),
                     "toast_bytes": int(row[2]), "total_bytes": int(row[3]),
                 }
-            return StorageEvidence(tables)
+            asset_store = self._collect_asset_storage(connection) if self.layout == "asset_ref" else None
+            return StorageEvidence(tables, asset_store=asset_store)
         finally:
             connection.close()
+
+    def _collect_asset_storage(self, connection):
+        """通过事件引用和 LocalAssetStore 统计可达对象及 orphan bytes。"""
+        rows = connection.execute(
+            f"SELECT DISTINCT a.asset_id,a.sha256,a.content_length,a.storage_path "
+            f"FROM {self.schema}.events_analytics e JOIN {self.schema}.assets a "
+            "ON a.asset_id=e.asset_id WHERE a.status='available'"
+        ).fetchall()
+        reachable_paths = set()
+        available_bytes = 0
+        for asset_id, sha256, content_length, storage_path in rows:
+            payload = self.asset_store.read_bytes(asset_id, Path(storage_path))
+            if asset_id != sha256 or len(payload) != int(content_length) or hashlib.sha256(payload).hexdigest() != asset_id:
+                raise RuntimeError(f"invalid published asset: {asset_id}")
+            reachable_paths.add(Path(storage_path))
+            available_bytes += len(payload)
+        orphan_bytes = 0
+        orphans = self.asset_store.find_orphans(reachable_paths)
+        for path in orphans:
+            payload = self.asset_store.read_bytes(path.name, path)
+            if hashlib.sha256(payload).hexdigest() != path.name:
+                raise RuntimeError(f"invalid orphan asset: {path.name}")
+            orphan_bytes += len(payload)
+        return AssetStorageEvidence(
+            len(rows), available_bytes, len(orphans), orphan_bytes,
+        )
 
     def cleanup(self):
         """仅删除本实例成功创建的 schema，并确认没有残留。"""
