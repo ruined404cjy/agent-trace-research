@@ -45,6 +45,21 @@ QUERY_START_TIME = "2030-01-01T00:00:00.000Z"
 QUERY_END_TIME = "2030-01-01T00:52:08.500Z"
 QUERY_PAGE_SIZE = 256
 EXPECTED_QUERY_ROW_COUNT = 27_561
+DYNAMIC_SOURCE_FIELDS = {"attributes_analysis", "attributes_map", "raw_event"}
+REQUIRED_ORDINARY_FIELDS = (
+    "ingest_seq",
+    "event_id",
+    "trace_id",
+    "span_id",
+    "parent_span_id",
+    "project_id",
+    "start_time",
+    "end_time",
+    "duration_ms",
+    "span_type",
+    "framework",
+    "level",
+)
 
 
 def _json_payload(profile, event_id, content):
@@ -203,12 +218,12 @@ def _read_frozen_source(source_dir):
                 if not line.strip():
                     raise ValueError(f"invalid source row: {line_number}")
                 row = json.loads(line)
+                for field in REQUIRED_ORDINARY_FIELDS:
+                    row[field]
                 projected = {
-                    "ingest_seq": row["ingest_seq"],
-                    "event_id": row["event_id"],
-                    "trace_id": row["trace_id"],
-                    "project_id": row["project_id"],
-                    "start_time": row["start_time"],
+                    field: value
+                    for field, value in row.items()
+                    if field not in DYNAMIC_SOURCE_FIELDS
                 }
                 if (
                     projected["ingest_seq"] != line_number - 1
@@ -369,6 +384,23 @@ def _event_record(row, payload):
     return result
 
 
+def _detail_samples(payloads):
+    """从主 cohort 为四类详情恢复稳定选择各一条样本。"""
+    samples = []
+    for profile in ("text_64k", "text_512k", "text_2m", "entropy_512k"):
+        candidates = [
+            payload
+            for payload in payloads
+            if payload["cohort"] == "main" and payload["profile"] == profile
+        ]
+        if not candidates:
+            raise ValueError(f"detail sample profile missing: {profile}")
+        samples.append(
+            min(candidates, key=lambda payload: (payload["sha256"], payload["event_id"]))
+        )
+    return samples
+
+
 def build_truth(source_dir: Path, output_dir: Path, seed: int) -> dict[str, object]:
     """从阶段二冻结输入生成事件、payload、truth 和最终 generation manifest。"""
     if seed != SEED:
@@ -481,6 +513,7 @@ def build_truth(source_dir: Path, output_dir: Path, seed: int) -> dict[str, obje
         payload_by_event.values(),
         key=lambda payload: row_by_event[payload["event_id"]]["ingest_seq"],
     )
+    detail_samples = _detail_samples(all_payloads)
     for selection in representative.values():
         trace_payloads = [
             payload for payload in all_payloads if payload["trace_id"] == selection["trace_id"]
@@ -509,6 +542,7 @@ def build_truth(source_dir: Path, output_dir: Path, seed: int) -> dict[str, obje
         "identity_sha256": hashlib.sha256(_canonical_bytes(identity_values)).hexdigest(),
         "query_window": query_window,
         "payloads": all_payloads,
+        "detail_samples": detail_samples,
         "cohorts": cohorts,
         "representative_traces": representative,
     }

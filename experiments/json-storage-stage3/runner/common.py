@@ -9,6 +9,44 @@ from pathlib import Path, PurePosixPath
 
 TRUTH_FORMAT = "agent-trace-json-storage-stage3-truth"
 FORMAT_VERSION = 1
+COHORT_CONTRACT = {
+    "main": {
+        "performance": True,
+        "payload_count": 160,
+        "profile_counts": {
+            "text_64k": 40,
+            "text_512k": 40,
+            "text_2m": 40,
+            "entropy_512k": 40,
+        },
+        "raw_payload_bytes": 128_450_560,
+    },
+    "equal_total_control": {
+        "performance": True,
+        "payload_count": 1_320,
+        "profile_counts": {"text_2m": 40, "text_64k": 1_280},
+        "raw_payload_bytes": 167_772_160,
+        "variants": {
+            "few_large": {
+                "profile": "text_2m",
+                "payload_count": 40,
+                "raw_payload_bytes": 83_886_080,
+            },
+            "many_medium": {
+                "profile": "text_64k",
+                "payload_count": 1_280,
+                "raw_payload_bytes": 83_886_080,
+            },
+        },
+    },
+    "correctness_only": {
+        "performance": False,
+        "payload_count": 1,
+        "profile_counts": {"unicode_boundary": 1},
+        "raw_payload_bytes": 1_024,
+    },
+}
+DETAIL_PROFILES = ("text_64k", "text_512k", "text_2m", "entropy_512k")
 
 
 def _canonical_bytes(value):
@@ -60,6 +98,7 @@ class TruthCatalog:
     payloads: tuple[PayloadRecord, ...]
     cohorts: dict[str, dict[str, object]]
     representative_traces: dict[str, object]
+    detail_samples: tuple[PayloadRecord, ...]
 
     @property
     def profile_counts(self):
@@ -142,12 +181,16 @@ def _validate_payload_file(root, record):
         or payload_text[:200] != record.preview
     ):
         raise ValueError(f"payload identity mismatch: {record.event_id}")
+    try:
+        json.loads(payload_text)
+    except json.JSONDecodeError as error:
+        raise ValueError(f"invalid JSON payload: {record.event_id}") from error
 
 
 def _validate_cohorts(cohorts, payloads):
     """核对 cohort 与 profile 的计数和原始 bytes 汇总。"""
-    if not isinstance(cohorts, dict) or not cohorts:
-        raise ValueError("invalid cohorts")
+    if not isinstance(cohorts, dict) or set(cohorts) != set(COHORT_CONTRACT):
+        raise ValueError("cohort contract mismatch")
     grouped = {name: [] for name in cohorts}
     for record in payloads:
         if record.cohort not in grouped:
@@ -155,8 +198,11 @@ def _validate_cohorts(cohorts, payloads):
         grouped[record.cohort].append(record)
     for name, summary in cohorts.items():
         records = grouped[name]
+        expected_contract = COHORT_CONTRACT[name]
         if not isinstance(summary, dict) or not isinstance(summary.get("performance"), bool):
             raise ValueError(f"invalid cohort: {name}")
+        if summary["performance"] != expected_contract["performance"]:
+            raise ValueError(f"cohort performance mismatch: {name}")
         expected = {
             "payload_count": len(records),
             "profile_counts": dict(Counter(record.profile for record in records)),
@@ -164,6 +210,61 @@ def _validate_cohorts(cohorts, payloads):
         }
         if any(summary.get(field) != value for field, value in expected.items()):
             raise ValueError(f"cohort summary mismatch: {name}")
+        if set(summary) != set(expected_contract) or any(
+            summary.get(field) != value for field, value in expected_contract.items()
+        ):
+            raise ValueError(f"cohort contract mismatch: {name}")
+
+
+def _validate_representative_traces(representative_traces, payloads):
+    """校验 p25、p50、p95 Trace 结构及其 payload 汇总。"""
+    if not isinstance(representative_traces, dict) or set(representative_traces) != {
+        "p25",
+        "p50",
+        "p95",
+    }:
+        raise ValueError("representative trace contract mismatch")
+    for label, selection in representative_traces.items():
+        fields = {
+            "trace_id",
+            "span_count",
+            "payload_count",
+            "profile_counts",
+            "raw_payload_bytes",
+        }
+        if (
+            not isinstance(selection, dict)
+            or set(selection) != fields
+            or not isinstance(selection["trace_id"], str)
+            or not selection["trace_id"]
+            or not _positive_int(selection["span_count"])
+        ):
+            raise ValueError(f"invalid representative trace: {label}")
+        records = [record for record in payloads if record.trace_id == selection["trace_id"]]
+        expected = {
+            "payload_count": len(records),
+            "profile_counts": dict(Counter(record.profile for record in records)),
+            "raw_payload_bytes": sum(record.content_length for record in records),
+        }
+        if selection["span_count"] < len(records) or any(
+            selection.get(field) != value for field, value in expected.items()
+        ):
+            raise ValueError(f"representative trace summary mismatch: {label}")
+
+
+def _validate_detail_samples(raw_samples, payloads):
+    """校验四类详情样本均来自主 cohort 且完全对应 payload truth。"""
+    if not isinstance(raw_samples, list) or len(raw_samples) != len(DETAIL_PROFILES):
+        raise ValueError("detail sample contract mismatch")
+    samples = tuple(_payload_record(sample) for sample in raw_samples)
+    if tuple(sample.profile for sample in samples) != DETAIL_PROFILES or any(
+        sample.cohort != "main" for sample in samples
+    ):
+        raise ValueError("detail sample contract mismatch")
+    payload_by_event = {record.event_id: record for record in payloads}
+    if any(payload_by_event.get(sample.event_id) != sample for sample in samples):
+        raise ValueError("detail sample mismatch")
+    return samples
 
 
 def load_truth(path: Path) -> TruthCatalog:
@@ -193,7 +294,7 @@ def load_truth(path: Path) -> TruthCatalog:
     expected_watermarks = list(range(block_size, record_count, block_size)) + [record_count]
     if watermarks != expected_watermarks or block_count != len(expected_watermarks):
         raise ValueError("truth watermarks mismatch")
-    if not isinstance(source, dict) or not isinstance(representative_traces, dict):
+    if not isinstance(source, dict):
         raise ValueError("invalid truth metadata")
     if (
         not isinstance(query_window, dict)
@@ -223,6 +324,8 @@ def load_truth(path: Path) -> TruthCatalog:
         raise ValueError("duplicate payload path")
     cohorts = value.get("cohorts")
     _validate_cohorts(cohorts, payloads)
+    _validate_representative_traces(representative_traces, payloads)
+    detail_samples = _validate_detail_samples(value.get("detail_samples"), payloads)
     for record in payloads:
         _validate_payload_file(path.parent, record)
 
@@ -238,4 +341,5 @@ def load_truth(path: Path) -> TruthCatalog:
         payloads=payloads,
         cohorts=cohorts,
         representative_traces=representative_traces,
+        detail_samples=detail_samples,
     )

@@ -39,6 +39,16 @@ class GeneratePayloadsTest(unittest.TestCase):
             all(len(item.payload_bytes) == item.content_length for item in catalog.payloads)
         )
         self.assertEqual(sum(item.content_length for item in catalog.payloads), 128_450_560)
+        for item in catalog.payloads:
+            json.loads(item.payload_bytes)
+        for profile in ("text_2m", "text_64k"):
+            json.loads(
+                generator.generate_payload_bytes(
+                    profile,
+                    f"fixture-trace:control-{profile}",
+                    20260907,
+                )
+            )
         self.assertEqual(
             Counter(generator._profile_sequence(generator.CONTROL_PROFILES)),
             {"text_2m": 40, "text_64k": 1_280},
@@ -52,6 +62,7 @@ class GeneratePayloadsTest(unittest.TestCase):
             len(catalog.unicode_boundary.preview.encode("utf-8")),
             len(catalog.unicode_boundary.preview),
         )
+        json.loads(catalog.unicode_boundary.text)
 
     def test_frozen_stage_two_source_has_exact_identity_rows_and_blocks(self):
         """捕获内部自洽 manifest 放行被替换的阶段二输入。"""
@@ -122,7 +133,12 @@ class GeneratePayloadsTest(unittest.TestCase):
             ):
                 truth = generator.build_truth(source_dir, output_dir, seed=20260907)
 
-            catalog = common.load_truth(output_dir / "truth.json")
+            with patch.object(
+                common,
+                "COHORT_CONTRACT",
+                {name: dict(summary) for name, summary in truth["cohorts"].items()},
+            ):
+                catalog = common.load_truth(output_dir / "truth.json")
             events = [json.loads(line) for line in (output_dir / "events.jsonl").read_text().splitlines()]
             manifest = json.loads((output_dir / "generation-manifest.json").read_bytes())
 
@@ -155,6 +171,20 @@ class GeneratePayloadsTest(unittest.TestCase):
             )
             self.assertEqual(len(events), 10)
             self.assertEqual([event["ingest_seq"] for event in events], list(range(10)))
+            for source_row, event in zip(self.source_fixture_rows(), events):
+                for field in (
+                    "span_id",
+                    "parent_span_id",
+                    "duration_ms",
+                    "end_time",
+                    "span_type",
+                    "framework",
+                    "level",
+                ):
+                    self.assertEqual(event[field], source_row[field])
+                self.assertNotIn("attributes_analysis", event)
+                self.assertNotIn("attributes_map", event)
+                self.assertNotIn("raw_event", event)
             self.assertEqual(sum(event["payload_path"] is None for event in events), 2)
             self.assertTrue(
                 all(
@@ -179,6 +209,19 @@ class GeneratePayloadsTest(unittest.TestCase):
                 set(truth["representative_traces"]),
                 {"p25", "p50", "p95"},
             )
+            self.assertEqual(
+                [sample["profile"] for sample in truth["detail_samples"]],
+                ["text_64k", "text_512k", "text_2m", "entropy_512k"],
+            )
+            self.assertTrue(
+                all(sample["cohort"] == "main" for sample in truth["detail_samples"])
+            )
+            payload_by_event = {payload.event_id: payload for payload in catalog.payloads}
+            for sample in truth["detail_samples"]:
+                self.assertEqual(
+                    sample,
+                    payload_by_event[sample["event_id"]].__dict__,
+                )
 
     def test_source_validation_rejects_self_consistent_replacement(self):
         """捕获替换输入重算自身 artifact 与 manifest 后被错误接受。"""
@@ -214,18 +257,9 @@ class GeneratePayloadsTest(unittest.TestCase):
     def write_source_fixture(cls, source_dir):
         """写入具有独立 artifact identity 的最小阶段二目录。"""
         source_dir.mkdir()
-        trace_ids = ["trace-a"] * 4 + ["trace-b"] * 3 + ["trace-c"] * 2 + ["trace-d"]
-        rows = [
-            {
-                "ingest_seq": index,
-                "event_id": f"{trace_id}:span-{index}",
-                "trace_id": trace_id,
-                "project_id": "Leoxx/whowhen_pro",
-                "start_time": f"2030-01-01T00:00:{index:02d}.000Z",
-            }
-            for index, trace_id in enumerate(trace_ids)
-        ]
+        rows = cls.source_fixture_rows()
         dataset = b"".join(cls.canonical_bytes(row) + b"\n" for row in rows)
+
         source_truth = {
             "record_count": 10,
             "block_size": 4,
@@ -252,6 +286,31 @@ class GeneratePayloadsTest(unittest.TestCase):
         manifest_bytes = cls.canonical_bytes(manifest) + b"\n"
         (source_dir / "run-manifest.json").write_bytes(manifest_bytes)
         return {"manifest": cls.bytes_identity(manifest_bytes), "artifacts": artifacts}
+
+    @staticmethod
+    def source_fixture_rows():
+        """返回覆盖普通列、Trace 父子关系和动态字段的 Stage 2 行。"""
+        trace_ids = ["trace-a"] * 4 + ["trace-b"] * 3 + ["trace-c"] * 2 + ["trace-d"]
+        return [
+            {
+                "ingest_seq": index,
+                "event_id": f"{trace_id}:span-{index}",
+                "trace_id": trace_id,
+                "span_id": f"span-{index}",
+                "parent_span_id": None if index == 0 else f"span-{index - 1}",
+                "project_id": "Leoxx/whowhen_pro",
+                "start_time": f"2030-01-01T00:00:{index:02d}.000Z",
+                "end_time": f"2030-01-01T00:00:{index + 1:02d}.000Z",
+                "duration_ms": 1_000 + index,
+                "span_type": "tool" if index % 2 else "trace",
+                "framework": "fixture",
+                "level": "DEFAULT",
+                "attributes_analysis": {"dynamic": index},
+                "attributes_map": {"dynamic": str(index)},
+                "raw_event": f"raw-{index}",
+            }
+            for index, trace_id in enumerate(trace_ids)
+        ]
 
     @staticmethod
     def canonical_bytes(value):
