@@ -3,8 +3,9 @@
 import hashlib
 import json
 from collections import Counter
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
+from typing import Protocol
 
 
 TRUTH_FORMAT = "agent-trace-json-storage-stage3-truth"
@@ -47,6 +48,125 @@ COHORT_CONTRACT = {
     },
 }
 DETAIL_PROFILES = ("text_64k", "text_512k", "text_2m", "entropy_512k")
+LAYOUTS = ("same_table", "separate", "full_core", "asset_ref")
+
+
+@dataclass(frozen=True)
+class LayoutCatalog:
+    """描述一种布局的写目标、列表入口、详情入口和水位要求。"""
+
+    name: str
+    write_tables: tuple[str, ...]
+    list_source: str
+    detail_source: str
+    requires_joint_watermark: bool
+
+
+def build_layout_catalog(layout: str) -> LayoutCatalog:
+    """返回阶段三四种固定布局的物理入口契约。"""
+    catalogs = {
+        "same_table": LayoutCatalog("same_table", ("events",), "events", "events", False),
+        "separate": LayoutCatalog(
+            "separate", ("events_analytics", "event_payloads"),
+            "events_analytics", "event_payloads", True,
+        ),
+        "full_core": LayoutCatalog(
+            "full_core", ("events_full", "events_core"),
+            "events_core", "events_full", True,
+        ),
+        "asset_ref": LayoutCatalog(
+            "asset_ref", ("events_analytics", "assets"),
+            "events_analytics", "assets", True,
+        ),
+    }
+    try:
+        return catalogs[layout]
+    except (KeyError, TypeError) as error:
+        raise ValueError(f"unsupported layout: {layout}") from error
+
+
+@dataclass(frozen=True)
+class QuerySpec:
+    """保存统一逻辑查询类型及其绑定参数。"""
+
+    kind: str
+    parameters: dict[str, object] = field(default_factory=dict)
+
+    def __post_init__(self):
+        if self.kind not in {"list", "preview", "detail", "trace", "batch"}:
+            raise ValueError(f"unsupported query kind: {self.kind}")
+        if not isinstance(self.parameters, dict):
+            raise ValueError("query parameters must be an object")
+
+
+@dataclass(frozen=True)
+class BlockResult:
+    """描述一个 block 完成协议写入后的联合水位。"""
+
+    rows: int
+    watermark: int
+    watermarks: dict[str, int]
+    wall_ms: float
+
+
+@dataclass(frozen=True)
+class MaintenanceResult:
+    """描述写入可见或查询维护的完成状态和观测值。"""
+
+    completed: bool
+    watermarks: dict[str, int] = field(default_factory=dict)
+    observations: tuple[dict[str, object], ...] = ()
+    wall_ms: float = 0.0
+
+
+@dataclass(frozen=True)
+class QueryResult:
+    """保存完整读取到客户端的逻辑行及查询证据身份。"""
+
+    query_id: str
+    rows: tuple[dict[str, object], ...]
+    response_bytes: int
+    query_complete_ms: float
+    recovery_ms: float
+
+
+@dataclass(frozen=True)
+class StorageEvidence:
+    """保存按写目标分项的引擎空间和物理状态。"""
+
+    tables: dict[str, dict[str, object]]
+    merges: tuple[dict[str, object], ...] = ()
+
+
+@dataclass(frozen=True)
+class AccessEvidence:
+    """保存查询计划、索引扫描或 QueryFinish 证据。"""
+
+    plans: dict[str, str]
+    index_scans: dict[str, int] = field(default_factory=dict)
+    query_finish: dict[str, dict[str, object]] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class CleanupResult:
+    """描述 adapter 独占 namespace 的清理确认。"""
+
+    namespace: str
+    removed: bool
+
+
+class LayoutAdapter(Protocol):
+    """定义主矩阵、part 状态和故障实验共用的 adapter 边界。"""
+
+    def create(self) -> dict[str, object]: ...
+    def ingest_block(self, block: list[dict[str, object]]) -> BlockResult: ...
+    def wait_write_complete(self, watermark: int) -> MaintenanceResult: ...
+    def wait_query_ready(self, timeout_seconds: int) -> MaintenanceResult: ...
+    def get_available(self, asset_id: str): ...
+    def run_query(self, query: QuerySpec) -> QueryResult: ...
+    def collect_storage(self) -> StorageEvidence: ...
+    def collect_access_evidence(self, query_ids: list[str]) -> AccessEvidence: ...
+    def cleanup(self) -> CleanupResult: ...
 
 
 def _canonical_bytes(value):

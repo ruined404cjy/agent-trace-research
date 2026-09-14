@@ -1,0 +1,204 @@
+import hashlib
+import os
+import sys
+import tempfile
+import unittest
+import uuid
+from pathlib import Path
+
+
+STAGE_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(STAGE_DIR / "runner"))
+
+import opengauss
+from assets import AssetError, AssetReference, AssetResolver, LocalAssetStore
+from common import QuerySpec, build_layout_catalog
+
+
+PAYLOAD = b'{"content":"\xe4\xb8\xad\xe6\x96\x87 payload"}'
+
+
+def fixture(root):
+    """创建包含 payload、空 payload 与 Trace 顺序的最小事件 block。"""
+    digest = hashlib.sha256(PAYLOAD).hexdigest()
+    path = root / "payloads" / "one.json"
+    path.parent.mkdir()
+    path.write_bytes(PAYLOAD)
+    common = {
+        "trace_id": "trace-a", "project_id": "project-a",
+        "end_time": "2030-01-01T00:00:01.000Z", "duration_ms": 1,
+        "span_type": "llm", "framework": "fixture", "level": "INFO",
+    }
+    return [
+        {**common, "ingest_seq": 0, "event_id": "event-a", "span_id": "span-a",
+         "parent_span_id": None, "start_time": "2030-01-01T00:00:00.000Z",
+         "cohort": "main", "profile": "text_64k", "content_type": "application/json",
+         "encoding": "utf-8", "content_length": len(PAYLOAD),
+         "preview": PAYLOAD.decode()[:200], "sha256": digest,
+         "payload_path": "payloads/one.json"},
+        {**common, "ingest_seq": 1, "event_id": "event-b", "span_id": "span-b",
+         "parent_span_id": "span-a", "start_time": "2030-01-01T00:00:00.500Z",
+         "cohort": None, "profile": None, "content_type": None, "encoding": None,
+         "content_length": None, "preview": None, "sha256": None, "payload_path": None},
+    ]
+
+
+class OpenGaussAdapterUnitTest(unittest.TestCase):
+    """验证 openGauss 四布局的 SQL、状态和公共协议。"""
+
+    def test_layout_catalog_has_distinct_tables_and_completion_watermarks(self):
+        catalog = build_layout_catalog("full_core")
+        self.assertEqual(catalog.write_tables, ("events_full", "events_core"))
+        self.assertEqual(catalog.list_source, "events_core")
+        self.assertEqual(catalog.detail_source, "events_full")
+        self.assertTrue(catalog.requires_joint_watermark)
+        self.assertEqual(build_layout_catalog("separate").write_tables,
+                         ("events_analytics", "event_payloads"))
+        self.assertEqual(build_layout_catalog("asset_ref").write_tables,
+                         ("events_analytics", "assets"))
+
+    def test_ddls_use_text_and_cover_list_trace_asset_and_toast_paths(self):
+        for layout in opengauss.LAYOUTS:
+            ddl = opengauss.create_layout_ddls("jsons3_test", layout)
+            self.assertIn("CREATE SCHEMA jsons3_test_" + layout, ddl)
+            self.assertIn("(project_id,start_time,event_id)", ddl)
+            self.assertIn("(project_id,trace_id,start_time,event_id)", ddl)
+            if layout != "asset_ref":
+                self.assertIn("payload TEXT", ddl)
+        asset = opengauss.create_layout_ddls("jsons3_test", "asset_ref")
+        self.assertIn("CREATE TABLE jsons3_test_asset_ref.assets", asset)
+        for status in ("pending", "available", "failed", "deleting"):
+            self.assertIn("'" + status + "'", asset)
+        storage = opengauss.storage_sql("jsons3_test_same_table", "events")
+        self.assertIn("pg_relation_size", storage)
+        self.assertIn("reltoastrelid", storage)
+        evidence = opengauss.access_evidence_sql("jsons3_test_same_table")
+        self.assertIn("idx_scan", evidence)
+        self.assertIn("pg_stat_user_indexes", evidence)
+        self.assertTrue(opengauss.explain_sql("SELECT 1").startswith("EXPLAIN ANALYZE "))
+        separate = opengauss.create_layout_ddls("jsons3_test", "separate")
+        payload_table = separate.split("CREATE TABLE jsons3_test_separate.event_payloads", 1)[1].split("CREATE INDEX", 1)[0]
+        self.assertIn("trace_id TEXT", payload_table)
+        self.assertIn("payload TEXT", payload_table)
+        self.assertNotIn("span_type", payload_table)
+        self.assertNotIn("duration_ms", payload_table)
+
+    def test_invalid_namespace_and_layout_fail_before_sql(self):
+        with self.assertRaises(ValueError):
+            opengauss.create_layout_ddls("bad-name", "same_table")
+        with self.assertRaises(ValueError):
+            build_layout_catalog("view")
+
+
+@unittest.skipUnless(os.environ.get("RUN_OPENGAUSS_INTEGRATION") == "1",
+                     "set RUN_OPENGAUSS_INTEGRATION=1")
+class OpenGaussAdapterIntegrationTest(unittest.TestCase):
+    """以唯一 schema 验证四布局真实写入、查询、状态和清理。"""
+
+    def test_four_layouts_return_full_bytes_real_states_evidence_and_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rows = fixture(root)
+            for layout in opengauss.LAYOUTS:
+                with self.subTest(layout=layout):
+                    namespace = "jsons3_" + uuid.uuid4().hex[:10]
+                    store = LocalAssetStore(root / (layout + "_assets"))
+                    adapter = opengauss.OpenGaussAdapter(
+                        "127.0.0.1", 15432, "agent-trace-opengauss-v6",
+                        namespace, layout, root, store,
+                    )
+                    self.addCleanup(adapter.cleanup)
+                    adapter.create()
+                    try:
+                        block = adapter.ingest_block(rows)
+                        self.assertEqual(block.watermark, 2)
+                        ready = adapter.wait_write_complete(2)
+                        self.assertTrue(ready.completed)
+                        self.assertEqual(set(ready.watermarks), set(build_layout_catalog(layout).write_tables))
+                        self.assertTrue(adapter.wait_query_ready(timeout_seconds=30).completed)
+
+                        listing = adapter.run_query(QuerySpec("list", {
+                            "project_id": "project-a", "start_time": "2030-01-01T00:00:00.000Z",
+                            "end_time": "2030-01-02T00:00:00.000Z", "page_size": 10,
+                        }))
+                        self.assertEqual([row["event_id"] for row in listing.rows], ["event-a", "event-b"])
+                        self.assertTrue(all(row["preview"] is None and row["payload"] is None
+                                            for row in listing.rows))
+                        preview = adapter.run_query(QuerySpec("preview", {
+                            "project_id": "project-a", "start_time": "2030-01-01T00:00:00.000Z",
+                            "end_time": "2030-01-02T00:00:00.000Z", "page_size": 10,
+                        }))
+                        self.assertEqual(preview.rows[0]["preview"], PAYLOAD.decode())
+                        self.assertTrue(all(row["payload"] is None for row in preview.rows))
+
+                        detail = adapter.run_query(QuerySpec("detail", {
+                            "project_id": "project-a", "trace_id": "trace-a",
+                            "start_time": "2030-01-01T00:00:00.000Z", "event_id": "event-a",
+                        }))
+                        self.assertEqual(detail.rows[0]["payload"], PAYLOAD)
+                        self.assertEqual(detail.rows[0]["sha256"], hashlib.sha256(PAYLOAD).hexdigest())
+                        trace = adapter.run_query(QuerySpec("trace", {
+                            "project_id": "project-a", "trace_id": "trace-a",
+                            "start_time": "2030-01-01T00:00:00.000Z",
+                            "end_time": "2030-01-02T00:00:00.000Z",
+                        }))
+                        self.assertEqual([row["event_id"] for row in trace.rows], ["event-a", "event-b"])
+                        self.assertEqual(trace.rows[0]["payload"], PAYLOAD)
+                        self.assertIsNone(trace.rows[1]["payload"])
+                        self.assertGreaterEqual(trace.response_bytes, len(PAYLOAD))
+                        batch = adapter.run_query(QuerySpec("batch"))
+                        self.assertEqual([row["event_id"] for row in batch.rows], ["event-a", "event-b"])
+                        self.assertEqual(batch.rows[0]["payload"], PAYLOAD)
+
+                        evidence = adapter.collect_access_evidence([detail.query_id])
+                        self.assertIn("EXPLAIN ANALYZE", evidence.plans[detail.query_id])
+                        self.assertTrue(evidence.index_scans)
+                        storage = adapter.collect_storage()
+                        self.assertEqual(set(storage.tables), set(build_layout_catalog(layout).write_tables))
+                        self.assertTrue(all("toast_bytes" in value for value in storage.tables.values()))
+
+                        if layout == "asset_ref":
+                            record = adapter.get_available(rows[0]["sha256"])
+                            self.assertEqual(record.status, "available")
+                            for status in ("pending", "failed", "deleting", "available"):
+                                adapter.set_asset_status(record.asset_id, status)
+                                actual = adapter.get_available(record.asset_id)
+                                self.assertEqual(actual.status, status)
+                                if status != "available":
+                                    self.assertFalse(adapter.wait_write_complete(2).completed)
+                                    with self.assertRaisesRegex(AssetError, "^" + status + "$"):
+                                        AssetResolver(adapter, store).resolve(
+                                            AssetReference(ref="asset:sha256:" + record.asset_id,
+                                                content_type=record.content_type,
+                                                encoding=record.encoding,
+                                                content_length=record.content_length,
+                                                preview=rows[0]["preview"])
+                                        )
+                                else:
+                                    self.assertTrue(adapter.wait_write_complete(2).completed)
+                    finally:
+                        cleanup = adapter.cleanup()
+                    self.assertTrue(cleanup.removed)
+                    self.assertFalse(adapter.namespace_exists())
+
+    def test_failed_ingest_still_allows_confirmed_cleanup(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rows = fixture(root)
+            rows[0]["sha256"] = "0" * 64
+            adapter = opengauss.OpenGaussAdapter(
+                "127.0.0.1", 15432, "agent-trace-opengauss-v6",
+                "jsons3_" + uuid.uuid4().hex[:10], "same_table", root,
+            )
+            adapter.create()
+            try:
+                with self.assertRaisesRegex(ValueError, "payload identity mismatch"):
+                    adapter.ingest_block(rows)
+            finally:
+                cleanup = adapter.cleanup()
+            self.assertTrue(cleanup.removed)
+            self.assertFalse(adapter.namespace_exists())
+
+
+if __name__ == "__main__":
+    unittest.main()
