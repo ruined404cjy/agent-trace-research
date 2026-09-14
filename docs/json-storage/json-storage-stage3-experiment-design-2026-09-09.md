@@ -15,7 +15,7 @@
 3. 单个长值与相同总字节的多字段对象是否表现不同；
 4. asset reference 的内容恢复、引用完整性和基本故障行为。
 
-阶段二已确定横向运行基础设施和可比性口径。阶段三复用该契约，主矩阵只包含两引擎相同的稳定列和 payload 相关列，不携带动态属性。数据库内 payload 使用字节保持的 TEXT/String，openGauss JSONB、Map、ClickHouse Native JSON 和长 payload 路径查询不进入本阶段变量。
+阶段二已确定横向运行基础设施和可比性口径。阶段三复用该契约，主矩阵只包含两引擎相同的独立列和 payload 相关列，不携带动态属性。数据库内 payload 使用字节保持的 TEXT/String，openGauss JSONB、Map、ClickHouse Native JSON 和长 payload 路径查询不进入本阶段变量。
 
 实验不经过 Collector、exporter 或 benchmark，不形成端到端系统性能结论。完整对象存储服务、网络、鉴权、保留策略和多租户隔离不进入物理布局主矩阵。
 
@@ -91,8 +91,8 @@ asset resolver 只读取 manifest 中存在的 digest，并核对引用中的 MI
 
 | ID | 查询 | 返回内容 |
 |---|---|---|
-| L01 | 按 profile 和时间过滤、排序、分页 | 稳定列 |
-| L02 | 按相同条件读取预览 | 稳定列和 200 字符 preview |
+| L01 | 按 profile 和时间过滤、排序、分页 | 独立列 |
+| L02 | 按相同条件读取预览 | 独立列和 200 字符 preview |
 | L03 | 按 event ID 读取并恢复一个 64 KiB、512 KiB 和 2 MiB payload | payload bytes |
 | L04 | 一次测量依次批量恢复四个 profile 的全部 payload | identity、length、SHA-256 摘要 |
 | L05 | 比较 `single_512k` 与 `many_512k` | 写入、空间和恢复指标 |

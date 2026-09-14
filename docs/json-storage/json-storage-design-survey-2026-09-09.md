@@ -318,7 +318,7 @@ exporter 把全部 span/event 属性写入 `metadata`，同时把部分 GenAI �
 
 ```text
 events_analytics
-  trace/span 稳定列 + 常用维度 + promoted attributes
+  trace/span 独立列 + 常用维度 + promoted attributes
   + 有预算的动态属性存储 + input/output preview + 长度/hash/引用状态
 
 event_payloads
@@ -417,7 +417,7 @@ langfuse: OTLP -> Langfuse ingestion/worker -> ClickHouse/PostgreSQL/MinIO
 3. 使用 truth manifest 校验新旧读取结果、计数和 canonical hash。
 4. 切换读取面并保留回滚窗口，稳定后停止旧写入。
 
-启动时 schema preflight 应拒绝不兼容组合。关系型引擎仍满足稳定列查询和事务要求时，优先调整 schema 与 exporter。完成热点列、动态属性、Full/Core 和 asset 的单变量验证后，若动态路径规模、列式裁剪或 Trace 关系查询仍超出目标，再比较 ClickHouse、Tempo、文档/搜索引擎或专用存储。更换或开发数据库的收益还需覆盖迁移、查询改写、运维、备份恢复和长期维护成本。
+启动时 schema preflight 应拒绝不兼容组合。关系型引擎仍满足独立列查询和事务要求时，优先调整 schema 与 exporter。完成热点列、动态属性、Full/Core 和 asset 的单变量验证后，若动态路径规模、列式裁剪或 Trace 关系查询仍超出目标，再比较 ClickHouse、Tempo、文档/搜索引擎或专用存储。更换或开发数据库的收益还需覆盖迁移、查询改写、运维、备份恢复和长期维护成本。
 
 ## 6. 遗留问题
 

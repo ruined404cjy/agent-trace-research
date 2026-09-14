@@ -135,7 +135,7 @@ canonical hash 忽略 object key 顺序，保留数组顺序，并区分路径 m
 | 热点字段过滤 | 独立列或定向路径的过滤、排序和聚合 |
 | 冷路径过滤 | 未提示、未建定向索引或进入 shared data 的路径 |
 | 整对象读取 | 返回完整 metadata/input/output 并校验 hash |
-| 列表与预览 | 返回稳定列及 200 字符 preview |
+| 列表与预览 | 返回独立列及 200 字符 preview |
 | 完整解析 | 从 inline、LOB 或 reference 恢复原始内容 |
 
 正确性查询返回排序后的命中 ID 并与 truth 核对。性能查询使用 `count`、分组或聚合，避免把大量 ID 排序、序列化和网络传输计入路径读取耗时。
@@ -233,7 +233,7 @@ events_core
 
 记录 Full/Core 分项空间、载入写放大、物化可见延迟、bytes read、CPU 和查询时间。Core 预览必须符合统一的 UTF-8 截断规则，Full 内容 hash 和命中 ID 必须与 truth manifest 一致。
 
-如果稳定列查询已经能完全裁剪大列，报告该事实；Full/Core 的结论只保留 preview 计算、回查和写放大方面的差异，不把预期收益写成既定结果。
+如果独立列查询已经能完全裁剪大列，报告该事实；Full/Core 的结论只保留 preview 计算、回查和写放大方面的差异，不把预期收益写成既定结果。
 
 ## 6. 实验三：长 payload 的内联与引用（顺延阶段三）
 

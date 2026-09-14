@@ -317,7 +317,7 @@ Tempo 的 intrinsic/dedicated columns、Parquet Variant shredding、Sinew 的物
 
 [阶段二实验](json-storage-stage2-experiment-design-2026-09-09.md)已在 48,534 行固定 Trace 数据上，统一比较 openGauss JSONB、ClickHouse String JSON、ClickHouse Map 和 ClickHouse Native JSON。
 
-统一契约覆盖输入、分批写入、时间窗口、查询返回、正确性、原文恢复和三轮统计。结果见[阶段二横向实验报告](json-storage-stage2-report-2026-09-09.md)。
+统一契约覆盖输入、分批写入、时间窗口、查询返回、正确性、原文恢复和三轮统计。结果见[阶段二横向实验报告](json-storage-stage2-report-2026-09-10.md)。
 
 Full/Core、长 payload 和 asset reference 纳入[阶段三实验设计](json-storage-stage3-experiment-design-2026-09-09.md)。阶段三独立记录写放大、空间、列表与详情读取、原文恢复和 asset 故障结果。
 

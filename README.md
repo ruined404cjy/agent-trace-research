@@ -8,7 +8,7 @@ Agent Trace 的公开调研、复现指南和实验设计。仓库当前重点�
 |---|---|
 | [JSON 存储第一阶段实验基础设施](experiments/json-storage-stage1/README.md) | 生成正确性与路径组织数据，并记录 openGauss JSONB 与 ClickHouse Native JSON 实验结果 |
 | [JSON 存储阶段二横向实验](experiments/json-storage-stage2/README.md) | 已完成真实输入审计、六轮动态属性实验、正确性与原文恢复验证 |
-| [JSON 存储阶段二补充实验](experiments/json-storage-stage2-sup/README.md) | openGauss JSON、openGauss JSONB、ClickHouse String JSON 与 ClickHouse Native JSON 的复现入口 |
+| [JSON 存储阶段二调优矩阵](experiments/json-storage-stage2-sup/README.md) | 四种 JSON 表示、openGauss 定向索引与 ClickHouse Native JSON 调优候选的复现入口 |
 
 ## 文档
 
@@ -17,12 +17,12 @@ Agent Trace 的公开调研、复现指南和实验设计。仓库当前重点�
 | [文档分类索引](docs/README.md) | 按项目背景、JSON 存储和执行记录组织全部文档 |
 | [JSON 存储原理](docs/json-storage/json-storage-principles-2026-09-09.md) | openGauss JSONB 与 ClickHouse Native JSON 的写入、物理存储、维护和查询流程 |
 | [JSON 存储阶段一机制报告](docs/json-storage/json-storage-stage1-report-2026-09-09.md) | 汇总阶段一背景与基线、openGauss/ClickHouse 引擎内实测、机制结论和阶段二入口 |
-| [JSON 存储阶段二报告](docs/json-storage/json-storage-stage2-report-2026-09-09.md) | 原六结构与补充四结构的处理流程、场景化结果和证据边界 |
-| [JSON 存储阶段二汇报辅助材料](docs/json-storage/json-storage-stage2-sup-pre-2026-09-09.md) | 两引擎流程、Sidecar 与四结构场景化比较摘要 |
+| [JSON 存储阶段二报告](docs/json-storage/json-storage-stage2-report-2026-09-10.md) | 四种 JSON 表示、定向调优候选、访问路径证据和适用范围 |
+| [JSON 存储阶段二汇报辅助材料](docs/json-storage/json-storage-stage2-sup-pre-2026-09-10.md) | 两引擎流程、Sidecar 与四结构场景化比较摘要 |
 | [JSON 存储设计调研](docs/json-storage/json-storage-design-survey-2026-09-09.md) | 代表性系统、论文、现有项目状态、工程结论与遗留问题 |
 | [JSON 存储阶段一实验设计](docs/json-storage/json-storage-stage1-experiment-design-2026-09-09.md) | 阶段一多字段机制实验及顺延目标的数据、workload、指标和门槛 |
 | [JSON 存储阶段二实验设计](docs/json-storage/json-storage-stage2-experiment-design-2026-09-09.md) | 真实 Trace 审计与 openGauss/ClickHouse 动态属性统一横向实验 |
-| [JSON 存储阶段二补充实验设计](docs/json-storage/json-storage-stage2-sup-experiment-design-2026-09-09.md) | JSON、JSONB、ClickHouse String JSON、ClickHouse Native JSON 四结构横比及 ClickHouse 机制观察 |
+| [JSON 存储阶段二调优矩阵实验设计](docs/json-storage/json-storage-stage2-sup-experiment-design-2026-09-10.md) | 数据派生、七类查询、单变量调优候选和正确性门禁 |
 | [JSON 存储阶段三实验设计](docs/json-storage/json-storage-stage3-experiment-design-2026-09-09.md) | 同表内联、独立 payload 表、Full/Core 与 asset reference 实验 |
 | [OTel 与 Langfuse 学习指南](docs/project-background/otel-langfuse-study-guide.md) | OTel、Collector、GenAI 语义和 Langfuse 摄入链路 |
 | [标准 openGauss 行存复现指南](docs/project-background/trace-ingestion-demo-blue-zone-guide.md) | 历史固定版本的 openGauss row profile 复现 |
@@ -30,8 +30,9 @@ Agent Trace 的公开调研、复现指南和实验设计。仓库当前重点�
 
 ## 当前状态
 
-- 资料修订日期：2026-09-09；阶段二原实验基线日期：2026-09-07，补充实验基线日期：2026-09-09。
-- 阶段二原实验有效结果位于 `docs/temp/json-storage-stage2/formal-20260907-retry-3/`；早期失败产物仅保留诊断。
+- 资料修订日期：2026-09-11；阶段二调优矩阵完成日期：2026-09-11。
+- 阶段二主结果位于 `docs/temp/json-storage-stage2-sup/final-matrix-20260911/`、`isolation-matrix-20260911/` 和 `text-baseline-matrix-20260911/`；七个单变量目标的确定性汇总位于 `final-matrix-20260911/final-summary.json`。
+- ClickHouse 大值路径的独立输出控制位于 `docs/temp/json-storage-stage2-sup/clickhouse-projection-controls-20260910/`。
 - exporter 远端 main：2026-09-07 · `81b55be`；SPEC v1.8 仍冻结 18 列最小 OTel schema。
 - trace-synthesis 远端 main：2026-09-07 · `ef3be14`；v4 database catalog revision 仍为 `2026-09-02.3`、28 列。
 - 已验证历史配对：benchmark `9529c8f`、exporter `54ca553`。

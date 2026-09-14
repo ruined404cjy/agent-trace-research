@@ -16,9 +16,9 @@
 |---|---|---|
 | 原理 | [openGauss JSONB 与 ClickHouse Native JSON](json-storage/json-storage-principles-2026-09-09.md) | 四种 JSON 存储结构的写入、物理存储、后台维护、查询和恢复流程 |
 | 调研 | [JSON 存储设计调研](json-storage/json-storage-design-survey-2026-09-09.md) | 代表性系统、论文、当前项目状态和设计方向 |
-| 实验设计 | [阶段一](json-storage/json-storage-stage1-experiment-design-2026-09-09.md) · [阶段二](json-storage/json-storage-stage2-experiment-design-2026-09-09.md) · [阶段二补充](json-storage/json-storage-stage2-sup-experiment-design-2026-09-09.md) · [阶段三](json-storage/json-storage-stage3-experiment-design-2026-09-09.md) | 多字段 JSON、跨引擎比较、四结构补充实验和长 payload 布局 |
-| 实验报告 | [阶段一](json-storage/json-storage-stage1-report-2026-09-09.md) · [阶段二](json-storage/json-storage-stage2-report-2026-09-09.md) | 已完成实验的证据、数据结果、分析和适用范围 |
-| 汇报材料 | [阶段二组内汇报辅助材料](json-storage/json-storage-stage2-sup-pre-2026-09-09.md) | 核心流程与场景化比较摘要 |
+| 实验设计 | [阶段一](json-storage/json-storage-stage1-experiment-design-2026-09-09.md) · [阶段二](json-storage/json-storage-stage2-experiment-design-2026-09-09.md) · [阶段二调优矩阵](json-storage/json-storage-stage2-sup-experiment-design-2026-09-10.md) · [阶段三](json-storage/json-storage-stage3-experiment-design-2026-09-09.md) | 多字段 JSON、跨引擎表示比较、定向调优和长 payload 布局 |
+| 实验报告 | [阶段一](json-storage/json-storage-stage1-report-2026-09-09.md) · [阶段二](json-storage/json-storage-stage2-report-2026-09-10.md) | 已完成实验的证据、数据结果、分析和适用范围 |
+| 汇报材料 | [阶段二组内汇报辅助材料](json-storage/json-storage-stage2-sup-pre-2026-09-10.md) | 核心流程与场景化比较摘要 |
 
 JSON 存储流程图位于 `json-storage/assets/`，由原理文档、报告和汇报材料共同使用。
 
