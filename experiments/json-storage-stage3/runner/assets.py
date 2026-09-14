@@ -140,7 +140,10 @@ class LocalAssetStore:
 
     def _validate_within_root(self, path: Path):
         """拒绝符号链接和任何不位于 canonical root 的对象路径。"""
-        canonical_path = path.resolve()
+        try:
+            canonical_path = path.resolve()
+        except RuntimeError as error:
+            raise AssetError("corrupt") from error
         try:
             canonical_path.relative_to(self.root)
         except ValueError as error:
@@ -280,6 +283,10 @@ class LocalAssetStore:
                     if path.is_file():
                         objects.append(path)
             return tuple(sorted((path for path in objects if path not in reachable), key=str))
+        except AssetError:
+            raise
+        except RuntimeError as error:
+            raise AssetError("corrupt") from error
         except OSError as error:
             raise AssetError("failed") from error
 

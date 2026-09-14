@@ -218,6 +218,34 @@ class AssetStoreTest(unittest.TestCase):
 
             self.assertEqual(tuple(outside.iterdir()), ())
 
+    def test_store_normalizes_self_referential_shard_symlink(self):
+        """捕获自引用分片 symlink 泄漏 resolve 的 RuntimeError。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = assets.LocalAssetStore(root / "store")
+            shard = store.root / RECORD.sha256[:2]
+            outside = root / "outside"
+            outside.mkdir()
+            shard.symlink_to(shard, target_is_directory=True)
+
+            with self.assertRaisesRegex(assets.AssetError, "^corrupt$"):
+                store.publish_bytes(RECORD.sha256, PAYLOAD)
+            with self.assertRaisesRegex(assets.AssetError, "^corrupt$"):
+                store.find_orphans({shard})
+
+            self.assertEqual(tuple(store.root.iterdir()), (shard,))
+            self.assertEqual(tuple(outside.iterdir()), ())
+
+    def test_orphan_scan_normalizes_self_referential_reachable_path(self):
+        """捕获 orphan 可达路径解析泄漏自引用 symlink 的 RuntimeError。"""
+        with tempfile.TemporaryDirectory() as directory:
+            store = assets.LocalAssetStore(Path(directory))
+            shard = store.root / RECORD.sha256[:2]
+            shard.symlink_to(shard, target_is_directory=True)
+
+            with self.assertRaisesRegex(assets.AssetError, "^corrupt$"):
+                store.find_orphans({shard})
+
     def test_store_rejects_symlinked_final_object_without_overwriting_it(self):
         """捕获最终对象符号链接被原子替换覆盖或跟随。"""
         with tempfile.TemporaryDirectory() as directory:
