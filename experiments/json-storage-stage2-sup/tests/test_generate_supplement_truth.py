@@ -61,12 +61,14 @@ class SupplementTruthGeneratorTest(unittest.TestCase):
             },
         )
         self.assertEqual(results["S04"], {"non_null_count": 2, "utf8_bytes": 24})
+        self.assertEqual(results["S07"], {"non_null_count": 3, "sum": 6})
         self.assertEqual(
             results["S05"],
             [[
                 "2030-01-01T00:00:01Z",
                 "event-1",
                 {
+                    "experiment": {"duration_ms": 1},
                     "failure": {"mistake_mode": "A.4"},
                     "gen_ai": {
                         "operation": {"name": "execute_tool"},
@@ -80,17 +82,32 @@ class SupplementTruthGeneratorTest(unittest.TestCase):
         self.assertEqual(
             results["S06"]["rows"],
             [
-                ["2030-01-01T00:00:02Z", "event-2", {"failure": {"mistake_mode": "A.3"}, "gen_ai": {"operation": {"name": "execute_tool"}, "output": {"messages": {"text": "你好"}}}}],
-                ["2030-01-01T00:00:03Z", "event-3", {"failure": {"mistake_mode": "A.4"}, "gen_ai": {"operation": {"name": "chat"}, "output": {"messages": None}}}],
-                ["2030-01-01T00:00:04Z", "event-4", {"failure": {"mistake_mode": "A.4"}, "gen_ai": {"operation": {"name": "chat"}, "output": {"messages": None}}}],
-                ["2030-01-01T00:00:05Z", "event-5", {"failure": {"mistake_mode": "A.4"}, "gen_ai": {"operation": {"name": "chat"}, "output": {"messages": None}}}],
-                ["2030-01-01T00:00:06Z", "event-6", {"failure": {"mistake_mode": "A.3"}, "gen_ai": {"operation": {"name": "execute_tool"}, "output": {"messages": None}}}],
+                ["2030-01-01T00:00:02Z", "event-2", {"experiment": {"duration_ms": 2}, "failure": {"mistake_mode": "A.3"}, "gen_ai": {"operation": {"name": "execute_tool"}, "output": {"messages": {"text": "你好"}}}}],
+                ["2030-01-01T00:00:03Z", "event-3", {"experiment": {"duration_ms": 3}, "failure": {"mistake_mode": "A.4"}, "gen_ai": {"operation": {"name": "chat"}, "output": {"messages": None}}}],
+                ["2030-01-01T00:00:04Z", "event-4", {"experiment": {"duration_ms": 4}, "failure": {"mistake_mode": "A.4"}, "gen_ai": {"operation": {"name": "chat"}, "output": {"messages": None}}}],
+                ["2030-01-01T00:00:05Z", "event-5", {"experiment": {"duration_ms": 5}, "failure": {"mistake_mode": "A.4"}, "gen_ai": {"operation": {"name": "chat"}, "output": {"messages": None}}}],
+                ["2030-01-01T00:00:06Z", "event-6", {"experiment": {"duration_ms": 6}, "failure": {"mistake_mode": "A.3"}, "gen_ai": {"operation": {"name": "execute_tool"}, "output": {"messages": None}}}],
             ],
         )
         self.assertEqual(
             results["S06"]["identity_sha256"],
             hashlib.sha256(b'["event-2","event-3","event-4","event-5","event-6"]').hexdigest(),
         )
+        self.assertTrue(all("experiment" in row[2] for row in results["S06"]["rows"]))
+
+    def test_v1_mechanism_view_keeps_frozen_analysis_document(self):
+        row = self.row("event-1", "2030-01-01T00:00:01Z", "tool", "execute_tool", "A.3", None)
+        parameters = {
+            "project_id": "project",
+            "start_time": "2030-01-01T00:00:00Z",
+            "end_time": "2030-01-01T00:00:02Z",
+            "trace_id": "trace-a",
+        }
+
+        result = generator.query_results([row], "S05", parameters, include_derived=False)
+
+        self.assertEqual(result[0][2], row["attributes_analysis"])
+        self.assertNotIn("experiment", result[0][2])
 
     def test_query_parameters_map_each_supplement_query_to_its_fixed_source(self):
         """捕获 S01 至 S06 错取来源参数或漏写固定路径和页大小。"""
@@ -112,6 +129,7 @@ class SupplementTruthGeneratorTest(unittest.TestCase):
                 "S04": {"project_id": "p", "start_time": "t0", "end_time": "t1", "attribute_key": "gen_ai.output.messages"},
                 "S05": {"project_id": "p", "start_time": "t0", "end_time": "t1", "trace_id": "trace"},
                 "S06": {"project_id": "p", "start_time": "t0", "end_time": "t1", "page_size": 256},
+                "S07": {"project_id": "p", "start_time": "t0", "end_time": "t1"},
             },
         )
 
@@ -139,6 +157,13 @@ class SupplementTruthGeneratorTest(unittest.TestCase):
             self.assertEqual(truth["record_count"], 2)
             self.assertEqual(truth["block_count"], 1)
             self.assertEqual(truth["results"]["S06"]["row_count"], 2)
+            self.assertEqual(truth["results"]["S07"], {"non_null_count": 2, "sum": 3})
+            self.assertEqual(len(truth["records"]), 2)
+            expected_attributes = common.derived_attributes(rows[0])
+            self.assertEqual(
+                truth["records"][0]["analysis_sha256"],
+                hashlib.sha256(common.canonical_bytes(expected_attributes)).hexdigest(),
+            )
             self.assertEqual(manifest["status"], "complete")
             self.assertIn("artifact_write", manifest["timings_ns"])
             self.assertNotIn("artifact_serialization", manifest["timings_ns"])
@@ -269,6 +294,7 @@ class SupplementTruthGeneratorTest(unittest.TestCase):
             "attributes_map": attributes_map,
             "event_id": event_id,
             "ingest_seq": int(event_id[-1]) - 1,
+            "duration_ms": int(event_id[-1]),
             "project_id": "project",
             "raw_event": f"raw-{event_id}",
             "span_type": span_type,

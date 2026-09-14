@@ -9,12 +9,13 @@ import urllib.parse
 import uuid
 from collections import Counter
 
-from supplement_common import LAYOUTS, QUERY_IDS, canonical_bytes
+from supplement_common import LAYOUTS, QUERY_IDS, canonical_bytes, derived_attributes
 
 
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
 QUERY_LOG_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 CLICKHOUSE_LAYOUTS = LAYOUTS[2:]
+PROJECTION_CONTROL_MODES = ("natural", "uniform_text", "aggregate")
 QUERY_LOG_METRICS = (
     "query_duration_ms", "read_rows", "read_bytes", "memory_usage",
     "result_rows", "result_bytes", "selected_rows", "selected_bytes",
@@ -49,15 +50,27 @@ def database_name(namespace, layout):
     return validate_identifier(f"{namespace}_{layout}", "database name")
 
 
-def create_layout_ddl(namespace, layout, budget):
-    """返回一个布局的 database、分析表和原文表 DDL。"""
+def create_layout_ddl(namespace, layout, budget, profile="baseline"):
+    """返回一个布局的 database、分析表、原文表及所选 profile DDL。"""
     database = database_name(namespace, layout)
     validate_budget(budget)
+    if profile not in {"baseline", "numeric_hint", "trace_sort", "tuned"}:
+        raise ValueError(f"unsupported profile: {profile}")
+    if profile != "baseline" and layout != "ch_native":
+        raise ValueError("optimized profiles require ch_native")
     attributes = {
         "ch_string": "attributes String CODEC(ZSTD(3))",
-        "ch_native": f"attributes JSON(max_dynamic_paths={budget})",
+        "ch_native": (
+            "attributes JSON(max_dynamic_paths=32, `experiment.duration_ms` Int64)"
+            if profile in {"numeric_hint", "tuned"} else f"attributes JSON(max_dynamic_paths={budget})"
+        ),
     }[layout]
     sidecar = ",\n    fidelity_values Map(String,String)" if layout == "ch_native" else ""
+    projection = ""
+    order_by = (
+        "(project_id,trace_id,start_time,event_id)"
+        if profile in {"trace_sort", "tuned"} else "(project_id,start_time,event_id)"
+    )
     return (
         f"CREATE DATABASE {database};\n"
         f"CREATE TABLE {database}.analytics (\n"
@@ -73,9 +86,9 @@ def create_layout_ddl(namespace, layout, budget):
         "    span_type String,\n"
         "    framework String,\n"
         "    level String,\n"
-        f"    {attributes}{sidecar}\n"
+        f"    {attributes}{sidecar}{projection}\n"
         ") ENGINE=MergeTree\n"
-        "ORDER BY (project_id,start_time,event_id);\n"
+        f"ORDER BY {order_by};\n"
         f"CREATE TABLE {database}.raw (\n"
         "    event_id String,\n"
         "    ingest_seq UInt64,\n"
@@ -85,9 +98,13 @@ def create_layout_ddl(namespace, layout, budget):
     )
 
 
-def query_sql(layout, query_id):
+def query_sql(layout, query_id, profile="baseline"):
     """返回使用 `{analytics}` 占位符的固定补充查询 SQL。"""
     validate_layout(layout)
+    if profile not in {"baseline", "numeric_hint", "trace_sort", "tuned"}:
+        raise ValueError(f"unsupported profile: {profile}")
+    if profile != "baseline" and layout != "ch_native":
+        raise ValueError("optimized profiles require ch_native")
     if query_id not in QUERY_IDS:
         raise ValueError(f"unsupported query ID: {query_id}")
     visibility = (
@@ -134,7 +151,51 @@ def query_sql(layout, query_id):
             "ORDER BY start_time, event_id LIMIT {page_size:UInt64} OFFSET "
             "(SELECT greatest(intDiv(count() + 3, 4) - 1, 0) FROM filtered) FORMAT JSONEachRow"
         ),
+        "S07": (
+            "SELECT count(attributes.experiment.duration_ms) AS non_null_count, "
+            f"sum(attributes.experiment.duration_ms{'' if profile in {'numeric_hint', 'tuned'} else '.:Int64'}) AS sum FROM {{analytics}} WHERE "
+            f"{visibility} FORMAT JSONEachRow"
+            if layout == "ch_native" else
+            "SELECT countIf(JSONHas(attributes, 'experiment', 'duration_ms')) AS non_null_count, "
+            "sum(JSONExtractInt(attributes, 'experiment', 'duration_ms')) AS sum FROM {analytics} WHERE "
+            f"{visibility} FORMAT JSONEachRow"
+        ),
     }[query_id]
+
+
+def projection_control_sql(layout, mode):
+    """返回 S04 的自然输出、统一文本输出或聚合输出查询。"""
+    validate_layout(layout)
+    if mode not in PROJECTION_CONTROL_MODES:
+        raise ValueError(f"unsupported projection control: {mode}")
+    visibility = (
+        "project_id = {project_id:String} "
+        "AND start_time >= {start_time:DateTime64(3, 'UTC')} "
+        "AND start_time < {end_time:DateTime64(3, 'UTC')}"
+    )
+    natural = {
+        "ch_string": "JSONExtractRaw(attributes, 'gen_ai', 'output', 'messages') AS value",
+        "ch_native": "attributes.gen_ai.output.messages AS value",
+    }[layout]
+    value_text = {
+        "ch_string": "nullIf(JSONExtractRaw(attributes, 'gen_ai', 'output', 'messages'), '')",
+        "ch_native": (
+            "if(isNull(attributes.gen_ai.output.messages), "
+            "CAST(NULL AS Nullable(String)), toJSONString(attributes.gen_ai.output.messages))"
+        ),
+    }[layout]
+    if mode == "natural":
+        return f"SELECT {natural} FROM {{analytics}} WHERE {visibility} FORMAT JSONEachRow"
+    if mode == "uniform_text":
+        return (
+            f"WITH {value_text} AS value_text SELECT value_text FROM {{analytics}} "
+            f"WHERE {visibility} AND isNotNull(value_text) FORMAT JSONEachRow"
+        )
+    return (
+        f"WITH {value_text} AS value_text SELECT countIf(isNotNull(value_text)) AS non_null_count, "
+        f"sum(length(ifNull(value_text, ''))) AS utf8_bytes FROM {{analytics}} "
+        f"WHERE {visibility} FORMAT JSONEachRow"
+    )
 
 
 def clickhouse_timestamp(value):
@@ -249,9 +310,11 @@ class ClickHouseFourLayoutAdapter:
         self.container_name = container_name
         self.namespace = namespace
         self._created_databases = set()
+        self._profiles = {}
 
     create_layout_ddl = staticmethod(create_layout_ddl)
     query_sql = staticmethod(query_sql)
+    projection_control_sql = staticmethod(projection_control_sql)
 
     def _database(self, layout):
         """返回布局的独占 database 名。"""
@@ -329,7 +392,7 @@ class ClickHouseFourLayoutAdapter:
         finally:
             connection.close()
 
-    def create_layout(self, layout, budget):
+    def create_layout(self, layout, budget, profile="baseline"):
         """创建一个空 database、分析表和原文表。"""
         validate_layout(layout)
         validate_budget(budget)
@@ -338,13 +401,14 @@ class ClickHouseFourLayoutAdapter:
             raise ValueError(f"database already exists: {database}")
         connection = self.connect_worker()
         try:
-            ddl = create_layout_ddl(self.namespace, layout, budget)
+            ddl = create_layout_ddl(self.namespace, layout, budget, profile)
             statements = [item.strip() for item in ddl.split(";") if item.strip()]
             self._request(connection, statements[0])
             self._created_databases.add(database)
             for statement in statements[1:]:
                 self._request(connection, statement)
-            return {"database": database, "ddl": ddl}
+            self._profiles[layout] = profile
+            return {"database": database, "ddl": ddl, "profile": profile}
         except Exception:
             if database in self._created_databases:
                 self.cleanup(layout)
@@ -353,10 +417,10 @@ class ClickHouseFourLayoutAdapter:
             connection.close()
 
     @staticmethod
-    def _analytics_row(layout, row):
-        """把预处理记录转换为指定 ClickHouse 分析表行。"""
+    def _analytics_row(layout, row, include_derived=True):
+        """把预处理记录转换为分析表行；include_derived 控制数值路径注入。"""
         try:
-            attributes = row["attributes_analysis"]
+            attributes = derived_attributes(row) if include_derived else row["attributes_analysis"]
             result = {
                 "ingest_seq": row["ingest_seq"], "event_id": row["event_id"], "trace_id": row["trace_id"],
                 "span_id": row["span_id"], "parent_span_id": row["parent_span_id"] or "",
@@ -423,7 +487,7 @@ class ClickHouseFourLayoutAdapter:
 
     def _statement(self, layout, query_id):
         """返回填入本实例分析表名的固定 SQL。"""
-        return query_sql(layout, query_id).replace("{analytics}", self._analytics(layout))
+        return query_sql(layout, query_id, self._profiles.get(layout, "baseline")).replace("{analytics}", self._analytics(layout))
 
     @staticmethod
     def _format_timestamp(value):
@@ -473,9 +537,33 @@ class ClickHouseFourLayoutAdapter:
             return {"non_null_count": len(values), "utf8_bytes": sum(len(canonical_bytes(value)) for value in values)}
         if query_id == "S05":
             return [self._document(row, layout) for row in sorted(rows, key=lambda row: (row["start_time"], row["event_id"]))]
+        if query_id == "S07":
+            if len(rows) != 1:
+                raise ValueError("numeric aggregation must return one row")
+            return {"non_null_count": int(rows[0]["non_null_count"]), "sum": int(rows[0]["sum"] or 0)}
         documents = [self._document(row, layout) for row in rows]
         return {"identity_sha256": hashlib.sha256(canonical_bytes([row[1] for row in documents])).hexdigest(),
                 "page_row_count": len(documents), "row_count": int(rows[0]["total_rows"]) if rows else 0, "rows": documents}
+
+    def _normalize_projection_control(self, mode, rows):
+        """返回 S04 非空值数量，并按输出契约统计 JSON 文本字节数。"""
+        if mode not in PROJECTION_CONTROL_MODES:
+            raise ValueError(f"unsupported projection control: {mode}")
+        if mode == "natural":
+            return self._normalize_result("S04", rows)
+        if mode == "uniform_text":
+            values = [self._path_value(row.get("value_text")) for row in rows]
+            if any(value is None for value in values):
+                raise ValueError("uniform projection must only return non-null values")
+            return {"non_null_count": len(values),
+                    "utf8_bytes": sum(len(canonical_bytes(value)) for value in values)}
+        if len(rows) != 1:
+            raise ValueError("aggregate projection must return one result row")
+        try:
+            return {"non_null_count": int(rows[0]["non_null_count"]),
+                    "utf8_bytes": int(rows[0]["utf8_bytes"])}
+        except (KeyError, TypeError, ValueError) as error:
+            raise ValueError("invalid aggregate projection result") from error
 
     def execute_query(self, connection, layout, query_id, params):
         """执行一条查询并返回延迟、恢复耗时和待批量采集的唯一 query ID。"""
@@ -487,10 +575,40 @@ class ClickHouseFourLayoutAdapter:
         recovery_started = time.perf_counter()
         result = self._normalize_result(query_id, self._json_rows(body), params, layout)
         recovery_ms = (time.perf_counter() - recovery_started) * 1000
-        row_count = result["row_count"] if query_id == "S03" else result["non_null_count"] if query_id == "S04" else result["page_row_count"] if query_id == "S06" else len(result)
+        row_count = result["row_count"] if query_id == "S03" else result["non_null_count"] if query_id == "S04" else result["page_row_count"] if query_id == "S06" else 1 if query_id == "S07" else len(result)
         return {"latency_ms": latency_ms, "recovery_ms": recovery_ms, "result": result,
                 "result_sha256": hashlib.sha256(canonical_bytes(result)).hexdigest(), "row_count": row_count,
                 "query_log_id": server_query_id}
+
+    def execute_projection_control(self, connection, layout, mode, params):
+        """执行 S04 控制查询并分别记录查询、响应读取和结果恢复耗时。"""
+        validate_layout(layout)
+        if mode not in PROJECTION_CONTROL_MODES:
+            raise ValueError(f"unsupported projection control: {mode}")
+        statement = projection_control_sql(layout, mode).replace("{analytics}", self._analytics(layout))
+        server_query_id = f"json_s2sup_s04_{mode}_{uuid.uuid4().hex}"
+        timing = {}
+        started = time.perf_counter()
+        body = self._request(
+            connection,
+            statement,
+            parameters=self._query_parameters("S04", params),
+            query_id=server_query_id,
+            timing=timing,
+        )
+        latency_ms = (time.perf_counter() - started) * 1000
+        recovery_started = time.perf_counter()
+        result = self._normalize_projection_control(mode, self._json_rows(body))
+        recovery_ms = (time.perf_counter() - recovery_started) * 1000
+        return {
+            "latency_ms": latency_ms,
+            "query_log_id": server_query_id,
+            "recovery_ms": recovery_ms,
+            "response_bytes": len(body.encode("utf-8")),
+            "response_read_ms": timing.get("response_read_ms", 0.0),
+            "result": result,
+            "result_sha256": hashlib.sha256(canonical_bytes(result)).hexdigest(),
+        }
 
     def collect_plan(self, layout, query_id, params):
         """返回与正式查询使用相同绑定参数的 ClickHouse 自然执行计划。"""
@@ -549,17 +667,45 @@ class ClickHouseFourLayoutAdapter:
             return int(rows[0]["count"])
         finally: connection.close()
 
-    def finish_maintenance(self, layout, timeout_seconds):
-        """等待 merge backlog 连续三次为零，基础比较不执行 OPTIMIZE FINAL。"""
+    def set_merges(self, layout, enabled):
+        """同时启停当前布局分析表与原文表的后台 merge。"""
+        validate_layout(layout)
+        if type(enabled) is not bool:
+            raise ValueError("enabled must be a boolean")
+        action = "START" if enabled else "STOP"
+        connection = self.connect_worker()
+        try:
+            for relation in (self._analytics(layout), self._raw(layout)):
+                self._request(connection, f"SYSTEM {action} MERGES {relation}")
+        finally:
+            connection.close()
+
+    def finish_maintenance(self, layout, timeout_seconds, optimize_final=False):
+        """等待 merge 空闲；受控比较可将分析表与原文表强制合并。"""
         validate_layout(layout)
         if not isinstance(timeout_seconds, int) or isinstance(timeout_seconds, bool) or timeout_seconds <= 0: raise ValueError("timeout_seconds must be positive")
-        started = time.monotonic(); observations = []; zero_streak = 0
-        while True:
-            backlog = self._merge_backlog(layout); observations.append(backlog)
-            zero_streak = zero_streak + 1 if backlog == 0 else 0
-            if zero_streak == 3: return {"completed": True, "observations": observations, "timed_out": False, "waited_seconds": time.monotonic() - started, "zero_streak": zero_streak}
-            if time.monotonic() - started >= timeout_seconds: return {"completed": False, "observations": observations, "timed_out": True, "waited_seconds": time.monotonic() - started, "zero_streak": zero_streak}
-            time.sleep(0.1)
+        def wait_idle():
+            started = time.monotonic(); observations = []; zero_streak = 0
+            while True:
+                backlog = self._merge_backlog(layout); observations.append(backlog)
+                zero_streak = zero_streak + 1 if backlog == 0 else 0
+                if zero_streak == 3: return {"completed": True, "observations": observations, "timed_out": False, "waited_seconds": time.monotonic() - started, "zero_streak": zero_streak}
+                if time.monotonic() - started >= timeout_seconds: return {"completed": False, "observations": observations, "timed_out": True, "waited_seconds": time.monotonic() - started, "zero_streak": zero_streak}
+                time.sleep(0.1)
+        result = wait_idle()
+        if not result["completed"] or not optimize_final:
+            return result
+        connection = self.connect_worker()
+        try:
+            timings = {}
+            for name, relation in (("analytics", self._analytics(layout)), ("raw", self._raw(layout))):
+                started = time.perf_counter()
+                self._request(connection, "OPTIMIZE TABLE " + relation + " FINAL")
+                timings[name] = (time.perf_counter() - started) * 1000
+        finally:
+            connection.close()
+        after = wait_idle()
+        return {**after, "before_optimize": result, "optimize_final_ms": timings}
 
     def collect_storage(self, layout):
         """采集 active parts、压缩字节、merge 状态和 Native JSON 路径。"""
@@ -572,7 +718,17 @@ class ClickHouseFourLayoutAdapter:
             paths = None
             if layout == "ch_native":
                 row = self._json_rows(self._request(connection, "SELECT arraySort(arrayDistinct(arrayFlatten(groupArray(JSONDynamicPaths(attributes))))) AS dynamic_paths,arraySort(arrayDistinct(arrayFlatten(groupArray(JSONSharedDataPaths(attributes))))) AS shared_paths FROM " + self._analytics(layout) + " FORMAT JSONEachRow"))[0]
-                paths = {"dynamic_paths": row["dynamic_paths"], "shared_paths": row["shared_paths"]}
+                part_rows = self._json_rows(self._request(
+                    connection,
+                    "SELECT _part AS part,arraySort(arrayDistinct(arrayFlatten(groupArray(JSONDynamicPaths(attributes))))) "
+                    "AS dynamic_paths,arraySort(arrayDistinct(arrayFlatten(groupArray(JSONSharedDataPaths(attributes))))) "
+                    "AS shared_paths FROM " + self._analytics(layout) + " GROUP BY _part ORDER BY _part FORMAT JSONEachRow",
+                ))
+                paths = {
+                    "dynamic_paths": row["dynamic_paths"],
+                    "parts": [{"part": item["part"], "dynamic_paths": item["dynamic_paths"], "shared_paths": item["shared_paths"]} for item in part_rows],
+                    "shared_paths": row["shared_paths"],
+                }
             return {"tables": tables, "merge_backlog": self._merge_backlog(layout), "paths": paths}
         finally: connection.close()
 
@@ -611,6 +767,7 @@ class ClickHouseFourLayoutAdapter:
         finally: connection.close()
         if self.database_exists(layout): raise RuntimeError(f"database cleanup failed: {database}")
         self._created_databases.remove(database)
+        self._profiles.pop(layout, None)
         return {"database": database, "removed": True}
 
     def cleanup_all(self):

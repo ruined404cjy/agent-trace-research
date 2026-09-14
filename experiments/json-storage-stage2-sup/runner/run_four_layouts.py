@@ -18,6 +18,7 @@ from clickhouse_four_layout import ClickHouseFourLayoutAdapter, QUERY_LOG_METRIC
 from opengauss_four_layout import OpenGaussFourLayoutAdapter
 from supplement_common import (
     CONTRACT_VERSION, LAYOUTS, QUERY_IDS,
+    FOUR_LAYOUT_V1_CONTRACT_VERSION, FOUR_LAYOUT_V1_QUERY_IDS,
     ROUND_ORDERS, canonical_bytes, file_identity, read_json, verify_input,
     write_failed_manifest, write_manifest_last,
 )
@@ -25,12 +26,12 @@ from supplement_common import (
 
 EXPECTED_DATASET_SHA256 = "8de6be1f74f075b12d598d15bf48e2bbae57c6e3da9472c909afcd42fccc3405"
 EXPECTED_SOURCE_SHA256 = "3ff85d5060c765b3606cb2d620c3c5fd1815520c93153a61245e91d83b35c683"
-EXPECTED_TRUTH_SHA256 = "929d79b729c5b7ad5fa51150ee00f55249647c91365271e02ffc345e6760bb28"
-EXPECTED_CATALOG_SHA256 = "554f7ead33fc17aada0432997ff314f84b6f44e7945d8355544818f5d868c4a8"
+EXPECTED_TRUTH_SHA256 = "4ee711c3deaaaac8f925c7229fb94fa702f65dbb76bec0a5d9c652a06a915edf"
+EXPECTED_CATALOG_SHA256 = "45798855d47beb412c98770480df62e3dd3fa7b0f43eb6752ce4005a5b2d0271"
 EXPECTED_FILE_IDENTITIES = {
     "dataset": {"bytes": 302518948, "sha256": EXPECTED_DATASET_SHA256},
-    "truth": {"bytes": 138577, "sha256": EXPECTED_TRUTH_SHA256},
-    "query_catalog": {"bytes": 1074, "sha256": EXPECTED_CATALOG_SHA256},
+    "truth": {"bytes": 11310372, "sha256": EXPECTED_TRUTH_SHA256},
+    "query_catalog": {"bytes": 1200, "sha256": EXPECTED_CATALOG_SHA256},
     "input_run_manifest": {
         "bytes": 2397,
         "sha256": "25181ebc6f22fe4f09fa9aa3d36c997d4b60744ffb82a9fa75f9741e7c216437",
@@ -38,6 +39,17 @@ EXPECTED_FILE_IDENTITIES = {
     "input_truth_manifest": {
         "bytes": 18073179,
         "sha256": "b04f49ab89cb9da9636b60134317915708ff207a96058392ca0734636b525d04",
+    },
+}
+FOUR_LAYOUT_V1_FILE_IDENTITIES = {
+    **EXPECTED_FILE_IDENTITIES,
+    "truth": {
+        "bytes": 138577,
+        "sha256": "929d79b729c5b7ad5fa51150ee00f55249647c91365271e02ffc345e6760bb28",
+    },
+    "query_catalog": {
+        "bytes": 1074,
+        "sha256": "554f7ead33fc17aada0432997ff314f84b6f44e7945d8355544818f5d868c4a8",
     },
 }
 EXPECTED_ENDPOINTS = {
@@ -184,8 +196,16 @@ def run_query_stage(adapter, layout, catalog, truth, measurements, document_meas
     }
 
 
-def load_inputs(input_dir, truth_dir):
-    """核对冻结输入与 Task 1 truth，并返回执行数据及身份。"""
+def load_inputs(input_dir, truth_dir, contract_version=CONTRACT_VERSION):
+    """按指定补充实验契约核对冻结输入与 truth。"""
+    if contract_version == CONTRACT_VERSION:
+        expected_files = EXPECTED_FILE_IDENTITIES
+        query_ids = QUERY_IDS
+    elif contract_version == FOUR_LAYOUT_V1_CONTRACT_VERSION:
+        expected_files = FOUR_LAYOUT_V1_FILE_IDENTITIES
+        query_ids = FOUR_LAYOUT_V1_QUERY_IDS
+    else:
+        raise ValueError(f"unsupported supplement contract: {contract_version}")
     rows, source_truth = verify_input(input_dir)
     input_manifest = read_json(Path(input_dir) / "run-manifest.json", "input manifest")
     dataset = file_identity(Path(input_dir) / "dataset.jsonl")
@@ -194,23 +214,23 @@ def load_inputs(input_dir, truth_dir):
             or not isinstance(source_input["path"], str) or not source_input["path"]
             or source_input["sha256"] != EXPECTED_SOURCE_SHA256):
         raise ValueError("source input identity mismatch")
-    if dataset != EXPECTED_FILE_IDENTITIES["dataset"]:
+    if dataset != expected_files["dataset"]:
         raise ValueError("fixed input identity mismatch")
     truth_manifest = read_json(Path(truth_dir) / "run-manifest.json", "supplement manifest")
     if truth_manifest.get("status") != "complete":
         raise ValueError("supplement truth is incomplete")
     artifacts = truth_manifest.get("artifacts", {})
-    expected_artifacts = {"query-catalog.json": EXPECTED_FILE_IDENTITIES["query_catalog"],
-                          "truth-manifest.json": EXPECTED_FILE_IDENTITIES["truth"]}
+    expected_artifacts = {"query-catalog.json": expected_files["query_catalog"],
+                          "truth-manifest.json": expected_files["truth"]}
     for name in ("query-catalog.json", "truth-manifest.json"):
         actual = file_identity(Path(truth_dir) / name)
         if actual != expected_artifacts[name] or artifacts.get(name) != actual:
             raise ValueError(f"supplement truth artifact mismatch: {name}")
     catalog = read_json(Path(truth_dir) / "query-catalog.json", "query catalog")
     truth = read_json(Path(truth_dir) / "truth-manifest.json", "supplement truth")
-    if catalog.get("contract_version") != CONTRACT_VERSION or truth.get("contract_version") != CONTRACT_VERSION:
+    if catalog.get("contract_version") != contract_version or truth.get("contract_version") != contract_version:
         raise ValueError("supplement contract mismatch")
-    if catalog.get("query_ids") != list(QUERY_IDS) or truth.get("query_ids") != list(QUERY_IDS):
+    if catalog.get("query_ids") != list(query_ids) or truth.get("query_ids") != list(query_ids):
         raise ValueError("supplement query set mismatch")
     if truth.get("query_catalog_sha256") != hashlib.sha256(canonical_bytes(catalog)).hexdigest():
         raise ValueError("query catalog identity mismatch")
@@ -219,8 +239,8 @@ def load_inputs(input_dir, truth_dir):
     source = truth.get("source", {})
     input_run = file_identity(Path(input_dir) / "run-manifest.json")
     input_truth = file_identity(Path(input_dir) / "truth-manifest.json")
-    if (input_run != EXPECTED_FILE_IDENTITIES["input_run_manifest"]
-            or input_truth != EXPECTED_FILE_IDENTITIES["input_truth_manifest"]
+    if (input_run != expected_files["input_run_manifest"]
+            or input_truth != expected_files["input_truth_manifest"]
             or source.get("run_manifest_sha256") != input_run["sha256"]
             or source.get("truth_manifest_sha256") != input_truth["sha256"]
             or source.get("artifacts", {}).get("dataset.jsonl") != dataset
@@ -394,8 +414,8 @@ def execute(args):
                     if len(set(ids)) != len(ids) or formal_query_log_ids.intersection(ids):
                         raise RuntimeError("formal ClickHouse query log IDs are not globally unique")
                     formal_query_log_ids.update(ids)
-                result["analysis_recovery"] = adapter.verify_analysis(layout, source_truth)
-                result["raw_recovery"] = adapter.verify_raw(layout, source_truth)
+                result["analysis_recovery"] = adapter.verify_analysis(layout, truth)
+                result["raw_recovery"] = adapter.verify_raw(layout, truth)
                 if not result["analysis_recovery"].get("ok"):
                     raise RuntimeError("analysis recovery failed")
                 if not result["raw_recovery"].get("ok"):

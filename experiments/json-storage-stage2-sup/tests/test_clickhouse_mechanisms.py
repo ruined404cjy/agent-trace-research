@@ -307,6 +307,9 @@ class ClickHouseMechanismUnitTest(unittest.TestCase):
                 )
 
         table = "s2sup_owned_insert.ch_native_auto32_none"
+        adapter._analytics_row.assert_called_once_with(
+            "ch_native", {"event_id": "e", "attributes_analysis": {}}, include_derived=False,
+        )
         self.assertIn(f"SYSTEM START MERGES {table}", calls)
         self.assertIn("DROP DATABASE IF EXISTS s2sup_owned_insert SYNC", calls)
 

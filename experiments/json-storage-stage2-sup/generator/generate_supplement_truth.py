@@ -17,6 +17,7 @@ from supplement_common import (
     CONTRACT_VERSION,
     QUERY_IDS,
     canonical_bytes,
+    derived_attributes,
     file_identity,
     read_json,
     verify_input,
@@ -103,15 +104,19 @@ def _identity_result(rows):
     }
 
 
-def _document_rows(rows):
+def _document_rows(rows, include_derived=True):
     """把完整分析文档规范化为固定可比较的返回行。"""
     return [
-        [row["start_time"], row["event_id"], row["attributes_analysis"]]
+        [
+            row["start_time"],
+            row["event_id"],
+            derived_attributes(row) if include_derived else row["attributes_analysis"],
+        ]
         for row in sorted(rows, key=lambda row: (row["start_time"], row["event_id"]))
     ]
 
 
-def query_results(rows: list[dict], query_id: str, parameters: dict) -> object:
+def query_results(rows: list[dict], query_id: str, parameters: dict, include_derived=True) -> object:
     """计算单个补充查询的规范化最终水位结果。"""
     if query_id not in QUERY_IDS:
         raise ValueError(f"unknown query id: {query_id}")
@@ -157,14 +162,20 @@ def query_results(rows: list[dict], query_id: str, parameters: dict) -> object:
             trace_id = parameters["trace_id"]
         except KeyError as error:
             raise ValueError(f"missing query parameter: {error.args[0]}") from None
-        return _document_rows(row for row in window_rows if row["trace_id"] == trace_id)
+        return _document_rows(
+            (row for row in window_rows if row["trace_id"] == trace_id),
+            include_derived=include_derived,
+        )
+    if query_id == "S07":
+        values = [derived_attributes(row)["experiment"]["duration_ms"] for row in window_rows]
+        return {"non_null_count": len(values), "sum": sum(values)}
     try:
         page_size = parameters["page_size"]
     except KeyError as error:
         raise ValueError(f"missing query parameter: {error.args[0]}") from None
     if isinstance(page_size, bool) or not isinstance(page_size, int) or page_size <= 0:
         raise ValueError("page_size must be positive")
-    documents = _document_rows(_window_rows(rows, parameters))
+    documents = _document_rows(_window_rows(rows, parameters), include_derived=include_derived)
     start_index = (len(documents) + 3) // 4 - 1
     page = documents[max(start_index, 0):max(start_index, 0) + page_size]
     return {
@@ -188,6 +199,7 @@ def _query_parameters(source_truth):
             "S04": {**source_parameters["Q01"], "attribute_key": "gen_ai.output.messages"},
             "S05": dict(source_parameters["Q04"]),
             "S06": {**source_parameters["Q01"], "page_size": PAGE_SIZE},
+            "S07": dict(source_parameters["Q01"]),
         }
     except KeyError as error:
         raise ValueError(f"source truth parameter missing: {error.args[0]}") from None
@@ -250,6 +262,14 @@ def write_truth(input_dir: Path, output_dir: Path, command: list[str], clock_ns=
         "query_catalog_sha256": hashlib.sha256(canonical_bytes(catalog)).hexdigest(),
         "query_ids": list(QUERY_IDS),
         "record_count": len(parsed_rows),
+        "records": [
+            {
+                "analysis_sha256": hashlib.sha256(canonical_bytes(derived_attributes(row))).hexdigest(),
+                "event_id": row["event_id"],
+                "raw_sha256": hashlib.sha256(row["raw_event"].encode("utf-8")).hexdigest(),
+            }
+            for row in parsed_rows
+        ],
         "results": results,
         "source": source,
     }

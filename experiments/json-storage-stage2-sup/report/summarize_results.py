@@ -16,7 +16,11 @@ STAGE_DIR = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("s2sup_common", STAGE_DIR / "runner/supplement_common.py")
 common = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(common)
-LAYOUTS, QUERY_IDS, ROUND_ORDERS = common.LAYOUTS, common.QUERY_IDS, common.ROUND_ORDERS
+LAYOUTS = common.LAYOUTS
+QUERY_IDS = common.FOUR_LAYOUT_V1_QUERY_IDS
+ROUND_ORDERS = common.ROUND_ORDERS
+EXPECTED_RESULT_SHA256 = common.FOUR_LAYOUT_V1_EXPECTED_RESULT_SHA256
+EXPECTED_ROW_COUNTS = common.FOUR_LAYOUT_V1_EXPECTED_ROW_COUNTS
 QUERY_LOG_METRICS = {"query_duration_ms", "read_rows", "read_bytes", "memory_usage",
                      "result_rows", "result_bytes", "selected_rows", "selected_bytes"}
 EXPECTED_INPUT = {
@@ -205,8 +209,8 @@ def _validate_samples(layout, stage, query_log_ids):
     for sample in samples + warmups:
         query = sample.get("query_id")
         require(sample.get("ok") is True and sample.get("matches_truth") is True, "truth sample failed")
-        require(sample.get("result_sha256") == common.EXPECTED_RESULT_SHA256.get(query), "invalid result SHA")
-        require(sample.get("row_count") == common.EXPECTED_ROW_COUNTS.get(query), "invalid row count")
+        require(sample.get("result_sha256") == EXPECTED_RESULT_SHA256.get(query), "invalid result SHA")
+        require(sample.get("row_count") == EXPECTED_ROW_COUNTS.get(query), "invalid row count")
         require(type(sample.get("latency_ms")) in (int, float) and math.isfinite(sample["latency_ms"])
                 and sample["latency_ms"] > 0, "invalid latency")
         require(type(sample.get("recovery_ms")) in (int, float) and math.isfinite(sample["recovery_ms"])
@@ -243,7 +247,7 @@ def summarize(root):
         require(manifest.get("status") == "complete", "incomplete run")
         require(manifest.get("format") == "agent-trace-json-storage-four-layout-run"
                 and manifest.get("format_version") == 1, "invalid manifest format")
-        require(manifest.get("supplement_contract_version") == common.CONTRACT_VERSION, "invalid supplement contract")
+        require(manifest.get("supplement_contract_version") == common.FOUR_LAYOUT_V1_CONTRACT_VERSION, "invalid supplement contract")
         stage_common = common._stage_two_common
         require(manifest.get("comparability_contract_version") == stage_common.COMPARABILITY_CONTRACT_VERSION
                 and manifest.get("comparability_contract") == stage_common.COMPARABILITY_CONTRACT

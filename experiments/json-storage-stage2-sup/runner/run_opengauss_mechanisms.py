@@ -13,14 +13,22 @@ from pathlib import Path
 
 from opengauss_four_layout import OpenGaussFourLayoutAdapter, validate_identifier
 from supplement_common import (
-    QUERY_IDS, canonical_bytes, file_identity, write_failed_manifest,
+    FOUR_LAYOUT_V1_CONTRACT_VERSION, FOUR_LAYOUT_V1_QUERY_IDS as QUERY_IDS,
+    canonical_bytes, file_identity, write_failed_manifest,
     write_manifest_last,
 )
-from run_four_layouts import _container_identity, _require_host_port, load_inputs
+from run_four_layouts import _container_identity, _require_host_port, load_inputs as _load_four_layout_inputs
 
 
 LAYOUTS = ("og_json", "og_json_hot", "og_jsonb", "og_jsonb_hot", "og_jsonb_gin")
 HOT_PATH = "{gen_ai,operation,name}"
+
+
+def load_inputs(input_dir, truth_dir):
+    """按四结构 v1 契约加载机制实验的冻结输入。"""
+    return _load_four_layout_inputs(
+        input_dir, truth_dir, contract_version=FOUR_LAYOUT_V1_CONTRACT_VERSION,
+    )
 
 
 def opengauss_mechanism_ddls(schema: str) -> dict[str, str]:
@@ -333,7 +341,7 @@ def _run_loaded(rows, source_truth, catalog, truth, identity, host, port, contai
             copy_started = time.perf_counter()
             for block in blocks:
                 with connection.cursor() as cursor:
-                    adapter._copy_analytics(cursor, table, block)
+                    adapter._copy_analytics(cursor, table, block, include_derived=False)
                 connection.commit()
             copy_ms = (time.perf_counter() - copy_started) * 1000
             analyze_started = time.perf_counter()

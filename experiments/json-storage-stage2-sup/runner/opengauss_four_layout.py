@@ -9,7 +9,7 @@ from collections import Counter
 
 import psycopg
 
-from supplement_common import LAYOUTS, QUERY_IDS, canonical_bytes
+from supplement_common import LAYOUTS, QUERY_IDS, canonical_bytes, derived_attributes
 
 
 IDENTIFIER = re.compile(r"^[a-z][a-z0-9_]{0,62}$")
@@ -42,9 +42,13 @@ def _attributes_type(layout):
     return "JSON" if layout == "og_json" else "JSONB"
 
 
-def create_layout_ddls(namespace, layout):
-    """返回 schema、分析表和原文表的无索引 DDL。"""
+def create_layout_ddls(namespace, layout, profile="baseline"):
+    """返回 schema、分析表、原文表及所选 profile 的索引 DDL。"""
     schema = schema_name(namespace, layout)
+    if profile not in {"baseline", "tuned"}:
+        raise ValueError(f"unsupported profile: {profile}")
+    if profile == "tuned" and layout != "og_jsonb":
+        raise ValueError("tuned profile requires og_jsonb")
     attributes_type = _attributes_type(layout)
     statements = [
         f"CREATE SCHEMA {schema}",
@@ -68,6 +72,17 @@ def create_layout_ddls(namespace, layout):
     raw_event TEXT NOT NULL
 )""",
     ]
+    if profile == "tuned":
+        statements.extend((
+            f"CREATE INDEX analytics_trace_lookup_idx ON {schema}.analytics "
+            "(project_id,trace_id,start_time,event_id)",
+            f"CREATE INDEX analytics_operation_name_idx ON {schema}.analytics "
+            "(project_id, ((attributes #>> '{gen_ai,operation,name}')), start_time)",
+            f"CREATE INDEX analytics_failure_mode_idx ON {schema}.analytics "
+            "(project_id, ((attributes #>> '{failure,mistake_mode}')), start_time)",
+            f"CREATE INDEX analytics_attributes_gin_idx ON {schema}.analytics "
+            "USING gin (attributes jsonb_hash_ops)",
+        ))
     return ";\n".join(statements) + ";"
 
 
@@ -109,6 +124,11 @@ def query_sql(layout, query_id):
             ") SELECT total_rows, start_time, event_id, attributes FROM numbered "
             "ORDER BY start_time, event_id OFFSET (SELECT GREATEST("
             "FLOOR((count(*) + 3) / 4.0) - 1, 0) FROM filtered) LIMIT %s"
+        ),
+        "S07": (
+            "SELECT count(attributes #> '{experiment,duration_ms}'), "
+            "sum((attributes #>> '{experiment,duration_ms}')::bigint) FROM {analytics} WHERE "
+            f"{visibility}"
         ),
     }
     return statements[query_id]
@@ -197,7 +217,7 @@ class OpenGaussFourLayoutAdapter:
         finally:
             connection.close()
 
-    def create_layout(self, layout):
+    def create_layout(self, layout, profile="baseline"):
         """创建空布局，DDL 计时由调用方排除在载入阶段外。"""
         validate_layout(layout)
         schema = self._schema(layout)
@@ -210,16 +230,16 @@ class OpenGaussFourLayoutAdapter:
                 ).fetchone()[0]
                 if exists:
                     raise ValueError(f"schema already exists: {schema}")
-                for statement in create_layout_ddls(self.namespace, layout).split(";\n"):
+                for statement in create_layout_ddls(self.namespace, layout, profile).split(";\n"):
                     connection.execute(statement.rstrip(";"))
             self._created_schemas.add(schema)
-            return {"ddl": create_layout_ddls(self.namespace, layout), "schema": schema}
+            return {"ddl": create_layout_ddls(self.namespace, layout, profile), "profile": profile, "schema": schema}
         finally:
             connection.close()
 
     @staticmethod
-    def _copy_analytics(cursor, relation, rows):
-        """把一个预生成 block 写入分析表。"""
+    def _copy_analytics(cursor, relation, rows, include_derived=True):
+        """把一个 block 写入分析表；include_derived 控制数值路径注入。"""
         with cursor.copy(
             "COPY " + relation + "(ingest_seq,event_id,trace_id,span_id,parent_span_id,"
             "project_id,start_time,end_time,duration_ms,span_type,framework,level,attributes) "
@@ -230,7 +250,9 @@ class OpenGaussFourLayoutAdapter:
                     row["ingest_seq"], row["event_id"], row["trace_id"], row["span_id"],
                     row["parent_span_id"], row["project_id"], row["start_time"], row["end_time"],
                     row["duration_ms"], row["span_type"], row["framework"], row["level"],
-                    canonical_bytes(row["attributes_analysis"]).decode("utf-8"),
+                    canonical_bytes(
+                        derived_attributes(row) if include_derived else row["attributes_analysis"]
+                    ).decode("utf-8"),
                 ))
 
     @staticmethod
@@ -347,6 +369,10 @@ class OpenGaussFourLayoutAdapter:
                 [self._format_timestamp(row[0]), row[1], self._load_attributes(row[2])]
                 for row in sorted(rows, key=lambda row: (row[0], row[1]))
             ]
+        if query_id == "S07":
+            if len(rows) != 1:
+                raise ValueError("numeric aggregation must return one row")
+            return {"non_null_count": int(rows[0][0]), "sum": int(rows[0][1] or 0)}
         documents = [
             [self._format_timestamp(row[1]), row[2], self._load_attributes(row[3])]
             for row in rows
@@ -375,6 +401,8 @@ class OpenGaussFourLayoutAdapter:
             row_count = result["non_null_count"]
         elif query_id == "S06":
             row_count = result["page_row_count"]
+        elif query_id == "S07":
+            row_count = 1
         else:
             row_count = len(result)
         return {

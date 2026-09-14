@@ -86,7 +86,7 @@ class OpenGaussFourLayoutUnitTest(unittest.TestCase):
         connection.execute.assert_called_once_with("SELECT version()")
 
     def test_layout_ddl_only_changes_attributes_type_and_has_no_acceleration(self):
-        """防止基础比较混入索引或改变稳定列定义。"""
+        """防止基础比较混入索引或改变独立列定义。"""
         json_ddl = opengauss.create_layout_ddls("s2sup", "og_json")
         jsonb_ddl = opengauss.create_layout_ddls("s2sup", "og_jsonb")
 
@@ -96,6 +96,24 @@ class OpenGaussFourLayoutUnitTest(unittest.TestCase):
         self.assertNotIn("CREATE INDEX", json_ddl)
         self.assertNotIn("CREATE INDEX", jsonb_ddl)
         self.assertNotIn("jsonb_hash_ops", jsonb_ddl)
+
+    def test_tuned_jsonb_ddl_declares_trace_two_expression_and_gin_indexes(self):
+        """防止高密度谓词没有匹配的表达式索引却被评价为索引方案。"""
+        ddl = opengauss.create_layout_ddls("s2sup", "og_jsonb", profile="tuned")
+
+        self.assertIn("analytics_trace_lookup_idx", ddl)
+        self.assertIn(
+            "analytics_operation_name_idx ON s2sup_og_jsonb.analytics "
+            "(project_id, ((attributes #>> '{gen_ai,operation,name}')), start_time)",
+            ddl,
+        )
+        self.assertIn(
+            "analytics_failure_mode_idx ON s2sup_og_jsonb.analytics "
+            "(project_id, ((attributes #>> '{failure,mistake_mode}')), start_time)",
+            ddl,
+        )
+        self.assertIn("analytics_attributes_gin_idx", ddl)
+        self.assertIn("USING gin (attributes jsonb_hash_ops)", ddl)
 
     def test_queries_keep_shared_path_semantics_and_complete_document_order(self):
         """防止 JSON 与 JSONB 的路径谓词、分页或整文档恢复语义偏离。"""
@@ -118,6 +136,7 @@ class OpenGaussFourLayoutUnitTest(unittest.TestCase):
             "FROM numbered ORDER BY start_time, event_id OFFSET",
             opengauss.query_sql("og_json", "S06"),
         )
+        self.assertIn("sum((attributes #>> '{experiment,duration_ms}')::bigint)", opengauss.query_sql("og_jsonb", "S07"))
 
     def test_query_parameters_follow_supplement_catalog(self):
         """防止位置参数漏写查询路径条件或 S06 页大小。"""
@@ -172,6 +191,7 @@ class OpenGaussFourLayoutUnitTest(unittest.TestCase):
                 "rows": [["2030-01-01T00:00:01.234Z", "event-1", document]],
             },
         )
+        self.assertEqual(self.adapter._normalize_result("S07", [(2, 37)]), {"non_null_count": 2, "sum": 37})
 
     def test_storage_reports_heap_toast_index_and_total_bytes(self):
         """防止 openGauss 空间结果遗漏 TOAST 或混合统计对象。"""
@@ -184,6 +204,23 @@ class OpenGaussFourLayoutUnitTest(unittest.TestCase):
             "analytics": {"heap_bytes": 10, "toast_bytes": 3, "index_bytes": 7, "total_bytes": 20},
             "raw": {"heap_bytes": 10, "toast_bytes": 3, "index_bytes": 7, "total_bytes": 20},
         })
+
+    def test_copy_analytics_can_preserve_v1_attributes_without_derived_path(self):
+        """旧机制契约写入原分析属性，不注入调优矩阵的数值路径。"""
+        cursor = mock.MagicMock()
+        row = {
+            "ingest_seq": 1, "event_id": "event-v1", "trace_id": "trace-v1",
+            "span_id": "span-v1", "parent_span_id": None, "project_id": "project-v1",
+            "start_time": "2030-01-01T00:00:00.000Z",
+            "end_time": "2030-01-01T00:00:01.000Z", "duration_ms": 1000,
+            "span_type": "tool", "framework": "fixture", "level": "INFO",
+            "attributes_analysis": {"plain": "kept"},
+        }
+
+        self.adapter._copy_analytics(cursor, "fixture.analytics", [row], include_derived=False)
+
+        written = cursor.copy.return_value.__enter__.return_value.write_row.call_args.args[0]
+        self.assertEqual(json.loads(written[-1]), {"plain": "kept"})
 
     def test_cleanup_only_drops_schema_successfully_created_by_this_adapter(self):
         """防止异常处理删除同名的外部 schema。"""
@@ -250,7 +287,7 @@ class OpenGaussFourLayoutIntegrationTest(unittest.TestCase):
         self.record_truth = {"records": [
             {
                 "event_id": row["event_id"],
-                "analysis_sha256": hashlib.sha256(common.canonical_bytes(row["attributes_analysis"])).hexdigest(),
+                "analysis_sha256": hashlib.sha256(common.canonical_bytes(common.derived_attributes(row))).hexdigest(),
                 "raw_sha256": hashlib.sha256(row["raw_event"].encode("utf-8")).hexdigest(),
             }
             for row in self.rows
@@ -287,8 +324,10 @@ class OpenGaussFourLayoutIntegrationTest(unittest.TestCase):
                             self.assertGreater(result["result"]["row_count"], 0)
                         elif query_id == "S04":
                             self.assertGreater(result["result"]["non_null_count"], 0)
-                        else:
+                        elif query_id == "S06":
                             self.assertEqual(result["result"]["page_row_count"], BLOCK_ROWS)
+                        else:
+                            self.assertEqual(result["result"]["non_null_count"], FIXTURE_ROWS)
                 finally:
                     connection.close()
                 self.assertTrue(self.adapter.verify_analysis(layout, self.record_truth)["ok"])

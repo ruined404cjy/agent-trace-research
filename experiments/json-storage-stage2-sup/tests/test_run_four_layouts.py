@@ -19,8 +19,8 @@ import supplement_common as common
 
 EXPECTED_BYTES = {
     "dataset": 302518948,
-    "truth": 138577,
-    "query_catalog": 1074,
+    "truth": 11310372,
+    "query_catalog": 1200,
     "input_run_manifest": 2397,
     "input_truth_manifest": 18073179,
 }
@@ -106,8 +106,8 @@ class RunnerTests(unittest.TestCase):
         catalog, truth = self.query_fixture()
         result = runner.run_query_stage(adapter, "ch_native", catalog, truth, 2, 1, workers=2)
         counts = {query: sum(s["query_id"] == query for s in result["samples"]) for query in common.QUERY_IDS}
-        self.assertEqual(counts, {**dict.fromkeys(common.QUERY_IDS[:5], 2), "S06": 1})
-        self.assertEqual(result["worker_sample_counts"], {"0": 6, "1": 5})
+        self.assertEqual(counts, {**dict.fromkeys(common.QUERY_IDS, 2), "S06": 1})
+        self.assertEqual(result["worker_sample_counts"], {"0": 7, "1": 6})
         self.assertTrue(all(set(s["query_log"]) == set(runner.QUERY_LOG_METRICS) for s in result["samples"]))
         self.assertEqual(len({s["query_log_id"] for s in result["samples"]}), len(result["samples"]))
 
@@ -391,7 +391,7 @@ class RunnerTests(unittest.TestCase):
     def query_fixture():
         results = {query: {"value": query} for query in common.QUERY_IDS}
         catalog = {"parameters": {query: {"expected": results[query]} for query in common.QUERY_IDS}}
-        return catalog, {"results": results}
+        return catalog, {"records": [{"event_id": "e"}], "results": results}
 
     @classmethod
     def execution_fixture(cls):

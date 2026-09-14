@@ -17,7 +17,8 @@ from clickhouse_four_layout import (
     validate_identifier,
 )
 from supplement_common import (
-    QUERY_IDS, canonical_bytes, file_identity, write_failed_manifest,
+    FOUR_LAYOUT_V1_CONTRACT_VERSION, FOUR_LAYOUT_V1_QUERY_IDS as QUERY_IDS,
+    canonical_bytes, file_identity, write_failed_manifest,
     write_manifest_last,
 )
 
@@ -57,9 +58,9 @@ def _task4_runner():
         sys.modules.pop("psycopg", None)
 
 
-def load_inputs(input_dir, truth_dir):
+def load_inputs(input_dir, truth_dir, contract_version=FOUR_LAYOUT_V1_CONTRACT_VERSION):
     """惰性复用 Task 4 输入门禁，避免 ClickHouse-only 导入 openGauss 驱动。"""
-    return _task4_runner().load_inputs(input_dir, truth_dir)
+    return _task4_runner().load_inputs(input_dir, truth_dir, contract_version=contract_version)
 
 
 def _truth_generator():
@@ -943,11 +944,15 @@ def _run_loaded(rows, source_truth, catalog, truth, identity, host, port, contai
     blocks = [rows[index:index + block_size] for index in range(0, len(rows), block_size)]
     partial_truth = {
         "ddl": {
-            query_id: generator.query_results([], query_id, contract["parameters"][query_id])
+            query_id: generator.query_results(
+                [], query_id, contract["parameters"][query_id], include_derived=False,
+            )
             for query_id in QUERY_IDS
         },
         "first_insert": {
-            query_id: generator.query_results(blocks[0], query_id, contract["parameters"][query_id])
+            query_id: generator.query_results(
+                blocks[0], query_id, contract["parameters"][query_id], include_derived=False,
+            )
             for query_id in QUERY_IDS
         },
     }
@@ -985,7 +990,7 @@ def _run_loaded(rows, source_truth, catalog, truth, identity, host, port, contai
             for block in blocks:
                 prepared = []
                 for row in block:
-                    item = adapter._analytics_row("ch_native", row)
+                    item = adapter._analytics_row("ch_native", row, include_derived=False)
                     if layout == "ch_native_auto32_none":
                         item.pop("fidelity_values")
                     elif layout == "ch_native_auto32_full":
