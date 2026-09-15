@@ -14,6 +14,7 @@ from common import (
     AccessEvidence, BlockResult, CleanupResult, DatasetAudit, MaintenanceResult,
     PhysicalTargetAudit, QueryResult, QuerySpec, StorageEvidence, logical_response_bytes,
 )
+import run_layout_matrix as runner
 from run_layout_matrix import (
     QueryTruth, RunConfig, build_smoke_input, build_workload_events, latin_square,
     _validate_dataset_audit, load_run_input, measure_query, run_layout, summarize_samples,
@@ -42,6 +43,15 @@ def logical_row(payload=b"abc"):
     }
 
 
+def access_statement(payload_expression):
+    """构造与固定 adapter 投影一致、仅 payload 列可变的 SQL。"""
+    return (
+        "SELECT event_id,trace_id,project_id,start_time,profile,content_type,encoding,"
+        "content_length,preview,sha256," + payload_expression + " AS payload_value "
+        "FROM events WHERE project_id=%s"
+    )
+
+
 class OneResultAdapter:
     """只替换数据库边界，返回调用方指定的完整 QueryResult。"""
 
@@ -67,6 +77,7 @@ class SmokeAdapter:
         self.cleanup_removed = cleanup_removed
         self.query_ids = []
         self.query_kinds = {}
+        self.query_statements = {}
         self.ingested = []
 
     def create(self):
@@ -134,6 +145,13 @@ class SmokeAdapter:
         query_id = f"query-{len(self.query_ids)}"
         self.query_ids.append(query_id)
         self.query_kinds[query_id] = query.kind
+        fields = [
+            "event_id", "trace_id", "project_id", "start_time", "profile",
+            "content_type", "encoding", "content_length",
+            "NULL AS preview" if query.kind == "list" else "preview", "sha256",
+            "NULL AS payload_value" if query.kind in {"list", "preview"} else "payload AS payload_value",
+        ]
+        self.query_statements[query_id] = "SELECT " + ",".join(fields) + " FROM events WHERE project_id=%s"
         payload_bytes = sum(len(row["payload"] or b"") for row in projected)
         database_bytes = max(1, len(json.dumps(
             projected, default=lambda value: value.decode("utf-8"),
@@ -152,7 +170,7 @@ class SmokeAdapter:
             query_details={
                 query_id: {
                     "kind": self.query_kinds[query_id],
-                    "statement": "SELECT payload FROM events",
+                    "statement": self.query_statements[query_id],
                     "payload_selected": self.query_kinds[query_id] in {"detail", "trace", "batch"},
                     "declared_source": "events",
                 }
@@ -254,6 +272,111 @@ class LayoutMatrixUnitTest(unittest.TestCase):
         self.assertEqual(sample.validation.validated_payload_bytes, 7)
         expected = 7 / (1024 * 1024) / (sample.application_ready_ms / 1000)
         self.assertAlmostEqual(summary["throughput_mib_s"]["median"], expected)
+
+    def test_formal_access_rejects_adapter_claim_when_list_sql_selects_payload(self):
+        """捕获 adapter 自报 list 无 payload、实际 SQL 却选择 payload 的情况。"""
+        sample = SimpleNamespace(
+            query_id="list-1", kind="list", scenario="list:first", response_bytes=9,
+            validation=SimpleNamespace(row_count=1),
+        )
+        access = AccessEvidence(
+            {"list-1": "Index Scan using events_list_idx (actual time=0.1..0.2 rows=1 loops=1)\nBuffers: shared hit=1"},
+            {"events_list_idx": 1},
+            query_details={"list-1": {
+                "kind": "list", "statement": access_statement("payload"),
+                "payload_selected": False, "declared_source": "events",
+            }},
+        )
+        with self.assertRaisesRegex(RuntimeError, "projection"):
+            runner._validate_access("opengauss", "same_table", "formal", (sample,), access)
+
+    def test_formal_access_rejects_index_seen_by_another_query(self):
+        """捕获累计 idx_scan 非零却不能证明当前 SQL 使用索引的情况。"""
+        sample = SimpleNamespace(
+            query_id="detail-1", kind="detail", scenario="detail:text_64k", response_bytes=9,
+            validation=SimpleNamespace(row_count=1),
+        )
+        access = AccessEvidence(
+            {"detail-1": "Seq Scan on events (actual time=0.1..0.2 rows=1 loops=1)\nBuffers: shared hit=1"},
+            {"events_list_idx": 99},
+            query_details={"detail-1": {
+                "kind": "detail", "statement": access_statement("payload"),
+                "payload_selected": True, "declared_source": "events",
+            }},
+        )
+        with self.assertRaisesRegex(RuntimeError, "access structure"):
+            runner._validate_access("opengauss", "same_table", "formal", (sample,), access)
+
+    def test_formal_clickhouse_access_rejects_mergetree_full_scan(self):
+        """捕获仅出现 MergeTree 字样、没有 primary-key/mark 裁剪的全扫计划。"""
+        sample = SimpleNamespace(
+            query_id="trace-1", kind="trace", scenario="trace:p50", response_bytes=9,
+            validation=SimpleNamespace(row_count=1),
+        )
+        access = AccessEvidence(
+            {"trace-1": "ReadFromMergeTree (events)"},
+            query_finish={"trace-1": {"read_rows": 100, "read_bytes": 1000}},
+            query_details={"trace-1": {
+                "kind": "trace", "statement": access_statement("payload"),
+                "payload_selected": True, "declared_source": "events",
+            }},
+        )
+        with self.assertRaisesRegex(RuntimeError, "access structure"):
+            runner._validate_access("clickhouse", "same_table", "formal", (sample,), access)
+
+    def test_summary_keeps_each_workload_scenario_independent(self):
+        """捕获 main 与控制 workload 的同名 list scenario 被汇总到同一计数。"""
+        expected = logical_row()
+        sample = measure_query(
+            OneResultAdapter(expected), QuerySpec("list", {}), QueryTruth("list:first", (expected,)),
+        )
+        summary = runner.summarize_workload_samples({
+            "main": (sample, sample, sample, sample),
+            "equal_total_few_large": (sample, sample, sample, sample),
+            "equal_total_many_medium": (sample, sample, sample, sample),
+            "correctness_only": (sample,),
+        })
+        self.assertEqual(summary["main"]["list:first"]["sample_count"], 4)
+        self.assertEqual(summary["equal_total_few_large"]["list:first"]["sample_count"], 4)
+        self.assertEqual(summary["equal_total_many_medium"]["list:first"]["sample_count"], 4)
+        self.assertEqual(summary["correctness_only"]["list:first"]["sample_count"], 1)
+
+    def test_measure_query_does_not_start_allocator_tracing(self):
+        """捕获正式 application-ready 样本启用 tracemalloc 的计时干扰。"""
+        expected = logical_row()
+        calls = []
+        original = runner.tracemalloc
+        runner.tracemalloc = SimpleNamespace(
+            start=lambda: calls.append("start"), stop=lambda: calls.append("stop"),
+            get_traced_memory=lambda: (0, 123),
+        )
+        try:
+            sample = measure_query(
+                OneResultAdapter(expected), QuerySpec("detail", {}), QueryTruth("detail:text_64k", (expected,)),
+            )
+        finally:
+            runner.tracemalloc = original
+        self.assertEqual(sample.status, "success")
+        self.assertEqual(calls, [])
+
+    def test_batch_memory_diagnostic_validates_truth_and_labels_allocator_peak(self):
+        """捕获未做 truth 门禁或将 tracemalloc 峰值写成 RSS 的诊断记录。"""
+        expected = logical_row()
+        tracer = SimpleNamespace(
+            start=lambda: None, stop=lambda: None, get_traced_memory=lambda: (3, 123),
+        )
+        diagnostic = runner.measure_batch_memory_diagnostic(
+            OneResultAdapter(expected), QuerySpec("batch", {"cohort": "main"}),
+            QueryTruth("batch:main", (expected,)), tracer=tracer, clock=lambda: 1.0,
+        )
+        self.assertEqual(diagnostic["status"], "success")
+        self.assertEqual(diagnostic["peak_memory_bytes"], 123)
+        self.assertEqual(diagnostic["observation_method"], "python-tracemalloc-allocator-peak")
+        failed = runner.measure_batch_memory_diagnostic(
+            OneResultAdapter(logical_row(payload=b"bad")), QuerySpec("batch", {"cohort": "main"}),
+            QueryTruth("batch:main", (expected,)), tracer=tracer, clock=lambda: 1.0,
+        )
+        self.assertEqual(failed["status"], "failed")
 
     def test_atomic_manifest_replaces_running_with_complete_document(self):
         with tempfile.TemporaryDirectory() as directory:

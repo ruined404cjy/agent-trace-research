@@ -98,7 +98,7 @@ class OpenGaussAdapterUnitTest(unittest.TestCase):
         evidence = opengauss.access_evidence_sql("jsons3_test_same_table")
         self.assertIn("idx_scan", evidence)
         self.assertIn("pg_stat_user_indexes", evidence)
-        self.assertTrue(opengauss.explain_sql("SELECT 1").startswith("EXPLAIN ANALYZE "))
+        self.assertTrue(opengauss.explain_sql("SELECT 1").startswith("EXPLAIN (ANALYZE, BUFFERS) "))
         separate = opengauss.create_layout_ddls("jsons3_test", "separate")
         payload_table = separate.split("CREATE TABLE jsons3_test_separate.event_payloads", 1)[1].split("CREATE INDEX", 1)[0]
         self.assertIn("trace_id TEXT", payload_table)

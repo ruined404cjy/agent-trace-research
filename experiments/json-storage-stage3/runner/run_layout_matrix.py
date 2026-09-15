@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import statistics
 import subprocess
@@ -102,7 +103,6 @@ class QuerySample:
     resolver_requests: int
     resolver_read_ms: float
     request_count: int
-    peak_memory_bytes: int
     query_complete_ms: float
     recovery_ms: float
     validation_ms: float
@@ -320,15 +320,14 @@ def _validate_query_rows(actual_rows, expected_rows):
     )
 
 
-def measure_query(adapter: LayoutAdapter, query: QuerySpec, truth: QueryTruth) -> QuerySample:
+def measure_query(adapter: LayoutAdapter, query: QuerySpec, truth: QueryTruth, clock=time.perf_counter) -> QuerySample:
     """执行一次查询，在应用可用边界内完成客户端长度和 SHA-256 校验。"""
-    started = time.perf_counter()
+    started = clock()
     result = None
     validation = ValidationResult()
     validation_ms = 0.0
     error = None
     try:
-        tracemalloc.start()
         result = adapter.run_query(query)
         if not isinstance(result, QueryResult):
             raise ValueError("adapter returned an invalid QueryResult")
@@ -340,19 +339,16 @@ def measure_query(adapter: LayoutAdapter, query: QuerySpec, truth: QueryTruth) -
             != result.database_response_bytes + result.resolver_payload_bytes
         ):
             raise ValueError("response byte accounting mismatch")
-        validation_started = time.perf_counter()
+        validation_started = clock()
         try:
             validation = _validate_query_rows(result.rows, truth.rows)
         finally:
-            validation_ms = (time.perf_counter() - validation_started) * 1000
+            validation_ms = (clock() - validation_started) * 1000
         if result.response_bytes < validation.validated_payload_bytes:
             raise ValueError("response bytes exclude returned payload bytes")
     except Exception as exception:
         error = str(exception) or type(exception).__name__
-    finally:
-        _, peak_memory_bytes = tracemalloc.get_traced_memory()
-        tracemalloc.stop()
-    application_ms = (time.perf_counter() - started) * 1000
+    application_ms = (clock() - started) * 1000
     query_complete_ms = result.query_complete_ms if result is not None else 0.0
     recovery_ms = result.recovery_ms if result is not None else 0.0
     # 真实 adapter 的外层 wall time 必然覆盖分项；max 仅吸收测试替身和计时精度差异。
@@ -369,7 +365,6 @@ def measure_query(adapter: LayoutAdapter, query: QuerySpec, truth: QueryTruth) -
         resolver_requests=result.resolver_requests if result is not None else 0,
         resolver_read_ms=result.resolver_read_ms if result is not None else 0.0,
         request_count=(1 + result.resolver_requests) if result is not None else 1,
-        peak_memory_bytes=peak_memory_bytes,
         query_complete_ms=query_complete_ms,
         recovery_ms=recovery_ms,
         validation_ms=validation_ms,
@@ -377,6 +372,37 @@ def measure_query(adapter: LayoutAdapter, query: QuerySpec, truth: QueryTruth) -
         validation=validation,
         error=error,
     )
+
+
+def measure_batch_memory_diagnostic(adapter, query, truth, tracer=tracemalloc, clock=time.perf_counter):
+    """在正式样本外执行一次 batch truth 门禁和 Python allocator 峰值诊断。"""
+    if query.kind != "batch":
+        raise ValueError("memory diagnostic requires a batch query")
+    started = clock()
+    result = None
+    validation = ValidationResult()
+    error = None
+    tracer.start()
+    try:
+        result = adapter.run_query(query)
+        if not isinstance(result, QueryResult):
+            raise ValueError("adapter returned an invalid QueryResult")
+        validation = _validate_query_rows(result.rows, truth.rows)
+    except Exception as exception:
+        error = str(exception) or type(exception).__name__
+    finally:
+        _, peak_memory_bytes = tracer.get_traced_memory()
+        tracer.stop()
+    return {
+        "status": "success" if error is None else "failed",
+        "scenario": truth.scenario,
+        "observation_method": "python-tracemalloc-allocator-peak",
+        "peak_memory_bytes": peak_memory_bytes,
+        "validated_payload_bytes": validation.validated_payload_bytes,
+        "diagnostic_wall_ms": (clock() - started) * 1000,
+        "formal_latency_sample": False,
+        "error": error,
+    }
 
 
 def _percentile(values, fraction):
@@ -442,9 +468,6 @@ def summarize_samples(samples):
                 "read_ms": sum(sample.resolver_read_ms for sample in successful),
             },
             "request_count": sum(sample.request_count for sample in successful),
-            "peak_memory_bytes": max(
-                (sample.peak_memory_bytes for sample in successful), default=0,
-            ),
         }
         if scenario.startswith("batch:"):
             rates = [
@@ -456,6 +479,14 @@ def summarize_samples(samples):
             summary["throughput_mib_s"] = _distribution(rates) if rates else None
         summaries[scenario] = summary
     return summaries
+
+
+def summarize_workload_samples(samples_by_workload):
+    """按 workload 保留同名 scenario 的独立统计口径。"""
+    return {
+        workload: summarize_samples(tuple(samples))
+        for workload, samples in samples_by_workload.items()
+    }
 
 
 def _file_identity(path):
@@ -1052,38 +1083,162 @@ def _write_samples(path, samples):
     _write_bytes_atomic(path, content)
 
 
+def _split_projection(select_clause):
+    """按括号深度切分固定 adapter SQL 的 SELECT 投影列表。"""
+    fields, current, depth = [], [], 0
+    for character in select_clause:
+        if character == "(":
+            depth += 1
+        elif character == ")":
+            depth -= 1
+        if character == "," and depth == 0:
+            fields.append("".join(current).strip())
+            current = []
+        else:
+            current.append(character)
+    fields.append("".join(current).strip())
+    return tuple(fields)
+
+
+def _expected_query_contract(engine, layout, kind):
+    """独立生成固定 matrix SQL 应使用的物理来源和 payload 投影。"""
+    null_projection = {
+        "opengauss": "null::text",
+        "clickhouse": "cast(null as nullable(string))",
+    }.get(engine, "null")
+    catalog = build_layout_catalog(layout)
+    if kind in {"list", "preview"}:
+        sources = (catalog.list_source,)
+    elif layout == "separate":
+        sources = ("events_analytics", "event_payloads")
+    elif layout == "asset_ref":
+        sources = ("events_analytics",)
+    else:
+        sources = (catalog.detail_source,)
+    return {
+        "sources": sources,
+        "preview_selected": kind != "list",
+        "payload": "null" if kind in {"list", "preview"} else (
+            "asset_id" if layout == "asset_ref" else "payload"
+        ),
+        "null_projection": null_projection,
+    }
+
+
+def _actual_query_shape(statement):
+    """解析 adapter 保存的固定 SELECT/FROM 契约，拒绝不完整或额外来源。"""
+    if not isinstance(statement, str):
+        raise RuntimeError("access SQL is missing")
+    match = re.match(
+        r"^\s*SELECT\s+(?P<select>.+?)\s+FROM\s+(?P<source>.+?)\s+WHERE\s+",
+        statement, re.IGNORECASE | re.DOTALL,
+    )
+    if match is None:
+        raise RuntimeError("access SQL does not match fixed SELECT/FROM contract")
+    source_clause = match.group("source")
+    table_names = re.findall(
+        r"\b(?:FROM|JOIN)\s+(?:[A-Za-z_][A-Za-z0-9_]*\.)?([A-Za-z_][A-Za-z0-9_]*)",
+        "FROM " + source_clause, re.IGNORECASE,
+    )
+    return _split_projection(match.group("select")), tuple(name.lower() for name in table_names)
+
+
+def _projection_uses(field, expression, alias=None):
+    """验证固定 projection 的一个逻辑字段直接来自其预期列。"""
+    expression = expression.lower().strip()
+    expected_alias = alias or field
+    return bool(re.search(
+        rf"(?:^|\.){re.escape(field)}(?:\s+as\s+{re.escape(expected_alias)})?$", expression,
+    ))
+
+
+def _validate_sql_contract(engine, layout, kind, statement):
+    """以 runner 生成的 source/projection 契约校验 adapter 实际保存 SQL。"""
+    projection, sources = _actual_query_shape(statement)
+    expected = _expected_query_contract(engine, layout, kind)
+    if sources != expected["sources"]:
+        raise RuntimeError("access source mismatch")
+    if len(projection) != len(LOGICAL_FIELDS):
+        raise RuntimeError("access projection field count mismatch")
+    for position, field in enumerate(LOGICAL_FIELDS[:-1]):
+        expression = projection[position].lower()
+        if field == "preview" and not expected["preview_selected"]:
+            if expected["null_projection"] not in expression:
+                raise RuntimeError("access projection selects preview for list")
+        elif not _projection_uses(field, projection[position]):
+            raise RuntimeError(f"access projection mismatch: {field}")
+    payload = projection[-1].lower()
+    if expected["payload"] == "null":
+        if expected["null_projection"] not in payload:
+            raise RuntimeError("access projection selects payload for list or preview")
+    elif not _projection_uses(expected["payload"], projection[-1], "payload_value"):
+        raise RuntimeError("access projection omits required full payload")
+    return expected
+
+
+def _formal_access_structure(engine, kind, plan):
+    """确认单条适用正式查询实际使用索引或 ClickHouse primary-key/mark 裁剪。"""
+    if kind not in {"list", "detail", "trace"}:
+        return "batch-or-preview-no-structure-requirement"
+    if not isinstance(plan, str):
+        return None
+    normalized = plan.lower()
+    if engine == "opengauss":
+        has_runtime = "actual time=" in normalized and "rows=" in normalized and "buffers:" in normalized
+        has_index = any(token in normalized for token in (
+            "index scan", "index only scan", "bitmap index scan",
+        ))
+        return "query-plan-index" if has_runtime and has_index else None
+    if engine == "clickhouse":
+        has_primary_key = "primarykey" in normalized or "primary key" in normalized
+        has_marks = "marks" in normalized
+        has_condition = "condition" in normalized
+        return "primary-key-mark-pruning" if has_primary_key and has_marks and has_condition else None
+    return "test-engine"
+
+
 def _validate_access(engine, layout, input_kind, samples, access):
-    """机检声明来源、payload 投影、实际 rows/bytes 和正式访问结构。"""
+    """机检实际 SQL、原始 plan、query 级 rows/bytes 与正式访问结构。"""
     sample_by_id = {sample.query_id: sample for sample in samples}
     if set(access.query_details) != set(sample_by_id):
         raise RuntimeError("access details do not cover every formal query")
     validation = {}
     for query_id, sample in sample_by_id.items():
         detail = access.query_details[query_id]
-        declared = detail.get("declared_source")
         plan = access.plans[query_id]
         if (
             detail.get("kind") != sample.kind
-            or not declared or declared.lower() not in detail.get("statement", "").lower()
-            or detail.get("payload_selected") != (sample.kind in {"detail", "trace", "batch"})
             or sample.validation.row_count < 0 or sample.response_bytes <= 0
         ):
             raise RuntimeError(f"access contract mismatch: {query_id}")
-        structure_observed = (
-            "index" in plan.lower() or "mergetree" in plan.lower()
-            or any(value > 0 for value in access.index_scans.values())
-        )
-        if input_kind == "formal" and not structure_observed:
-            raise RuntimeError(f"declared access structure not observed: {query_id}")
+        expected = _validate_sql_contract(engine, layout, sample.kind, detail.get("statement"))
+        query_finish = None
+        if engine == "clickhouse":
+            query_finish = access.query_finish.get(query_id)
+            if not isinstance(query_finish, dict) or any(
+                not isinstance(query_finish.get(field), int) or query_finish[field] < 0
+                for field in ("read_rows", "read_bytes")
+            ) or query_finish["read_rows"] < sample.validation.row_count:
+                raise RuntimeError(f"QueryFinish rows/bytes are invalid: {query_id}")
+        structure = _formal_access_structure(engine, sample.kind, plan)
+        if input_kind == "formal" and structure is None:
+            raise RuntimeError(f"access structure not observed: {query_id}")
         validation[query_id] = {
             "scenario": sample.scenario, "kind": sample.kind,
-            "declared_source": declared, "payload_selected": detail["payload_selected"],
+            "expected_sources": list(expected["sources"]),
+            "payload_projection": expected["payload"],
             "result_rows": sample.validation.row_count,
             "logical_response_bytes": sample.response_bytes,
-            "scanned_rows": detail.get("scanned_rows"),
-            "scanned_bytes": detail.get("scanned_bytes"),
-            "scanned_bytes_status": detail.get("scanned_bytes_status", "unavailable"),
-            "structure_observed": structure_observed,
+            "scanned_rows": (
+                query_finish["read_rows"] if query_finish is not None else detail.get("scanned_rows")
+            ),
+            "scanned_bytes": (
+                query_finish["read_bytes"] if query_finish is not None else detail.get("scanned_bytes")
+            ),
+            "scanned_bytes_status": "observed" if query_finish is not None else detail.get(
+                "scanned_bytes_status", "unavailable",
+            ),
+            "access_structure": structure or "sequential-or-full-scan-diagnostic",
             "mode": "formal" if input_kind == "formal" else "smoke-sequential-scan-allowed",
         }
     return validation
@@ -1265,6 +1420,11 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
         for query, query_truth in cases:
             count = config.batch_measurements if query.kind == "batch" else config.measurements
             samples.extend(measure_query(adapter, query, query_truth) for _ in range(count))
+        batch_query, batch_truth = next((query, query_truth) for query, query_truth in cases if query.kind == "batch")
+        memory_diagnostic = measure_batch_memory_diagnostic(adapter, batch_query, batch_truth)
+        manifest["memory_diagnostic"] = memory_diagnostic
+        if memory_diagnostic["status"] != "success":
+            raise RuntimeError("batch memory diagnostic failed truth validation")
         successful_ids = [sample.query_id for sample in samples if sample.status == "success"]
         access = adapter.collect_access_evidence(successful_ids)
         manifest["access"] = _as_json(access)
@@ -1516,18 +1676,22 @@ def run_matrix(arguments):
             target_dir = output_root / engine / layout
             state = target_states[(engine, layout)]
             decorated = []
+            samples_by_workload = {}
             plain = []
             for workload in workloads:
+                workload_samples = []
                 for round_index, position, sample in aggregate_samples[(engine, layout, workload)]:
                     value = _as_json(sample)
                     value.update({"round_index": round_index, "position": position, "workload": workload})
                     decorated.append(value)
+                    workload_samples.append(sample)
                     plain.append(sample)
+                samples_by_workload[workload] = tuple(workload_samples)
             _write_bytes_atomic(
                 target_dir / "samples.jsonl",
                 b"".join(_json_bytes(value) for value in decorated),
             )
-            summary = summarize_samples(tuple(plain))
+            summary = summarize_workload_samples(samples_by_workload)
             complete = asset_work_clean and all(
                 workload_state["status"] == "ready"
                 for workload_state in state["workloads"].values()
@@ -1576,6 +1740,7 @@ def run_matrix(arguments):
                     else "unavailable"
                 ),
             }
+            state["summary"] = summary
             _write_bytes_atomic(target_dir / "result.json", _json_bytes({
                 "run_id": state["run_id"], "status": state["status"], "summary": summary,
                 "correctness": state["correctness"],

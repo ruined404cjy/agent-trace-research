@@ -143,8 +143,8 @@ def access_evidence_sql(schema):
 
 
 def explain_sql(statement):
-    """将正式绑定查询转换为 EXPLAIN ANALYZE 证据查询。"""
-    return "EXPLAIN ANALYZE " + statement
+    """将正式绑定查询转换为含实际行数和 buffers 的逐 query 证据查询。"""
+    return "EXPLAIN (ANALYZE, BUFFERS) " + statement
 
 
 class OpenGaussAdapter:
