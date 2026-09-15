@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tracemalloc
 import uuid
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -36,6 +37,35 @@ EVENT_FIELDS = (
 )
 SMOKE_TRUTH_FORMAT = "agent-trace-json-storage-stage3-smoke-truth"
 SMOKE_GENERATION_FORMAT = "agent-trace-json-storage-stage3-smoke-generation"
+FORMAL_GENERATION_FORMAT = "agent-trace-json-storage-stage3-generation"
+WORKLOADS = (
+    "main", "equal_total_few_large", "equal_total_many_medium", "correctness_only",
+)
+PAYLOAD_FIELDS = (
+    "cohort", "profile", "content_type", "encoding", "content_length", "preview",
+    "sha256", "payload_path",
+)
+FORMAL_SOURCE_MANIFEST = {
+    "bytes": 2_397,
+    "sha256": "25181ebc6f22fe4f09fa9aa3d36c997d4b60744ffb82a9fa75f9741e7c216437",
+}
+FORMAL_SOURCE_ARTIFACTS = {
+    "dataset.jsonl": {
+        "bytes": 302_518_948,
+        "sha256": "8de6be1f74f075b12d598d15bf48e2bbae57c6e3da9472c909afcd42fccc3405",
+    },
+    "truth-manifest.json": {
+        "bytes": 18_073_179,
+        "sha256": "b04f49ab89cb9da9636b60134317915708ff207a96058392ca0734636b525d04",
+    },
+}
+FORMAL_QUERY_WINDOW = {
+    "project_id": "Leoxx/whowhen_pro",
+    "start_time": "2030-01-01T00:00:00.000Z",
+    "end_time": "2030-01-01T00:52:08.500Z",
+    "page_size": 256,
+    "row_count": 27_561,
+}
 
 
 @dataclass(frozen=True)
@@ -68,6 +98,11 @@ class QuerySample:
     response_bytes: int
     database_response_bytes: int
     resolver_payload_bytes: int
+    database_protocol_bytes: int | None
+    resolver_requests: int
+    resolver_read_ms: float
+    request_count: int
+    peak_memory_bytes: int
     query_complete_ms: float
     recovery_ms: float
     validation_ms: float
@@ -93,6 +128,7 @@ class RunConfig:
     command: tuple[str, ...] = ()
     asset_root: Path | None = None
     verified_events: tuple[dict[str, object], ...] = ()
+    workload: str = "main"
 
     def __post_init__(self):
         if self.layout not in LAYOUTS:
@@ -108,6 +144,8 @@ class RunConfig:
         ):
             if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
                 raise ValueError(f"{name} must be positive")
+        if self.workload not in WORKLOADS:
+            raise ValueError(f"unsupported workload: {self.workload}")
 
 
 @dataclass(frozen=True)
@@ -166,6 +204,81 @@ def latin_square(layouts=LAYOUTS):
     return tuple(layouts[offset:] + layouts[:offset] for offset in range(4))
 
 
+def validate_formal_contract(generation, truth, measurements, batch_measurements):
+    """强制正式矩阵使用冻结生成格式、来源、规模、窗口和 30/5 重复。"""
+    if generation.get("format") != FORMAL_GENERATION_FORMAT or generation.get("format_version") != 1:
+        raise ValueError("formal generation format mismatch")
+    if (measurements, batch_measurements) != (30, 5):
+        raise ValueError("formal performance workloads require 30/5 measurements")
+    if not isinstance(truth, TruthCatalog):
+        return
+    expected_watermarks = tuple(list(range(256, 48_534, 256)) + [48_534])
+    source = truth.source
+    if (
+        truth.seed != 20260907 or truth.record_count != 48_534
+        or truth.block_size != 256 or truth.block_count != 190
+        or truth.watermarks != expected_watermarks
+        or truth.query_window != FORMAL_QUERY_WINDOW
+        or source.get("manifest") != FORMAL_SOURCE_MANIFEST
+        or source.get("artifacts") != FORMAL_SOURCE_ARTIFACTS
+    ):
+        raise ValueError("formal frozen source contract mismatch")
+
+
+def _workload_accepts(row, workload):
+    """判断事件 payload 是否属于当前隔离 workload。"""
+    if workload == "main":
+        return row["cohort"] == "main"
+    if workload == "equal_total_few_large":
+        return row["cohort"] == "equal_total_control" and row["profile"] == "text_2m"
+    if workload == "equal_total_many_medium":
+        return row["cohort"] == "equal_total_control" and row["profile"] == "text_64k"
+    if workload == "correctness_only":
+        return row["cohort"] == "correctness_only"
+    raise ValueError(f"unsupported workload: {workload}")
+
+
+def build_workload_events(events, workload):
+    """保留全部 identity/block，并把非目标 payload 字段投影为 SQL NULL。"""
+    if workload not in WORKLOADS:
+        raise ValueError(f"unsupported workload: {workload}")
+    projected = []
+    for source in events:
+        row = dict(source)
+        if not _workload_accepts(source, workload):
+            row.update({field_name: None for field_name in PAYLOAD_FIELDS})
+        elif workload.startswith("equal_total_"):
+            row["cohort"] = workload
+        projected.append(row)
+    return tuple(projected)
+
+
+def validate_workload_contract(events, workload, input_kind):
+    """核对隔离 workload 的 payload 数量和原始 bytes。"""
+    selected = [row for row in events if row["payload_path"] is not None]
+    actual = (len(selected), sum(row["content_length"] for row in selected))
+    formal = {
+        "main": (160, 128_450_560),
+        "equal_total_few_large": (40, 83_886_080),
+        "equal_total_many_medium": (1_280, 83_886_080),
+        "correctness_only": (1, 1_024),
+    }
+    if input_kind == "formal" and actual != formal[workload]:
+        raise ValueError(f"formal workload contract mismatch: {workload}")
+    if input_kind == "smoke" and actual[0] < 1:
+        raise ValueError(f"smoke workload is empty: {workload}")
+    return {"payload_count": actual[0], "raw_payload_bytes": actual[1]}
+
+
+def validate_watermark_keys(layout, watermarks, minimum):
+    """要求水位 key 精确覆盖布局写目标且全部达到指定位置。"""
+    expected = set(build_layout_catalog(layout).write_tables)
+    if set(watermarks) != expected:
+        raise RuntimeError("watermark keys do not match layout write targets")
+    if any(not isinstance(value, int) or value < minimum for value in watermarks.values()):
+        raise RuntimeError(f"joint watermark incomplete at {minimum}")
+
+
 def _validate_query_rows(actual_rows, expected_rows):
     """在客户端逐字段核对行顺序、内容元数据和完整 payload bytes。"""
     if len(actual_rows) != len(expected_rows):
@@ -215,6 +328,7 @@ def measure_query(adapter: LayoutAdapter, query: QuerySpec, truth: QueryTruth) -
     validation_ms = 0.0
     error = None
     try:
+        tracemalloc.start()
         result = adapter.run_query(query)
         if not isinstance(result, QueryResult):
             raise ValueError("adapter returned an invalid QueryResult")
@@ -235,6 +349,9 @@ def measure_query(adapter: LayoutAdapter, query: QuerySpec, truth: QueryTruth) -
             raise ValueError("response bytes exclude returned payload bytes")
     except Exception as exception:
         error = str(exception) or type(exception).__name__
+    finally:
+        _, peak_memory_bytes = tracemalloc.get_traced_memory()
+        tracemalloc.stop()
     application_ms = (time.perf_counter() - started) * 1000
     query_complete_ms = result.query_complete_ms if result is not None else 0.0
     recovery_ms = result.recovery_ms if result is not None else 0.0
@@ -248,6 +365,11 @@ def measure_query(adapter: LayoutAdapter, query: QuerySpec, truth: QueryTruth) -
         response_bytes=result.response_bytes if result is not None else 0,
         database_response_bytes=result.database_response_bytes if result is not None else 0,
         resolver_payload_bytes=result.resolver_payload_bytes if result is not None else 0,
+        database_protocol_bytes=result.database_protocol_bytes if result is not None else None,
+        resolver_requests=result.resolver_requests if result is not None else 0,
+        resolver_read_ms=result.resolver_read_ms if result is not None else 0.0,
+        request_count=(1 + result.resolver_requests) if result is not None else 1,
+        peak_memory_bytes=peak_memory_bytes,
         query_complete_ms=query_complete_ms,
         recovery_ms=recovery_ms,
         validation_ms=validation_ms,
@@ -310,7 +432,19 @@ def summarize_samples(samples):
                 "validated_payload": sum(
                     sample.validation.validated_payload_bytes for sample in successful
                 ),
+                "database_protocol": [
+                    sample.database_protocol_bytes for sample in successful
+                    if sample.database_protocol_bytes is not None
+                ] or "unavailable",
             },
+            "resolver": {
+                "requests": sum(sample.resolver_requests for sample in successful),
+                "read_ms": sum(sample.resolver_read_ms for sample in successful),
+            },
+            "request_count": sum(sample.request_count for sample in successful),
+            "peak_memory_bytes": max(
+                (sample.peak_memory_bytes for sample in successful), default=0,
+            ),
         }
         if scenario.startswith("batch:"):
             rates = [
@@ -359,7 +493,7 @@ def _load_smoke_truth(path):
     payloads = tuple(_payload_record_from_dict(record) for record in value["payloads"])
     by_event = {record.event_id: record for record in payloads}
     detail = tuple(_payload_record_from_dict(record) for record in value["detail_samples"])
-    if len(by_event) != 4 or any(by_event.get(record.event_id) != record for record in detail):
+    if len(by_event) != 7 or any(by_event.get(record.event_id) != record for record in detail):
         raise ValueError("smoke payload contract mismatch")
     truth = TruthCatalog(
         seed=value["seed"], source=value["source"], record_count=value["record_count"],
@@ -475,9 +609,11 @@ def load_run_input(input_root):
     if generation.get("format") == SMOKE_GENERATION_FORMAT:
         truth = _load_smoke_truth(truth_path)
         input_kind = "smoke"
-    else:
+    elif generation.get("format") == FORMAL_GENERATION_FORMAT:
         truth = load_truth(truth_path)
         input_kind = "formal"
+    else:
+        raise ValueError("unknown generation format")
     events = _load_events(input_root / "events.jsonl")
     _validate_input(truth, events, input_root)
     generation_contract = {
@@ -521,13 +657,20 @@ def build_smoke_input(output):
         raise ValueError("smoke output directory must be empty")
     output.mkdir(parents=True, exist_ok=True)
     profiles = ("text_64k", "text_512k", "text_2m", "entropy_512k")
-    payload_events = {0: profiles[0], 1: profiles[1], 3: profiles[2], 4: profiles[3]}
+    payload_events = {
+        0: ("main", profiles[0]), 1: ("main", profiles[1]),
+        2: ("main", profiles[2]), 3: ("main", profiles[3]),
+        4: ("equal_total_control", "text_2m"),
+        5: ("equal_total_control", "text_64k"),
+        6: ("correctness_only", "unicode_boundary"),
+    }
     trace_ids = ("trace-short", "trace-mid", "trace-mid") + ("trace-long",) * 5
     events = []
     payload_records = []
     for index in range(8):
         event_id = f"smoke-event-{index:02d}"
-        profile = payload_events.get(index)
+        assignment = payload_events.get(index)
+        cohort, profile = assignment if assignment else (None, None)
         payload = _smoke_payload(event_id, profile) if profile else None
         payload_record = None
         if payload is not None:
@@ -537,7 +680,7 @@ def build_smoke_input(output):
             payload_record = {
                 "event_id": event_id, "trace_id": trace_ids[index],
                 "project_id": "stage3-smoke", "start_time": f"2030-01-01T00:00:0{index}.000Z",
-                "cohort": "main", "profile": profile, "content_type": "application/json",
+                "cohort": cohort, "profile": profile, "content_type": "application/json",
                 "encoding": "utf-8", "content_length": len(payload),
                 "preview": payload.decode("utf-8")[:200], "sha256": digest,
                 "payload_path": path,
@@ -589,13 +732,22 @@ def build_smoke_input(output):
             "end_time": "2030-01-01T00:00:08.000Z", "page_size": 2, "row_count": 8,
         },
         "payloads": payload_records,
-        "cohorts": {"main": {
-            "performance": True, "payload_count": 4,
-            "profile_counts": {profile: 1 for profile in profiles},
-            "raw_payload_bytes": sum(record["content_length"] for record in payload_records),
-        }},
+        "cohorts": {
+            name: {
+                "performance": name != "correctness_only",
+                "payload_count": len(selected := [
+                    record for record in payload_records if record["cohort"] == name
+                ]),
+                "profile_counts": {
+                    profile: sum(record["profile"] == profile for record in selected)
+                    for profile in {record["profile"] for record in selected}
+                },
+                "raw_payload_bytes": sum(record["content_length"] for record in selected),
+            }
+            for name in ("main", "equal_total_control", "correctness_only")
+        },
         "representative_traces": representative,
-        "detail_samples": payload_records,
+        "detail_samples": payload_records[:4],
     }
     events_bytes = b"".join(_json_bytes(row) for row in events)
     truth_bytes = _json_bytes(truth)
@@ -628,13 +780,40 @@ def _expected_row(row, input_root, kind):
     return result
 
 
+def _validate_dataset_audit(audit, events, input_root):
+    """对全量数据库读回执行精确 identity、顺序、重复及 payload 审计。"""
+    if audit.duplicate_event_ids != 0 or len(audit.rows) != len(events):
+        raise RuntimeError("dataset audit row count or duplicate mismatch")
+    expected = tuple(
+        {"ingest_seq": row["ingest_seq"], **_expected_row(row, input_root, "batch")}
+        for row in events
+    )
+    if audit.rows != expected:
+        raise RuntimeError("dataset audit identity/order/payload mismatch")
+    if audit.logical_response_bytes <= 0:
+        raise RuntimeError("dataset audit response bytes missing")
+    return {
+        "row_count": len(audit.rows),
+        "duplicate_event_ids": audit.duplicate_event_ids,
+        "identity_sha256": canonical_digest([
+            [row["event_id"], row["trace_id"], row["project_id"], row["start_time"]]
+            for row in audit.rows
+        ]),
+        "payload_count": sum(row["payload"] is not None for row in audit.rows),
+        "payload_bytes": sum(len(row["payload"] or b"") for row in audit.rows),
+        "logical_response_bytes": audit.logical_response_bytes,
+        "database_protocol_bytes": audit.database_protocol_bytes
+        if audit.database_protocol_bytes is not None else "unavailable",
+    }
+
+
 def _add_millisecond(timestamp):
     """将毫秒 UTC ISO 时间增加一毫秒，形成 Trace 查询开区间上界。"""
     value = datetime.strptime(timestamp, "%Y-%m-%dT%H:%M:%S.%fZ").replace(tzinfo=timezone.utc)
     return (value + timedelta(milliseconds=1)).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
-def _query_cases(events, truth, input_root):
+def workload_query_cases(events, truth, input_root, workload="main"):
     """构造固定首/中页、四详情、三 Trace 和主 cohort 批量 truth。"""
     window = truth.query_window
     window_rows = sorted([
@@ -652,7 +831,8 @@ def _query_cases(events, truth, input_root):
         ),
     )
     cases = []
-    for kind in ("list", "preview"):
+    page_kinds = ("list", "preview") if workload == "main" else ("list",)
+    for kind in page_kinds:
         for label, offset, cursor_time, cursor_id in page_definitions:
             selected = window_rows[offset:offset + page_size]
             query = QuerySpec(kind, {
@@ -665,16 +845,23 @@ def _query_cases(events, truth, input_root):
                 tuple(_expected_row(row, input_root, kind) for row in selected),
             )))
     by_event = {row["event_id"]: row for row in events}
-    for record in truth.detail_samples:
-        row = by_event[record.event_id]
+    if workload == "main":
+        detail_records = truth.detail_samples
+    else:
+        detail_candidates = [row for row in events if row["payload_path"] is not None]
+        detail_records = detail_candidates[:1]
+    for record in detail_records:
+        record_event_id = record.event_id if hasattr(record, "event_id") else record["event_id"]
+        record_profile = record.profile if hasattr(record, "profile") else record["profile"]
+        row = by_event[record_event_id]
         query = QuerySpec("detail", {
             "project_id": row["project_id"], "trace_id": row["trace_id"],
             "start_time": row["start_time"], "event_id": row["event_id"],
         })
         cases.append((query, QueryTruth(
-            f"detail:{record.profile}", (_expected_row(row, input_root, "detail"),),
+            f"detail:{record_profile}", (_expected_row(row, input_root, "detail"),),
         )))
-    for label in ("p25", "p50", "p95"):
+    for label in (("p25", "p50", "p95") if workload == "main" else ()):
         trace_id = truth.representative_traces[label]["trace_id"]
         selected = sorted(
             [row for row in events if row["trace_id"] == trace_id],
@@ -693,14 +880,20 @@ def _query_cases(events, truth, input_root):
         cases.append((query, QueryTruth(
             f"trace:{label}", tuple(_expected_row(row, input_root, "trace") for row in selected),
         )))
+    batch_cohort = workload if workload.startswith("equal_total_") else workload
     selected = sorted(
-        [row for row in events if row["cohort"] == "main" and row["sha256"] is not None],
+        [row for row in events if row["cohort"] == batch_cohort and row["sha256"] is not None],
         key=lambda row: (row["start_time"], row["event_id"]),
     )
-    cases.append((QuerySpec("batch", {"cohort": "main"}), QueryTruth(
-        "batch:main", tuple(_expected_row(row, input_root, "batch") for row in selected),
+    cases.append((QuerySpec("batch", {"cohort": batch_cohort}), QueryTruth(
+        f"batch:{workload}", tuple(_expected_row(row, input_root, "batch") for row in selected),
     )))
     return tuple(cases)
+
+
+def _query_cases(events, truth, input_root):
+    """保留 Task 4 初始内部入口，等价于 main workload catalog。"""
+    return workload_query_cases(events, truth, input_root, "main")
 
 
 def _host_evidence():
@@ -787,7 +980,44 @@ def _write_samples(path, samples):
     _write_bytes_atomic(path, content)
 
 
-def _evidence_gate(engine, layout, samples, access, storage, cleanup):
+def _validate_access(engine, layout, input_kind, samples, access):
+    """机检声明来源、payload 投影、实际 rows/bytes 和正式访问结构。"""
+    sample_by_id = {sample.query_id: sample for sample in samples}
+    if set(access.query_details) != set(sample_by_id):
+        raise RuntimeError("access details do not cover every formal query")
+    validation = {}
+    for query_id, sample in sample_by_id.items():
+        detail = access.query_details[query_id]
+        declared = detail.get("declared_source")
+        plan = access.plans[query_id]
+        if (
+            detail.get("kind") != sample.kind
+            or not declared or declared.lower() not in detail.get("statement", "").lower()
+            or detail.get("payload_selected") != (sample.kind in {"detail", "trace", "batch"})
+            or sample.validation.row_count < 0 or sample.response_bytes <= 0
+        ):
+            raise RuntimeError(f"access contract mismatch: {query_id}")
+        structure_observed = (
+            "index" in plan.lower() or "mergetree" in plan.lower()
+            or any(value > 0 for value in access.index_scans.values())
+        )
+        if input_kind == "formal" and not structure_observed:
+            raise RuntimeError(f"declared access structure not observed: {query_id}")
+        validation[query_id] = {
+            "scenario": sample.scenario, "kind": sample.kind,
+            "declared_source": declared, "payload_selected": detail["payload_selected"],
+            "result_rows": sample.validation.row_count,
+            "logical_response_bytes": sample.response_bytes,
+            "scanned_rows": detail.get("scanned_rows"),
+            "scanned_bytes": detail.get("scanned_bytes"),
+            "scanned_bytes_status": detail.get("scanned_bytes_status", "unavailable"),
+            "structure_observed": structure_observed,
+            "mode": "formal" if input_kind == "formal" else "smoke-sequential-scan-allowed",
+        }
+    return validation
+
+
+def _evidence_gate(engine, layout, input_kind, samples, access, storage, cleanup):
     """验证完成 manifest 所需的结果字节、访问、物理状态和清理证据。"""
     failed = [sample for sample in samples if sample.status != "success"]
     if failed:
@@ -799,6 +1029,7 @@ def _evidence_gate(engine, layout, samples, access, storage, cleanup):
         raise RuntimeError("QueryFinish does not cover every formal query")
     if engine == "opengauss" and not access.index_scans:
         raise RuntimeError("openGauss index scan evidence is missing")
+    access_validation = _validate_access(engine, layout, input_kind, samples, access)
     expected_tables = set(build_layout_catalog(layout).write_tables)
     if set(storage.tables) != expected_tables:
         raise RuntimeError("storage evidence does not cover every write target")
@@ -806,6 +1037,7 @@ def _evidence_gate(engine, layout, samples, access, storage, cleanup):
         raise RuntimeError("Asset storage evidence is missing")
     if not cleanup.removed:
         raise RuntimeError("cleanup was not confirmed")
+    return access_validation
 
 
 def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -> RunResult:
@@ -832,15 +1064,15 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
     error = None
     cleanup = None
     asset_removed = config.asset_root is None
-    ingestion_started = time.perf_counter()
+    preflight_started = time.perf_counter()
     try:
         if config.verified_events:
-            events = config.verified_events
+            source_events = config.verified_events
             # CLI 已完成一次全量文件校验；adapter 在每个 block 写入前再次校验实际 payload。
-            _validate_input(truth, events, config.input_root, validate_payloads=False)
+            _validate_input(truth, source_events, config.input_root, validate_payloads=False)
             loaded_identity = config.input_identity
         else:
-            loaded_truth, events, loaded_identity = load_run_input(config.input_root)
+            loaded_truth, source_events, loaded_identity = load_run_input(config.input_root)
             if (
                 loaded_truth.identity_sha256 != truth.identity_sha256
                 or loaded_truth.record_count != truth.record_count
@@ -849,7 +1081,9 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
             if config.input_identity and loaded_identity != config.input_identity:
                 raise ValueError("input identity changed before execution")
         manifest["input"] = loaded_identity
+        ddl_started = time.perf_counter()
         created = adapter.create()
+        manifest["ddl_create_ms"] = (time.perf_counter() - ddl_started) * 1000
         manifest["layout_definition"] = created
         manifest["ddl_sha256"] = canonical_digest(created)
         manifest["code"] = _code_evidence(adapter)
@@ -858,21 +1092,24 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
         if config.engine in {"opengauss", "clickhouse"} and not container["image_id"]:
             raise RuntimeError("container image digest evidence is missing")
         manifest["container"] = container
+        events = build_workload_events(source_events, config.workload)
+        manifest["workload"] = config.workload
+        manifest["preflight_ms"] = (time.perf_counter() - preflight_started) * 1000
         block_evidence = []
         previous = 0
+        ingestion_started = time.perf_counter()
         for watermark in truth.watermarks:
             block = list(events[previous:watermark])
             block_result = adapter.ingest_block(block)
             if (
                 block_result.rows != len(block)
                 or block_result.watermark != watermark
-                or any(value < watermark for value in block_result.watermarks.values())
             ):
                 raise RuntimeError(f"block result mismatch at watermark {watermark}")
+            validate_watermark_keys(config.layout, block_result.watermarks, watermark)
             visible = adapter.wait_write_complete(watermark)
-            if not visible.completed or any(
-                value < watermark for value in visible.watermarks.values()
-            ):
+            validate_watermark_keys(config.layout, visible.watermarks, watermark)
+            if not visible.completed:
                 raise RuntimeError(f"joint watermark incomplete at {watermark}")
             block_evidence.append({
                 "ingest": _as_json(block_result), "visible": _as_json(visible),
@@ -880,27 +1117,54 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
             previous = watermark
         write_wall_ms = (time.perf_counter() - ingestion_started) * 1000
         ready = adapter.wait_query_ready(config.query_ready_timeout)
-        if not ready.completed or any(value < truth.record_count for value in ready.watermarks.values()):
+        validate_watermark_keys(config.layout, ready.watermarks, truth.record_count)
+        if not ready.completed:
             raise RuntimeError("query readiness or final joint watermark incomplete")
         ready_total_ms = (time.perf_counter() - ingestion_started) * 1000
+        audit = adapter.audit_dataset()
+        audit_evidence = _validate_dataset_audit(audit, events, config.input_root)
         storage = adapter.collect_storage()
-        payload_bytes = sum(record.content_length for record in truth.payloads)
+        payload_bytes = sum(row["content_length"] or 0 for row in events)
         block_times = [item["ingest"]["wall_ms"] for item in block_evidence]
+        database_submitted = sum(item["ingest"]["database_submitted_bytes"] for item in block_evidence)
+        asset_submitted = sum(item["ingest"]["asset_submitted_bytes"] for item in block_evidence)
+        write_target_ms = {}
+        for item in block_evidence:
+            for target, duration in item["ingest"]["write_target_ms"].items():
+                write_target_ms[target] = write_target_ms.get(target, 0.0) + duration
         manifest["write"] = {
             "row_count": truth.record_count, "block_count": truth.block_count,
             "final_watermark": truth.record_count, "wall_ms": write_wall_ms,
             "rows_per_second": truth.record_count / (write_wall_ms / 1000),
             "raw_payload_bytes": payload_bytes,
+            "database_submitted_bytes": database_submitted,
+            "database_submitted_bytes_kind": (
+                "http-json-each-row-body" if config.engine == "clickhouse"
+                else "deterministic-logical-copy-row-encoding"
+            ),
+            "asset_submitted_bytes": asset_submitted,
+            "client_submitted_bytes": database_submitted + asset_submitted,
+            "client_submitted_to_raw_payload_ratio":
+                (database_submitted + asset_submitted) / payload_bytes if payload_bytes else None,
+            "write_target_ms": write_target_ms,
+            "asset_publish_ms": sum(
+                item["ingest"].get("asset_publish_ms", 0.0) for item in block_evidence
+            ),
             "raw_payload_mib_per_second": payload_bytes / (1024 * 1024) / (write_wall_ms / 1000),
             "block_wall_ms": _distribution(block_times), "blocks": block_evidence,
         }
         manifest["maintenance"] = {
             **_as_json(ready), "load_to_query_ready_ms": ready_total_ms,
+            "watermark_wait_ms": sum(
+                item["visible"].get("watermark_wait_ms", item["visible"]["wall_ms"])
+                for item in block_evidence
+            ),
             "natural_stable_parts": config.engine == "clickhouse",
             "optimize_final": False,
         }
+        manifest["dataset_audit"] = audit_evidence
         manifest["storage"] = _as_json(storage)
-        cases = _query_cases(events, truth, config.input_root)
+        cases = workload_query_cases(events, truth, config.input_root, config.workload)
         manifest["query_catalog_sha256"] = canonical_digest([
             {"scenario": query_truth.scenario, "kind": query.kind, "parameters": query.parameters}
             for query, query_truth in cases
@@ -914,6 +1178,9 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
         successful_ids = [sample.query_id for sample in samples if sample.status == "success"]
         access = adapter.collect_access_evidence(successful_ids)
         manifest["access"] = _as_json(access)
+        manifest["access_validation"] = _validate_access(
+            config.engine, config.layout, loaded_identity["kind"], samples, access,
+        )
     except Exception as exception:
         error = exception
     finally:
@@ -947,7 +1214,10 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
     }
     if error is None:
         try:
-            _evidence_gate(config.engine, config.layout, samples, access, storage, cleanup)
+            manifest["access_validation"] = _evidence_gate(
+                config.engine, config.layout, loaded_identity["kind"],
+                samples, access, storage, cleanup,
+            )
             if not asset_removed:
                 raise RuntimeError("Asset directory cleanup was not confirmed")
         except Exception as gate_error:
@@ -1021,12 +1291,12 @@ def failed_round_record(round_dir, position, output_root):
 
 
 def run_matrix(arguments):
-    """按引擎独立执行四轮 Latin square，并发布八个聚合目标 manifest。"""
+    """按 workload 隔离执行 Latin square，并在全局清理后发布八个目标。"""
     input_root = Path(arguments.input).resolve()
     output_root = Path(arguments.output).resolve()
-    truth, events, identity = load_run_input(input_root)
     engines = _parse_csv(arguments.engines, {"opengauss", "clickhouse"}, "engines")
     layouts = _parse_csv(arguments.layouts, set(LAYOUTS), "layouts")
+    workloads = _parse_csv(getattr(arguments, "workloads", ",".join(WORKLOADS)), set(WORKLOADS), "workloads")
     if set(layouts) != set(LAYOUTS):
         raise ValueError("main matrix requires all four layouts")
     schedule = latin_square(LAYOUTS)
@@ -1040,10 +1310,17 @@ def run_matrix(arguments):
                 "format": "agent-trace-json-storage-stage3-layout-matrix", "format_version": 1,
                 "run_id": f"jsons3-{engine}-{layout}-{uuid.uuid4().hex[:10]}",
                 "status": "running", "engine": engine, "layout": layout,
-                "seed": truth.seed, "latin_square": [list(row) for row in schedule],
+                "latin_square": [list(row) for row in schedule],
                 "measurements": arguments.measurements,
                 "batch_measurements": arguments.batch_measurements,
-                "command": list(command), "input": identity, "rounds": [],
+                "command": list(command), "input": {
+                    name: _file_identity(input_root / name)
+                    for name in ("generation-manifest.json", "truth.json", "events.jsonl")
+                    if (input_root / name).is_file()
+                },
+                "workloads": {workload: {"status": "running", "rounds": []} for workload in workloads},
+                "rounds": [],
+                "host": _host_evidence(),
                 "container": _container_evidence(
                     arguments.opengauss_container if engine == "opengauss"
                     else arguments.clickhouse_container
@@ -1051,78 +1328,142 @@ def run_matrix(arguments):
             }
             write_manifest_atomic(target_dir / "run-manifest.json", state)
             target_states[(engine, layout)] = state
+    try:
+        truth, events, identity = load_run_input(input_root)
+        generation = json.loads((input_root / "generation-manifest.json").read_bytes())
+        if identity["kind"] == "formal":
+            validate_formal_contract(
+                generation, truth, arguments.measurements, arguments.batch_measurements,
+            )
+    except Exception as error:
+        for (engine, layout), state in target_states.items():
+            state.update({
+                "status": "failed", "error_category": "input_validation",
+                "error": str(error) or type(error).__name__,
+            })
+            write_manifest_atomic(output_root / engine / layout / "run-manifest.json", state)
+        raise
+    for state in target_states.values():
+        state["seed"] = truth.seed
+        state["input"] = identity
     failures = []
-    aggregate_samples = {(engine, layout): [] for engine in engines for layout in LAYOUTS}
-    for round_index, order in enumerate(schedule):
-        for position, layout in enumerate(order):
-            for engine in engines:
-                state = target_states[(engine, layout)]
-                if state["status"] == "failed":
-                    continue
-                target_dir = output_root / engine / layout
-                round_dir = target_dir / "rounds" / f"round-{round_index + 1}"
-                asset_root = output_root / ".asset-work" / engine / layout / f"round-{round_index + 1}"
-                namespace = f"jsons3_{engine[:2]}{round_index + 1}{position + 1}_{uuid.uuid4().hex[:8]}"
-                adapter = _adapter(
-                    engine, layout, namespace, input_root, asset_root, arguments,
-                )
-                config = RunConfig(
-                    input_root=input_root, output=round_dir, engine=engine, layout=layout,
-                    round_index=round_index, round_order=order,
-                    measurements=arguments.measurements,
-                    batch_measurements=arguments.batch_measurements,
-                    query_ready_timeout=arguments.query_ready_timeout,
-                    input_identity=identity, command=command,
-                    asset_root=asset_root if layout == "asset_ref" else None,
-                    verified_events=events,
-                )
-                try:
-                    result = run_layout(adapter, truth, config)
-                    state["rounds"].append({
-                        **result.manifest, "position": position,
-                        "artifact_directory": str(round_dir.relative_to(output_root)),
-                    })
-                    aggregate_samples[(engine, layout)].extend(
-                        (round_index, position, sample) for sample in result.samples
+    aggregate_samples = {
+        (engine, layout, workload): []
+        for engine in engines for layout in LAYOUTS for workload in workloads
+    }
+    for workload in workloads:
+        workload_events = build_workload_events(events, workload)
+        contract = validate_workload_contract(workload_events, workload, identity["kind"])
+        rounds = range(1) if workload == "correctness_only" else range(4)
+        for state in target_states.values():
+            state["workloads"][workload]["contract"] = contract
+        for round_index in rounds:
+            order = schedule[round_index]
+            for position, layout in enumerate(order):
+                for engine in engines:
+                    state = target_states[(engine, layout)]
+                    workload_state = state["workloads"][workload]
+                    target_dir = output_root / engine / layout
+                    round_dir = target_dir / "rounds" / workload / f"round-{round_index + 1}"
+                    asset_root = output_root / ".asset-work" / engine / layout / workload / f"round-{round_index + 1}"
+                    namespace = f"jsons3_{engine[:2]}{workload[:2]}{round_index + 1}{position + 1}_{uuid.uuid4().hex[:6]}"
+                    adapter = _adapter(engine, layout, namespace, input_root, asset_root, arguments)
+                    config = RunConfig(
+                        input_root=input_root, output=round_dir, engine=engine, layout=layout,
+                        round_index=round_index, round_order=order,
+                        measurements=arguments.measurements,
+                        batch_measurements=arguments.batch_measurements,
+                        query_ready_timeout=arguments.query_ready_timeout,
+                        input_identity=identity, command=command,
+                        asset_root=asset_root if layout == "asset_ref" else None,
+                        verified_events=events, workload=workload,
                     )
-                except Exception as error:
-                    state["status"] = "failed"
-                    state["error"] = str(error) or type(error).__name__
-                    state["failed_round"] = round_index
                     try:
-                        state["rounds"].append(
-                            failed_round_record(round_dir, position, output_root)
+                        result = run_layout(adapter, truth, config)
+                        record = {
+                            **result.manifest, "position": position,
+                            "artifact_directory": str(round_dir.relative_to(output_root)),
+                        }
+                        workload_state["rounds"].append(record)
+                        for evidence_key in ("code", "engine_runtime"):
+                            state.setdefault(evidence_key, record[evidence_key])
+                        if workload == "main":
+                            state["rounds"].append(record)
+                        aggregate_samples[(engine, layout, workload)].extend(
+                            (round_index, position, sample) for sample in result.samples
                         )
-                    except Exception as artifact_error:
-                        state["failed_artifact_error"] = str(artifact_error)
-                    failures.append(f"{engine}/{layout}: {state['error']}")
-                write_manifest_atomic(target_dir / "run-manifest.json", state)
+                    except Exception as error:
+                        workload_state.update({
+                            "status": "failed", "error": str(error) or type(error).__name__,
+                            "failed_round": round_index,
+                        })
+                        try:
+                            workload_state["rounds"].append(
+                                failed_round_record(round_dir, position, output_root)
+                            )
+                        except Exception as artifact_error:
+                            workload_state["failed_artifact_error"] = str(artifact_error)
+                        failures.append(f"{engine}/{layout}/{workload}: {workload_state['error']}")
+                    write_manifest_atomic(target_dir / "run-manifest.json", state)
+        expected_rounds = 1 if workload == "correctness_only" else 4
+        for state in target_states.values():
+            workload_state = state["workloads"][workload]
+            if workload_state["status"] != "failed":
+                complete = len(workload_state["rounds"]) == expected_rounds and all(
+                    record["status"] == "complete" and record["cleanup"]["removed"]
+                    and record["cleanup"]["asset_directory_removed"]
+                    for record in workload_state["rounds"]
+                )
+                workload_state["status"] = "ready" if complete else "failed"
+                if not complete:
+                    workload_state["error"] = "workload rounds incomplete"
+                    failures.append(f"{state['engine']}/{state['layout']}/{workload}: workload rounds incomplete")
+    asset_work_clean = remove_empty_asset_workspace(output_root / ".asset-work")
+    if not asset_work_clean:
+        failures.append("matrix: Asset workspace contains residual objects")
     for engine in engines:
         for layout in LAYOUTS:
             target_dir = output_root / engine / layout
             state = target_states[(engine, layout)]
             decorated = []
             plain = []
-            for round_index, position, sample in aggregate_samples[(engine, layout)]:
-                value = _as_json(sample)
-                value["round_index"] = round_index
-                value["position"] = position
-                decorated.append(value)
-                plain.append(sample)
+            for workload in workloads:
+                for round_index, position, sample in aggregate_samples[(engine, layout, workload)]:
+                    value = _as_json(sample)
+                    value.update({"round_index": round_index, "position": position, "workload": workload})
+                    decorated.append(value)
+                    plain.append(sample)
             _write_bytes_atomic(
                 target_dir / "samples.jsonl",
                 b"".join(_json_bytes(value) for value in decorated),
             )
             summary = summarize_samples(tuple(plain))
-            complete = state["status"] != "failed" and len(state["rounds"]) == 4 and all(
-                round_manifest["status"] == "complete"
-                and round_manifest["cleanup"]["removed"]
-                and round_manifest["cleanup"]["asset_directory_removed"]
-                for round_manifest in state["rounds"]
+            complete = asset_work_clean and all(
+                workload_state["status"] == "ready"
+                for workload_state in state["workloads"].values()
             )
             state["status"] = "complete" if complete else "failed"
+            state["global_cleanup"] = {
+                "asset_workspace": str(output_root / ".asset-work"),
+                "removed": asset_work_clean,
+            }
+            state["ddl_sha256"] = sorted({
+                record["ddl_sha256"]
+                for workload_state in state["workloads"].values()
+                for record in workload_state["rounds"] if "ddl_sha256" in record
+            })
+            state["query_catalog_sha256"] = {
+                workload: sorted({
+                    record["query_catalog_sha256"] for record in workload_state["rounds"]
+                    if "query_catalog_sha256" in record
+                })
+                for workload, workload_state in state["workloads"].items()
+            }
+            if complete:
+                for workload_state in state["workloads"].values():
+                    workload_state["status"] = "complete"
             if not complete and "error" not in state:
-                state["error"] = "four complete Latin-square rounds were not produced"
+                state["error"] = "workload or global cleanup gate failed"
                 failures.append(f"{engine}/{layout}: {state['error']}")
             state["correctness"] = {
                 "rounds_complete": len(state["rounds"]),
@@ -1139,15 +1480,17 @@ def run_matrix(arguments):
                 "validated_payload": sum(
                     sample.validation.validated_payload_bytes for sample in plain
                 ),
+                "database_protocol": (
+                    sum(sample.database_protocol_bytes for sample in plain)
+                    if plain and all(sample.database_protocol_bytes is not None for sample in plain)
+                    else "unavailable"
+                ),
             }
             _write_bytes_atomic(target_dir / "result.json", _json_bytes({
                 "run_id": state["run_id"], "status": state["status"], "summary": summary,
                 "correctness": state["correctness"],
             }))
             write_manifest_atomic(target_dir / "run-manifest.json", state)
-    asset_work = output_root / ".asset-work"
-    if not remove_empty_asset_workspace(asset_work):
-        failures.append("matrix: Asset workspace contains residual objects")
     if failures:
         raise RuntimeError("; ".join(failures))
     return target_states
@@ -1160,6 +1503,7 @@ def _argument_parser():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--engines", default="opengauss,clickhouse")
     parser.add_argument("--layouts", default=",".join(LAYOUTS))
+    parser.add_argument("--workloads", default=",".join(WORKLOADS))
     parser.add_argument("--measurements", type=int, default=30)
     parser.add_argument("--batch-measurements", type=int, default=5)
     parser.add_argument("--query-ready-timeout", type=int, default=60)

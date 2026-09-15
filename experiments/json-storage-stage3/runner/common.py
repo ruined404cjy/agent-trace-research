@@ -112,6 +112,10 @@ class BlockResult:
     watermark: int
     watermarks: dict[str, int]
     wall_ms: float
+    database_submitted_bytes: int = 0
+    asset_submitted_bytes: int = 0
+    write_target_ms: dict[str, float] = field(default_factory=dict)
+    asset_publish_ms: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -122,6 +126,9 @@ class MaintenanceResult:
     watermarks: dict[str, int] = field(default_factory=dict)
     observations: tuple[dict[str, object], ...] = ()
     wall_ms: float = 0.0
+    analyze_ms: float | None = None
+    merge_wait_ms: float | None = None
+    watermark_wait_ms: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -135,6 +142,9 @@ class QueryResult:
     resolver_payload_bytes: int
     query_complete_ms: float
     recovery_ms: float
+    database_protocol_bytes: int | None = None
+    resolver_requests: int = 0
+    resolver_read_ms: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -163,6 +173,7 @@ class AccessEvidence:
     plans: dict[str, str]
     index_scans: dict[str, int] = field(default_factory=dict)
     query_finish: dict[str, dict[str, object]] = field(default_factory=dict)
+    query_details: dict[str, dict[str, object]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -171,6 +182,16 @@ class CleanupResult:
 
     namespace: str
     removed: bool
+
+
+@dataclass(frozen=True)
+class DatasetAudit:
+    """保存数据库全量 identity、顺序、payload 和重复项审计结果。"""
+
+    rows: tuple[dict[str, object], ...]
+    duplicate_event_ids: int
+    logical_response_bytes: int
+    database_protocol_bytes: int | None = None
 
 
 class LayoutAdapter(Protocol):
@@ -184,7 +205,34 @@ class LayoutAdapter(Protocol):
     def run_query(self, query: QuerySpec) -> QueryResult: ...
     def collect_storage(self) -> StorageEvidence: ...
     def collect_access_evidence(self, query_ids: list[str]) -> AccessEvidence: ...
+    def audit_dataset(self) -> DatasetAudit: ...
     def cleanup(self) -> CleanupResult: ...
+
+
+def logical_response_bytes(rows, include_payload=True):
+    """按跨引擎统一的 canonical metadata 加原始 payload 计算逻辑响应 bytes。"""
+    total = 0
+    for row in rows:
+        projected = dict(row)
+        payload = projected.pop("payload", None)
+        total += len(_canonical_bytes(projected)) + 1
+        if include_payload and payload is not None:
+            if not isinstance(payload, bytes):
+                raise ValueError("logical response payload must be bytes")
+            total += len(payload)
+    return total
+
+
+def logical_submission_bytes(rows, include_payload):
+    """按客户端实际构造的 logical rows 计算可复现提交 bytes。"""
+    total = 0
+    for row in rows:
+        projected = dict(row)
+        payload = projected.pop("_payload_bytes", None)
+        total += len(_canonical_bytes(projected)) + 1
+        if include_payload and payload is not None:
+            total += len(payload)
+    return total
 
 
 def _canonical_bytes(value):

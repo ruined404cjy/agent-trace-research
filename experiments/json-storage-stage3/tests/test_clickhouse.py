@@ -163,7 +163,7 @@ class ClickHouseAdapterIntegrationTest(unittest.TestCase):
                             finally:
                                 connection.close()
                             self.assertGreater(
-                                detail.database_response_bytes, len(event_body.encode("utf-8")),
+                                detail.database_protocol_bytes, len(event_body.encode("utf-8")),
                             )
                             self.assertEqual(detail.response_bytes,
                                              detail.database_response_bytes + len(PAYLOAD))

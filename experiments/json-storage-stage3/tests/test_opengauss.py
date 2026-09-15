@@ -125,6 +125,10 @@ class OpenGaussAdapterUnitTest(unittest.TestCase):
         self.assertIn("database_response_bytes", {item.name for item in fields(QueryResult)})
         self.assertIn("resolver_payload_bytes", {item.name for item in fields(QueryResult)})
         self.assertIn("asset_store", {item.name for item in fields(StorageEvidence)})
+        result_fields = {item.name for item in fields(QueryResult)}
+        self.assertIn("database_protocol_bytes", result_fields)
+        self.assertIn("resolver_requests", result_fields)
+        self.assertIn("resolver_read_ms", result_fields)
 
 
 @unittest.skipUnless(os.environ.get("RUN_OPENGAUSS_INTEGRATION") == "1",

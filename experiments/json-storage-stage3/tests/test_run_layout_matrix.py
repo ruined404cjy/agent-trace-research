@@ -10,12 +10,14 @@ STAGE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(STAGE_DIR / "runner"))
 
 from common import (
-    AccessEvidence, BlockResult, CleanupResult, MaintenanceResult, QueryResult, QuerySpec,
-    StorageEvidence,
+    AccessEvidence, BlockResult, CleanupResult, DatasetAudit, MaintenanceResult,
+    QueryResult, QuerySpec, StorageEvidence, logical_response_bytes,
 )
 from run_layout_matrix import (
-    QueryTruth, RunConfig, build_smoke_input, latin_square, load_run_input,
-    measure_query, run_layout, summarize_samples, write_manifest_atomic,
+    QueryTruth, RunConfig, build_smoke_input, build_workload_events, latin_square,
+    load_run_input, measure_query, run_layout, summarize_samples,
+    validate_formal_contract, validate_watermark_keys, workload_query_cases,
+    write_manifest_atomic,
 )
 
 
@@ -63,13 +65,19 @@ class SmokeAdapter:
         self.input_root = input_root
         self.cleanup_removed = cleanup_removed
         self.query_ids = []
+        self.query_kinds = {}
+        self.ingested = []
 
     def create(self):
         return {"schema": "jsons3_fake_same_table", "ddl": "CREATE TABLE events"}
 
     def ingest_block(self, block):
+        self.ingested.extend(block)
         watermark = block[-1]["ingest_seq"] + 1
-        return BlockResult(len(block), watermark, {"events": watermark}, 0.5)
+        return BlockResult(
+            len(block), watermark, {"events": watermark}, 0.5,
+            database_submitted_bytes=128, write_target_ms={"events": 0.4},
+        )
 
     def wait_write_complete(self, watermark):
         return MaintenanceResult(True, {"events": watermark})
@@ -82,7 +90,7 @@ class SmokeAdapter:
         return None if path is None else (self.input_root / path).read_bytes()
 
     def run_query(self, query):
-        rows = list(self.events)
+        rows = list(self.ingested)
         params = query.parameters
         if query.kind in {"list", "preview"}:
             rows = [row for row in rows if (
@@ -122,6 +130,7 @@ class SmokeAdapter:
             projected.append(item)
         query_id = f"query-{len(self.query_ids)}"
         self.query_ids.append(query_id)
+        self.query_kinds[query_id] = query.kind
         payload_bytes = sum(len(row["payload"] or b"") for row in projected)
         database_bytes = max(1, len(json.dumps(
             projected, default=lambda value: value.decode("utf-8"),
@@ -137,7 +146,27 @@ class SmokeAdapter:
         return AccessEvidence(
             {query_id: "Index Scan using events_list_idx" for query_id in query_ids},
             {"events_list_idx": len(query_ids)},
+            query_details={
+                query_id: {
+                    "kind": self.query_kinds[query_id],
+                    "statement": "SELECT payload FROM events",
+                    "payload_selected": self.query_kinds[query_id] in {"detail", "trace", "batch"},
+                    "declared_source": "events",
+                }
+                for query_id in query_ids
+            },
         )
+
+    def audit_dataset(self):
+        rows = tuple({
+            "ingest_seq": row["ingest_seq"],
+            **{key: row[key] for key in (
+                "event_id", "trace_id", "project_id", "start_time", "profile",
+                "content_type", "encoding", "content_length", "preview", "sha256",
+            )},
+            "payload": self._payload(row),
+        } for row in self.ingested)
+        return DatasetAudit(rows, 0, logical_response_bytes(rows))
 
     def cleanup(self):
         return CleanupResult("jsons3_fake_same_table", self.cleanup_removed)
@@ -251,6 +280,10 @@ class LayoutMatrixUnitTest(unittest.TestCase):
             self.assertEqual(manifest["status"], "complete")
             self.assertEqual(manifest["write"]["block_count"], truth.block_count)
             self.assertEqual(manifest["write"]["final_watermark"], truth.record_count)
+            self.assertGreaterEqual(manifest["ddl_create_ms"], 0)
+            self.assertEqual(set(manifest["write"]["write_target_ms"]), {"events"})
+            self.assertEqual(manifest["write"]["asset_publish_ms"], 0)
+            self.assertIn("watermark_wait_ms", manifest["maintenance"])
             self.assertTrue(manifest["maintenance"]["completed"])
             self.assertTrue(manifest["cleanup"]["removed"])
             self.assertEqual(set(manifest["storage"]["tables"]), {"events"})
@@ -304,6 +337,83 @@ class LayoutMatrixUnitTest(unittest.TestCase):
             self.assertEqual(record["status"], "failed")
             self.assertTrue(record["cleanup"]["removed"])
             self.assertEqual(record["position"], 2)
+
+    def test_unknown_formal_format_and_reduced_measurements_are_rejected(self):
+        frozen = {
+            "format": "agent-trace-json-storage-stage3-generation",
+            "format_version": 1, "seed": 20260907, "record_count": 48534,
+            "block_size": 256, "block_count": 190,
+        }
+        with self.assertRaisesRegex(ValueError, "format"):
+            validate_formal_contract({**frozen, "format": "unknown"}, object(), 30, 5)
+        with self.assertRaisesRegex(ValueError, "30/5"):
+            validate_formal_contract(frozen, object(), 2, 1)
+
+    def test_workloads_project_non_target_payloads_to_null_and_select_scenarios(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "input"
+            build_smoke_input(root)
+            truth, events, _ = load_run_input(root)
+            main = build_workload_events(events, "main")
+            few = build_workload_events(events, "equal_total_few_large")
+            many = build_workload_events(events, "equal_total_many_medium")
+            self.assertEqual(sum(row["payload_path"] is not None for row in main), 4)
+            self.assertEqual(sum(row["payload_path"] is not None for row in few), 1)
+            self.assertEqual(sum(row["payload_path"] is not None for row in many), 1)
+            self.assertTrue(all(
+                row["preview"] is None and row["sha256"] is None
+                for source, row in zip(events, few)
+                if source["profile"] != "text_2m" or source["cohort"] != "equal_total_control"
+            ))
+            main_scenarios = {item[1].scenario for item in workload_query_cases(
+                main, truth, root, "main",
+            )}
+            control_scenarios = {item[1].scenario for item in workload_query_cases(
+                few, truth, root, "equal_total_few_large",
+            )}
+            self.assertTrue(any(name.startswith("preview:") for name in main_scenarios))
+            self.assertTrue(any(name.startswith("trace:") for name in main_scenarios))
+            self.assertFalse(any(name.startswith("preview:") for name in control_scenarios))
+            self.assertFalse(any(name.startswith("trace:") for name in control_scenarios))
+            self.assertEqual(sum(name.startswith("detail:") for name in control_scenarios), 1)
+
+    def test_watermark_gate_requires_exact_layout_targets(self):
+        with self.assertRaisesRegex(RuntimeError, "watermark keys"):
+            validate_watermark_keys("separate", {"events_analytics": 8}, 8)
+
+    def test_logical_response_bytes_do_not_depend_on_engine_protocol_encoding(self):
+        from common import logical_response_bytes
+
+        rows = (logical_row(),)
+        logical = logical_response_bytes(rows, include_payload=True)
+        self.assertEqual(logical, logical_response_bytes(rows, include_payload=True))
+        self.assertGreater(logical, len(b"abc"))
+
+    def test_smoke_input_validation_failure_publishes_failed_target_manifests(self):
+        from argparse import Namespace
+        from run_layout_matrix import run_matrix
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_root, output = root / "input", root / "output"
+            build_smoke_input(input_root)
+            (input_root / "truth.json").write_text("{}")
+            arguments = Namespace(
+                input=input_root, output=output, engines="opengauss,clickhouse",
+                layouts="same_table,separate,full_core,asset_ref", workloads="main",
+                measurements=2, batch_measurements=1, query_ready_timeout=30,
+                opengauss_host="127.0.0.1", opengauss_port=15432,
+                opengauss_container="agent-trace-opengauss-v6",
+                clickhouse_host="127.0.0.1", clickhouse_port=18123,
+                clickhouse_container="agent-trace-clickhouse-25-12",
+            )
+            with self.assertRaises(ValueError):
+                run_matrix(arguments)
+            for engine in ("opengauss", "clickhouse"):
+                for layout in ("same_table", "separate", "full_core", "asset_ref"):
+                    manifest = json.loads((output / engine / layout / "run-manifest.json").read_text())
+                    self.assertEqual(manifest["status"], "failed")
+                    self.assertEqual(manifest["error_category"], "input_validation")
 
 
 if __name__ == "__main__":

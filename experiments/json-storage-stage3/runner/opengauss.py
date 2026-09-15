@@ -12,8 +12,9 @@ import psycopg
 
 from assets import AssetRecord, AssetReference, AssetResolver, LocalAssetStore
 from common import (
-    AccessEvidence, AssetStorageEvidence, BlockResult, CleanupResult, LAYOUTS,
+    AccessEvidence, AssetStorageEvidence, BlockResult, CleanupResult, DatasetAudit, LAYOUTS,
     MaintenanceResult, QueryResult, QuerySpec, StorageEvidence, build_layout_catalog,
+    logical_response_bytes, logical_submission_bytes,
 )
 
 
@@ -272,6 +273,7 @@ class OpenGaussAdapter:
 
     def _ingest_assets(self, block, payloads):
         """持久化状态、发布对象，并在全部可用后提交事件引用。"""
+        assets_started = time.perf_counter()
         connection = self.connect_worker()
         try:
             with connection.transaction():
@@ -288,11 +290,15 @@ class OpenGaussAdapter:
         finally:
             connection.close()
 
+        publish_ms = 0.0
+        asset_bytes = 0
         for row, payload in zip(block, payloads):
             if payload is None:
                 continue
             try:
+                publish_started = time.perf_counter()
                 self.asset_store.publish_bytes(row["sha256"], payload)
+                publish_ms += (time.perf_counter() - publish_started) * 1000
             except Exception as error:
                 self.set_asset_status(
                     row["sha256"], "failed",
@@ -300,18 +306,25 @@ class OpenGaussAdapter:
                 )
                 raise
             self.set_asset_status(row["sha256"], "available")
-
+            asset_bytes += len(payload)
         connection = self.connect_worker()
         try:
             with connection.transaction():
                 with connection.cursor() as cursor:
                     converted = [self._row_values(row, asset_id_marker=True) for row in block]
+                    event_started = time.perf_counter()
                     self._copy(
                         cursor, f"{self.schema}.events_analytics", converted,
                         include_asset=True,
                     )
+                    event_ms = (time.perf_counter() - event_started) * 1000
         finally:
             connection.close()
+        database_bytes = logical_submission_bytes(block, False) * 2
+        return database_bytes, asset_bytes, {
+            "assets": (time.perf_counter() - assets_started) * 1000,
+            "events_analytics": event_ms,
+        }, publish_ms
 
     def ingest_block(self, block):
         """在单事务中完成 layout 的一个显式单写或双写 block。"""
@@ -322,14 +335,16 @@ class OpenGaussAdapter:
         catalog = build_layout_catalog(self.layout)
         relation = lambda table: f"{self.schema}.{table}"
         if self.layout == "asset_ref":
-            self._ingest_assets(block, payloads)
+            database_bytes, asset_bytes, target_ms, publish_ms = self._ingest_assets(block, payloads)
             watermark = max(int(row["ingest_seq"]) for row in block) + 1
             self._target_watermark = watermark
             return BlockResult(
                 len(block), watermark,
                 {table: watermark for table in catalog.write_tables},
                 (time.perf_counter() - started) * 1000,
+                database_bytes, asset_bytes, target_ms, publish_ms,
             )
+        target_ms = {}
         connection = self.connect_worker()
         try:
             try:
@@ -337,15 +352,25 @@ class OpenGaussAdapter:
                     if self.layout == "same_table":
                         converted = [self._row_values({**row, "payload": True}, None if payload is None else payload.decode("utf-8"))
                                      for row, payload in zip(block, payloads)]
+                        target_started = time.perf_counter()
                         self._copy(cursor, relation("events"), converted, include_payload=True)
+                        target_ms["events"] = (time.perf_counter() - target_started) * 1000
                     elif self.layout == "separate":
+                        target_started = time.perf_counter()
                         self._copy(cursor, relation("events_analytics"), [self._row_values(row) for row in block])
+                        target_ms["events_analytics"] = (time.perf_counter() - target_started) * 1000
+                        target_started = time.perf_counter()
                         self._copy_payloads(cursor, relation("event_payloads"), block, payloads)
+                        target_ms["event_payloads"] = (time.perf_counter() - target_started) * 1000
                     elif self.layout == "full_core":
                         converted = [self._row_values({**row, "payload": True}, None if payload is None else payload.decode("utf-8"))
                                      for row, payload in zip(block, payloads)]
+                        target_started = time.perf_counter()
                         self._copy(cursor, relation("events_full"), converted, include_payload=True)
+                        target_ms["events_full"] = (time.perf_counter() - target_started) * 1000
+                        target_started = time.perf_counter()
                         self._copy(cursor, relation("events_core"), [self._row_values(row) for row in block])
+                        target_ms["events_core"] = (time.perf_counter() - target_started) * 1000
                 connection.commit()
             except Exception:
                 connection.rollback()
@@ -354,9 +379,15 @@ class OpenGaussAdapter:
             connection.close()
         watermark = max(int(row["ingest_seq"]) for row in block) + 1
         self._target_watermark = watermark
-        return BlockResult(len(block), watermark,
-                           {table: watermark for table in catalog.write_tables},
-                           (time.perf_counter() - started) * 1000)
+        logical_rows = [{**row, "_payload_bytes": payload} for row, payload in zip(block, payloads)]
+        submitted = logical_submission_bytes(logical_rows, True)
+        if self.layout != "same_table":
+            submitted += logical_submission_bytes(logical_rows, False)
+        wall_ms = (time.perf_counter() - started) * 1000
+        return BlockResult(
+            len(block), watermark, {table: watermark for table in catalog.write_tables}, wall_ms,
+            submitted, 0, target_ms,
+        )
 
     def _watermarks(self):
         """读取各写目标的可见联合水位。"""
@@ -383,8 +414,13 @@ class OpenGaussAdapter:
 
     def wait_write_complete(self, watermark):
         """证明所有写目标的联合水位覆盖指定 block。"""
+        started = time.perf_counter()
         values = self._watermarks()
-        return MaintenanceResult(all(value >= watermark for value in values.values()), values)
+        elapsed = (time.perf_counter() - started) * 1000
+        return MaintenanceResult(
+            all(value >= watermark for value in values.values()), values,
+            wall_ms=elapsed, watermark_wait_ms=elapsed,
+        )
 
     def wait_query_ready(self, timeout_seconds=30):
         """对全部实际查询表执行 ANALYZE 并返回维护耗时。"""
@@ -401,8 +437,11 @@ class OpenGaussAdapter:
             connection.close()
         values = self._watermarks()
         completed = all(value >= self._target_watermark for value in values.values())
-        return MaintenanceResult(completed, values, ({"analyzed": True},),
-                                 (time.perf_counter() - started) * 1000)
+        wall_ms = (time.perf_counter() - started) * 1000
+        return MaintenanceResult(
+            completed, values, ({"analyzed": True},), wall_ms,
+            analyze_ms=wall_ms, watermark_wait_ms=0.0,
+        )
 
     def set_asset_status(self, asset_id, status, error_category=None):
         """显式转换 catalog 状态，供故障实验控制。"""
@@ -504,6 +543,8 @@ class OpenGaussAdapter:
         """恢复统一逻辑字段并确保 payload bytes 到达调用方。"""
         result = []
         catalog_response_bytes = 0
+        resolver_requests = 0
+        resolver_read_ms = 0.0
         for raw in rows:
             item = dict(zip(LOGICAL_FIELDS, raw[:len(LOGICAL_FIELDS)]))
             item["start_time"] = self._timestamp(item["start_time"])
@@ -514,13 +555,16 @@ class OpenGaussAdapter:
                     "asset:sha256:" + raw[-1], item["content_type"], item["encoding"],
                     int(item["content_length"]), item["preview"],
                 )
+                resolve_started = time.perf_counter()
                 item["payload"] = AssetResolver(
                     _CatalogRow(record), self.asset_store,
                 ).resolve(reference).payload
+                resolver_read_ms += (time.perf_counter() - resolve_started) * 1000
+                resolver_requests += 1
             else:
                 item["payload"] = raw[-1].encode("utf-8") if isinstance(raw[-1], str) else None
             result.append(item)
-        return tuple(result), catalog_response_bytes
+        return tuple(result), catalog_response_bytes, resolver_requests, resolver_read_ms
 
     def run_query(self, query: QuerySpec):
         """执行查询、完整读取响应并保存后续 EXPLAIN ANALYZE 所需绑定。"""
@@ -535,22 +579,20 @@ class OpenGaussAdapter:
         finally:
             connection.close()
         query_ms = (time.perf_counter() - started) * 1000
-        database_response_bytes = len(json.dumps(
-            rows, ensure_ascii=False,
-            default=lambda value: value.isoformat() if hasattr(value, "isoformat") else str(value),
-        ).encode("utf-8"))
         recovery_started = time.perf_counter()
-        normalized, catalog_response_bytes = self._normalize_rows(rows)
+        normalized, _, resolver_requests, resolver_read_ms = self._normalize_rows(rows)
         recovery_ms = (time.perf_counter() - recovery_started) * 1000
-        database_response_bytes += catalog_response_bytes
         resolver_payload_bytes = (
             sum(len(row["payload"] or b"") for row in normalized)
             if self.layout == "asset_ref" else 0
         )
-        self._queries[query_id] = (statement, values)
+        response_bytes = logical_response_bytes(normalized)
+        database_response_bytes = response_bytes - resolver_payload_bytes
+        self._queries[query_id] = (statement, values, query.kind)
         return QueryResult(
-            query_id, normalized, database_response_bytes + resolver_payload_bytes,
+            query_id, normalized, response_bytes,
             database_response_bytes, resolver_payload_bytes, query_ms, recovery_ms,
+            None, resolver_requests, resolver_read_ms,
         )
 
     def collect_access_evidence(self, query_ids):
@@ -561,16 +603,55 @@ class OpenGaussAdapter:
         try:
             plans = {}
             for query_id in query_ids:
-                statement, values = self._queries[query_id]
+                statement, values, _ = self._queries[query_id]
                 rows = connection.execute(explain_sql(statement), values).fetchall()
                 plans[query_id] = "EXPLAIN ANALYZE\n" + "\n".join(row[0] for row in rows)
             scans = {row[0]: int(row[1]) for row in connection.execute(
                 "SELECT indexrelname,idx_scan FROM pg_stat_user_indexes WHERE schemaname=%s ORDER BY indexrelname",
                 (self.schema,),
             ).fetchall()}
-            return AccessEvidence(plans, scans)
+            details = {}
+            for query_id in query_ids:
+                statement, _, kind = self._queries[query_id]
+                match = re.search(r"actual time=[^\n]* rows=(\d+)", plans[query_id])
+                details[query_id] = {
+                    "kind": kind,
+                    "statement": statement,
+                    "payload_selected": kind in {"detail", "trace", "batch"},
+                    "declared_source": "events_analytics" if self.layout == "asset_ref" else (
+                        build_layout_catalog(self.layout).list_source
+                        if kind in {"list", "preview"} else build_layout_catalog(self.layout).detail_source
+                    ),
+                    "scanned_rows": int(match.group(1)) if match else None,
+                    "scanned_bytes": None,
+                    "scanned_bytes_status": "unavailable",
+                }
+            return AccessEvidence(plans, scans, query_details=details)
         finally:
             connection.close()
+
+    def audit_dataset(self):
+        """在清理前按 ingest_seq 传回全量 identity、metadata 和 payload bytes。"""
+        if self.layout in {"same_table", "full_core"}:
+            table = "events" if self.layout == "same_table" else "events_full"
+            source, prefix, payload = f"{self.schema}.{table}", "", "payload"
+        elif self.layout == "separate":
+            source = (f"{self.schema}.events_analytics a LEFT JOIN {self.schema}.event_payloads p "
+                      "ON p.event_id=a.event_id")
+            prefix, payload = "a.", "p.payload"
+        else:
+            source, prefix, payload = f"{self.schema}.events_analytics", "", "asset_id"
+        fields = ",".join(prefix + field for field in LOGICAL_FIELDS)
+        statement = f"SELECT {prefix}ingest_seq,{fields},{payload} FROM {source} ORDER BY {prefix}ingest_seq"
+        connection = self.connect_worker()
+        try:
+            raw_rows = connection.execute(statement).fetchall()
+        finally:
+            connection.close()
+        normalized, _, _, _ = self._normalize_rows([row[1:] for row in raw_rows])
+        rows = tuple({"ingest_seq": int(raw[0]), **row} for raw, row in zip(raw_rows, normalized))
+        duplicate_count = len(rows) - len({row["event_id"] for row in rows})
+        return DatasetAudit(rows, duplicate_count, logical_response_bytes(rows), None)
 
     def collect_storage(self):
         """返回每个写目标的 relation、index 与 TOAST 分项空间。"""
