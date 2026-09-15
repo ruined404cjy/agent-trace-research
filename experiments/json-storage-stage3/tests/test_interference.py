@@ -1,5 +1,7 @@
 import hashlib
 import json
+import multiprocessing
+import os
 import signal
 import sys
 import tempfile
@@ -15,6 +17,7 @@ STAGE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(STAGE_DIR / "runner"))
 
 from common import AccessEvidence, CleanupResult, QueryResult, QuerySpec, StorageEvidence
+import run_interference as interference_runner
 from run_interference import (
     FIXED_PHASES, IPC_PROTOCOL_VERSION, DeadlineTarget, LoadResult, LoadSchedule,
     PhaseProcessPolicy, UnresolvedExecution, build_query_target,
@@ -622,6 +625,41 @@ class PhaseProcessBoundaryTest(unittest.TestCase):
         )
         json.dumps(evidence, allow_nan=False)
 
+    def test_terminal_event_does_not_hide_a_later_nonzero_child_exit(self):
+        """捕获合法 terminal 被错误视为足以发布 complete。"""
+        def execute(_send):
+            def crash_after_return():
+                time.sleep(0.02)
+                os._exit(9)
+
+            threading.Thread(target=crash_after_return).start()
+            return {"ready": True}
+
+        with self.assertRaises(UnresolvedExecution) as raised:
+            run_owned_phase_process(
+                execute, run_id="run-late-crash", phase="quiet",
+                policy=PhaseProcessPolicy(watchdog_seconds=1.0),
+            )
+
+        self.assertEqual(raised.exception.evidence["reason"], "child_exit")
+        self.assertTrue(raised.exception.evidence["terminal_received"])
+        self.assertEqual(raised.exception.evidence["child_exit"]["exit_code"], 9)
+
+    def test_parent_rejects_non_contiguous_child_event_sequence(self):
+        """捕获 parent reducer 接受丢失或重排的 child event。"""
+        def execute(send):
+            send.sequence = 7
+            send("snapshot_captured", {"name": "before_warmup"})
+
+        with self.assertRaises(UnresolvedExecution) as raised:
+            run_owned_phase_process(
+                execute, run_id="run-bad-sequence", phase="quiet",
+                policy=PhaseProcessPolicy(watchdog_seconds=1.0),
+            )
+
+        self.assertEqual(raised.exception.evidence["reason"], "protocol_error")
+        self.assertIn("non-contiguous", raised.exception.evidence["protocol_error"])
+
 
 class InterferenceRunnerTest(unittest.TestCase):
     def test_formal_scope_rejects_inline_phase_execution(self):
@@ -650,6 +688,380 @@ class InterferenceRunnerTest(unittest.TestCase):
                     lambda *_: None, lambda *_: {}, Path(directory), scope="formal",
                     phase_runner=short_phase_runner,
                 )
+
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "injected execution controls"):
+                run_interference(
+                    lambda *_: None, lambda *_: {}, Path(directory), scope="formal",
+                    process_policy=PhaseProcessPolicy(watchdog_seconds=1.0),
+                )
+
+        def injected_control(*_args, **_kwargs):
+            raise AssertionError("formal execution invoked an injected control")
+
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "injected execution controls"):
+                run_interference(
+                    lambda *_: None, lambda *_: {}, Path(directory), scope="formal",
+                    namespace_factory=injected_control,
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "injected execution controls"):
+                run_interference(
+                    lambda *_: None, lambda *_: {}, Path(directory), scope="formal",
+                    manifest_writer=injected_control,
+                )
+
+    def test_parent_reducer_rejects_segment_that_cannot_roundtrip_load_result(self):
+        """捕获 parent 只检查字典外形便持久化损坏的 IPC 分段。"""
+        invalid_result = {
+            "name": "list", "phase_origin": 0.0, "phase_finished": 1.0,
+            "phase_wall_seconds": 1.0, "offered_rate_per_second": 20.0,
+            "scheduled_requests": 0, "started_requests": 0,
+            "completed_requests": 0, "successful_requests": 1,
+            "failed_requests": 0, "timed_out_requests": 0,
+            "dropped_requests": 0, "late_requests": 0, "samples": [],
+        }
+        preview_result = dict(invalid_result, name="preview")
+
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = interference_runner._phase_manifest(
+                "run-reducer", "jsons3_reducer", FIXED_PHASES[0], 20260907,
+                "diagnostic",
+            )
+            reducer = interference_runner._ParentPhaseReducer(
+                manifest, Path(directory), lambda: None,
+            )
+            reducer.consume({"type": "phase_initialized", "payload": {"pid": 1}})
+            reducer.consume({
+                "type": "snapshot_captured",
+                "payload": {
+                    "name": "before_warmup",
+                    "snapshot": {"name": "before_warmup"},
+                    "layout": "same_table",
+                    "layout_definition": {},
+                },
+            })
+
+            with self.assertRaisesRegex(RuntimeError, "LoadResult"):
+                reducer.consume({
+                    "type": "segment_complete",
+                    "payload": {
+                        "name": "warmup",
+                        "results": {"list": invalid_result, "preview": preview_result},
+                    },
+                })
+
+    def test_parent_reducer_rejects_non_positive_child_pid(self):
+        """捕获初始化事件接受不可能属于 owned child 的 PID。"""
+        with tempfile.TemporaryDirectory() as directory:
+            manifest = interference_runner._phase_manifest(
+                "run-pid", "jsons3_pid", FIXED_PHASES[0], 20260907, "diagnostic",
+            )
+            reducer = interference_runner._ParentPhaseReducer(
+                manifest, Path(directory), lambda: None,
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "initialization"):
+                reducer.consume({"type": "phase_initialized", "payload": {"pid": 0}})
+
+    def test_process_crash_skips_child_cleanup_and_stops_later_phase(self):
+        """捕获 child 异常退出前仍清理未知服务端 namespace。"""
+        context = multiprocessing.get_context("fork")
+        factory_calls = context.Value("i", 0)
+        cleanup_calls = context.Value("i", 0)
+
+        def adapter_factory(namespace, _phase, _seed):
+            with factory_calls.get_lock():
+                factory_calls.value += 1
+            adapter = FakeAdapter(namespace)
+
+            def cleanup():
+                with cleanup_calls.get_lock():
+                    cleanup_calls.value += 1
+                return CleanupResult(adapter.database, True)
+
+            adapter.cleanup = cleanup
+            return adapter
+
+        def targets_factory(adapter, phase, _seed):
+            return {
+                name: fixed_query_target(adapter, name)
+                for name in fixed_phase_schedules(phase, measurement=True)
+            }
+
+        def crash_phase_runner(_targets, _schedules, **_kwargs):
+            raise SystemExit(9)
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            with self.assertRaisesRegex(RuntimeError, "child_exit"):
+                run_interference(
+                    adapter_factory, targets_factory, output, scope="diagnostic",
+                    phases=FIXED_PHASES[:2], phase_runner=crash_phase_runner,
+                    resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
+                    process_policy=PhaseProcessPolicy(watchdog_seconds=1.0),
+                )
+            phase_manifest = json.loads(
+                (output / "quiet" / "run-manifest.json").read_text()
+            )
+            root_manifest = json.loads((output / "run-manifest.json").read_text())
+
+        self.assertEqual(factory_calls.value, 1)
+        self.assertEqual(cleanup_calls.value, 0)
+        self.assertEqual(phase_manifest["status"], "failed")
+        self.assertEqual(root_manifest["status"], "failed")
+        self.assertEqual(
+            phase_manifest["cleanup"]["status"],
+            "not_attempted_server_completion_unknown",
+        )
+
+    def test_inline_unresolved_execution_skips_cleanup_and_later_phase(self):
+        """捕获显式 inline diagnostic 在未知完成后继续 cleanup 或下一 phase。"""
+        adapters = []
+
+        def adapter_factory(namespace, _phase, _seed):
+            adapter = FakeAdapter(namespace)
+            adapters.append(adapter)
+            return adapter
+
+        def targets_factory(adapter, phase, _seed):
+            return {
+                name: fixed_query_target(adapter, name)
+                for name in fixed_phase_schedules(phase, measurement=True)
+            }
+
+        def unresolved_phase_runner(_targets, _schedules, **_kwargs):
+            raise UnresolvedExecution({
+                "status": "unresolved_execution", "reason": "inline_test",
+            })
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            with self.assertRaisesRegex(RuntimeError, "unresolved execution"):
+                run_interference(
+                    adapter_factory, targets_factory, output, scope="diagnostic",
+                    phases=FIXED_PHASES[:2], phase_runner=unresolved_phase_runner,
+                    resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
+                    process_policy=INLINE_PROCESS_POLICY,
+                )
+            phase_manifest = json.loads(
+                (output / "quiet" / "run-manifest.json").read_text()
+            )
+
+        self.assertEqual(len(adapters), 1)
+        self.assertFalse(adapters[0].cleaned)
+        self.assertEqual(
+            phase_manifest["cleanup"]["status"],
+            "not_attempted_server_completion_unknown",
+        )
+        self.assertEqual(
+            phase_manifest["execution_resolution"]["server_side_completion"], "unknown",
+        )
+
+    def test_inline_rejects_duplicate_namespace_before_second_adapter(self):
+        """捕获 inline diagnostic 在重复 namespace 中建立第二个 adapter。"""
+        factory_calls = []
+
+        def adapter_factory(namespace, _phase, _seed):
+            factory_calls.append(namespace)
+            return FakeAdapter(namespace)
+
+        def targets_factory(adapter, phase, _seed):
+            return {
+                name: fixed_query_target(adapter, name)
+                for name in fixed_phase_schedules(phase, measurement=True)
+            }
+
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, "fresh namespaces"):
+                run_interference(
+                    adapter_factory, targets_factory, Path(directory), scope="diagnostic",
+                    phases=FIXED_PHASES[:2], phase_runner=short_phase_runner,
+                    resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
+                    namespace_factory=lambda _phase: "jsons3_duplicate",
+                    process_policy=INLINE_PROCESS_POLICY,
+                )
+
+        self.assertEqual(factory_calls, ["jsons3_duplicate"])
+
+    def test_process_diagnostic_rebuilds_results_with_parent_only_artifact_writer(self):
+        """捕获 child 构造 adapter 或 parent 单写者未接入真实 orchestrator。"""
+        parent_pid = os.getpid()
+        context = multiprocessing.get_context("fork")
+        parent_writes = context.Value("i", 0)
+        child_writes = context.Value("i", 0)
+        parent_jsonl_writes = context.Value("i", 0)
+        child_jsonl_writes = context.Value("i", 0)
+        original_jsonl_writer = interference_runner._write_jsonl_atomic
+
+        def adapter_factory(namespace, _phase, _seed):
+            adapter = FakeAdapter(namespace)
+            creator_pid = os.getpid()
+            root_status = json.loads((output / "run-manifest.json").read_text())["status"]
+            phase_status = json.loads(
+                (output / "quiet" / "run-manifest.json").read_text()
+            )["status"]
+            adapter.create = lambda: {
+                "database": adapter.database, "ddl": "CREATE TABLE events",
+                "creator_pid": creator_pid, "root_status_before_factory": root_status,
+                "phase_status_before_factory": phase_status,
+            }
+            return adapter
+
+        def targets_factory(adapter, phase, _seed):
+            return {
+                name: fixed_query_target(adapter, name)
+                for name in fixed_phase_schedules(phase, measurement=True)
+            }
+
+        def manifest_writer(path, manifest):
+            counter = parent_writes if os.getpid() == parent_pid else child_writes
+            with counter.get_lock():
+                counter.value += 1
+            write_manifest_atomic(path, manifest)
+
+        def jsonl_writer(path, results):
+            counter = (
+                parent_jsonl_writes if os.getpid() == parent_pid else child_jsonl_writes
+            )
+            with counter.get_lock():
+                counter.value += 1
+            original_jsonl_writer(path, results)
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            interference_runner._write_jsonl_atomic = jsonl_writer
+            try:
+                result = run_interference(
+                    adapter_factory, targets_factory, output, scope="diagnostic",
+                    phases=FIXED_PHASES[:1], phase_runner=short_phase_runner,
+                    resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
+                    namespace_factory=lambda phase: "jsons3_process_" + phase.name,
+                    manifest_writer=manifest_writer,
+                    process_policy=PhaseProcessPolicy(watchdog_seconds=2.0),
+                )
+            finally:
+                interference_runner._write_jsonl_atomic = original_jsonl_writer
+            phase_manifest = json.loads(
+                (output / "quiet" / "run-manifest.json").read_text()
+            )
+            measured = (output / "quiet" / "samples.jsonl").read_text().splitlines()
+
+        self.assertEqual(result.manifest["status"], "complete")
+        self.assertEqual(phase_manifest["status"], "complete")
+        self.assertNotEqual(phase_manifest["layout_definition"]["creator_pid"], parent_pid)
+        self.assertEqual(
+            phase_manifest["layout_definition"]["root_status_before_factory"], "running",
+        )
+        self.assertEqual(
+            phase_manifest["layout_definition"]["phase_status_before_factory"], "running",
+        )
+        self.assertGreater(parent_writes.value, 0)
+        self.assertEqual(child_writes.value, 0)
+        self.assertEqual(parent_jsonl_writes.value, 2)
+        self.assertEqual(child_jsonl_writes.value, 0)
+        self.assertEqual(len(measured), 2)
+        self.assertEqual(len(phase_manifest["snapshots"]), 3)
+        self.assertEqual(len(phase_manifest["query_evidence"]["query_finish"]), 4)
+        self.assertEqual(set(phase_manifest["statistics"]), {"list", "preview"})
+
+    def test_process_failure_preserves_segment_and_suppresses_later_phase_factory(self):
+        """捕获 segment 后失败丢样本或继续建立下一 phase adapter。"""
+        context = multiprocessing.get_context("fork")
+        factory_calls = context.Value("i", 0)
+
+        def adapter_factory(namespace, _phase, _seed):
+            with factory_calls.get_lock():
+                factory_calls.value += 1
+            return FakeAdapter(namespace, fail_storage_call=2)
+
+        def targets_factory(adapter, phase, _seed):
+            return {
+                name: fixed_query_target(adapter, name)
+                for name in fixed_phase_schedules(phase, measurement=True)
+            }
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            with self.assertRaisesRegex(RuntimeError, "snapshot failed"):
+                run_interference(
+                    adapter_factory, targets_factory, output, scope="diagnostic",
+                    phases=FIXED_PHASES[:2], phase_runner=short_phase_runner,
+                    resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
+                    process_policy=PhaseProcessPolicy(watchdog_seconds=2.0),
+                )
+            warmup = (output / "quiet" / "warmup-samples.jsonl").read_text().splitlines()
+            phase_manifest = json.loads(
+                (output / "quiet" / "run-manifest.json").read_text()
+            )
+            root_manifest = json.loads((output / "run-manifest.json").read_text())
+
+        self.assertEqual(factory_calls.value, 1)
+        self.assertEqual(len(warmup), 2)
+        self.assertEqual(phase_manifest["status"], "failed")
+        self.assertTrue(phase_manifest["cleanup"]["removed"])
+        self.assertEqual(root_manifest["status"], "failed")
+
+    def test_process_watchdog_keeps_namespace_when_server_completion_is_unknown(self):
+        """捕获 killed child 后 cleanup 或下一 phase 仍被执行。"""
+        context = multiprocessing.get_context("fork")
+        factory_calls = context.Value("i", 0)
+        cleanup_calls = context.Value("i", 0)
+
+        def adapter_factory(namespace, _phase, _seed):
+            with factory_calls.get_lock():
+                factory_calls.value += 1
+            adapter = FakeAdapter(namespace)
+
+            def cleanup():
+                with cleanup_calls.get_lock():
+                    cleanup_calls.value += 1
+                return CleanupResult(adapter.database, True)
+
+            adapter.cleanup = cleanup
+            return adapter
+
+        def blocking_phase_runner(_targets, _schedules, **_kwargs):
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            threading.Event().wait()
+
+        def targets_factory(adapter, phase, _seed):
+            return {
+                name: fixed_query_target(adapter, name)
+                for name in fixed_phase_schedules(phase, measurement=True)
+            }
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            started = time.monotonic()
+            with self.assertRaisesRegex(RuntimeError, "watchdog_timeout"):
+                run_interference(
+                    adapter_factory, targets_factory, output, scope="diagnostic",
+                    phases=FIXED_PHASES[:2], phase_runner=blocking_phase_runner,
+                    resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
+                    process_policy=PhaseProcessPolicy(
+                        watchdog_seconds=0.15, terminate_join_seconds=0.05,
+                        kill_join_seconds=0.05, poll_interval_seconds=0.005,
+                    ),
+                )
+            elapsed = time.monotonic() - started
+            phase_manifest = json.loads(
+                (output / "quiet" / "run-manifest.json").read_text()
+            )
+
+        self.assertLess(elapsed, 0.6)
+        self.assertEqual(factory_calls.value, 1)
+        self.assertEqual(cleanup_calls.value, 0)
+        self.assertEqual(
+            phase_manifest["cleanup"]["status"],
+            "not_attempted_server_completion_unknown",
+        )
+        self.assertFalse(phase_manifest["cleanup"]["removed"])
+        self.assertEqual(
+            phase_manifest["execution_resolution"]["server_side_completion"], "unknown",
+        )
 
     def test_formal_coverage_requires_actual_warmup_and_measurement_windows(self):
         """捕获仅记录 30/300 配置却没有覆盖对应实际 wall time。"""
