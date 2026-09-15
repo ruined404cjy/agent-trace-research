@@ -101,6 +101,7 @@ class RunnerCommonTest(unittest.TestCase):
                 "asset_id": "a" * 64, "sha256": "a" * 64,
                 "content_type": "application/json", "encoding": "utf-8", "content_length": 3,
                 "storage_path": "/objects/" + "a" * 64, "status": "pending",
+                "error_category": None,
             },
         )
         self.assertNotIn("payload_path", targets["events_analytics"][0])
@@ -118,7 +119,7 @@ class RunnerCommonTest(unittest.TestCase):
         )
         self.assertEqual(
             common.logical_target_row_bytes("asset_ref", [row], [b"abc"], paths),
-            {"events_analytics": 553, "assets": 338},
+            {"events_analytics": 553, "assets": 360},
         )
 
     def test_load_truth_returns_complete_payload_contract_and_checks_bytes(self):

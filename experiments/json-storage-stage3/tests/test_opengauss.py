@@ -158,7 +158,7 @@ class OpenGaussAdapterIntegrationTest(unittest.TestCase):
                             set(build_layout_catalog(layout).write_tables),
                         )
                         self.assertTrue(all(
-                            value is None for value in block.database_protocol_body_bytes.values()
+                            value is None for value in block.database_ingest_request_body_bytes.values()
                         ))
                         ready = adapter.wait_write_complete(3)
                         self.assertTrue(ready.completed)

@@ -364,7 +364,7 @@ class OpenGaussAdapter:
                      for row, payload in zip(block, payloads) if payload is not None},
                     submitted_asset_ids,
                 ),
-                database_protocol_body_bytes={table: None for table in catalog.write_tables},
+                database_ingest_request_body_bytes={table: None for table in catalog.write_tables},
                 asset_raw_object_bytes=asset_bytes,
             )
         target_ms = {}
@@ -407,7 +407,7 @@ class OpenGaussAdapter:
             len(block), watermark, {table: watermark for table in catalog.write_tables}, wall_ms,
             write_target_ms=target_ms,
             logical_target_row_bytes=logical_target_row_bytes(self.layout, block, payloads),
-            database_protocol_body_bytes={table: None for table in catalog.write_tables},
+            database_ingest_request_body_bytes={table: None for table in catalog.write_tables},
         )
 
     def _watermarks(self):
@@ -528,12 +528,13 @@ class OpenGaussAdapter:
         else:
                 source, alias, payload = f"{self.schema}.events_analytics", "", "asset_id"
         list_fields = ",".join(
-            "NULL::text" if query.kind == "list" and field == "preview" else alias + field
+            ("NULL::text" if query.kind == "list" and field == "preview" else alias + field)
+            + " AS " + field
             for field in LOGICAL_FIELDS
         )
         if query.kind in {"list", "preview"}:
             payload = "NULL::text"
-        fields = list_fields + "," + payload
+        fields = list_fields + "," + payload + " AS payload_value"
         if query.kind in {"list", "preview"}:
             statement = (f"SELECT {fields} FROM {source} WHERE project_id=%s AND start_time>=%s AND start_time<%s "
                          "AND (start_time,event_id)>(%s,%s) ORDER BY start_time,event_id LIMIT %s")

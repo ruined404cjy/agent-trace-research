@@ -67,6 +67,58 @@ class ClickHouseAdapterUnitTest(unittest.TestCase):
         self.assertIn("sha256 IS NOT NULL", statement)
         self.assertEqual(values, {"cohort": "main"})
 
+    def test_ingest_counts_complete_post_bodies_and_asset_mutations_once(self):
+        """捕获只统计 JSONEachRow 或漏计 Asset 状态 mutation 的传输 bytes。"""
+        class Response:
+            status = 200
+
+            @staticmethod
+            def read():
+                return b""
+
+        class Connection:
+            def __init__(self, bodies):
+                self.bodies = bodies
+
+            def request(self, method, path, body, headers):
+                self.bodies.append(body)
+
+            @staticmethod
+            def getresponse():
+                return Response()
+
+            @staticmethod
+            def close():
+                return None
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            adapter = clickhouse.ClickHouseAdapter(
+                "127.0.0.1", 18123, "unused", "jsons3_test", "asset_ref", root,
+                LocalAssetStore(root / "assets"),
+            )
+            request_bodies = []
+            adapter.connect_worker = lambda: Connection(request_bodies)
+
+            block = adapter.ingest_block(fixture(root))
+
+            asset_requests = [body for body in request_bodies if b".assets" in body]
+            event_requests = [body for body in request_bodies if b".events_analytics" in body]
+            self.assertEqual(len(asset_requests), 3)
+            self.assertEqual(len(event_requests), 1)
+            self.assertIn(b'"error_category":null', asset_requests[0])
+            self.assertEqual(
+                block.database_ingest_request_body_bytes["assets"],
+                sum(len(body) for body in asset_requests),
+            )
+            self.assertEqual(
+                block.database_ingest_request_body_bytes["events_analytics"], len(event_requests[0]),
+            )
+            self.assertTrue(all(
+                body.startswith(b"INSERT INTO") or body.startswith(b"ALTER TABLE")
+                for body in request_bodies
+            ))
+
 
 @unittest.skipUnless(os.environ.get("RUN_CLICKHOUSE_INTEGRATION") == "1",
                      "set RUN_CLICKHOUSE_INTEGRATION=1")
@@ -95,7 +147,7 @@ class ClickHouseAdapterIntegrationTest(unittest.TestCase):
                             set(build_layout_catalog(layout).write_tables),
                         )
                         self.assertTrue(all(
-                            value is not None for value in block.database_protocol_body_bytes.values()
+                            value is not None for value in block.database_ingest_request_body_bytes.values()
                         ))
                         if layout == "same_table":
                             expected_body = "".join(
@@ -104,7 +156,7 @@ class ClickHouseAdapterIntegrationTest(unittest.TestCase):
                                 for row in rows
                             )
                             self.assertEqual(
-                                block.database_protocol_body_bytes["events"],
+                                block.database_ingest_request_body_bytes["events"],
                                 len(expected_body.encode("utf-8")),
                             )
                         ready = adapter.wait_write_complete(3)

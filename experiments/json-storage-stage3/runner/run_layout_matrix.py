@@ -840,6 +840,7 @@ def _expected_target_audits(layout, events):
             "content_type": row["content_type"], "encoding": row["encoding"],
             "content_length": row["content_length"], "status": "available",
         })
+    asset_rows.sort(key=lambda row: row["asset_id"])
     if layout == "same_table":
         return {"events": all_events}
     if layout == "separate":
@@ -1100,12 +1101,8 @@ def _split_projection(select_clause):
     return tuple(fields)
 
 
-def _expected_query_contract(engine, layout, kind):
+def _expected_query_contract(engine, layout, kind, namespace=None):
     """独立生成固定 matrix SQL 应使用的物理来源和 payload 投影。"""
-    null_projection = {
-        "opengauss": "null::text",
-        "clickhouse": "cast(null as nullable(string))",
-    }.get(engine, "null")
     catalog = build_layout_catalog(layout)
     if kind in {"list", "preview"}:
         sources = (catalog.list_source,)
@@ -1115,14 +1112,34 @@ def _expected_query_contract(engine, layout, kind):
         sources = ("events_analytics",)
     else:
         sources = (catalog.detail_source,)
-    return {
-        "sources": sources,
-        "preview_selected": kind != "list",
-        "payload": "null" if kind in {"list", "preview"} else (
-            "asset_id" if layout == "asset_ref" else "payload"
-        ),
-        "null_projection": null_projection,
-    }
+    if namespace is not None:
+        sources = tuple(f"{namespace}.{source}" for source in sources)
+    prefix = "a." if layout == "separate" and kind not in {"list", "preview"} else ""
+    payload = "null" if kind in {"list", "preview"} else (
+        "asset_id" if layout == "asset_ref" else "payload"
+    )
+    payload_prefix = "p." if layout == "separate" and kind not in {"list", "preview"} else prefix
+    if engine == "opengauss":
+        projection = [prefix + field + " as " + field for field in LOGICAL_FIELDS[:-1]]
+        if kind == "list":
+            projection[8] = "null::text as preview"
+        projection.append(
+            ("null::text" if payload == "null" else payload_prefix + payload) + " as payload_value"
+        )
+    elif engine == "clickhouse":
+        projection = [prefix + field + " as " + field for field in LOGICAL_FIELDS[:-1]]
+        if kind == "list":
+            projection[8] = "cast(null as nullable(string)) as preview"
+        projection.append(
+            "cast(null as nullable(string)) as payload_value"
+            if payload == "null" else payload_prefix + payload + " as payload_value"
+        )
+    else:
+        projection = [field for field in LOGICAL_FIELDS[:-1]]
+        if kind == "list":
+            projection[8] = "null as preview"
+        projection.append("null as payload_value" if payload == "null" else payload + " as payload_value")
+    return {"sources": sources, "payload": payload, "projection": tuple(projection)}
 
 
 def _actual_query_shape(statement):
@@ -1137,42 +1154,28 @@ def _actual_query_shape(statement):
         raise RuntimeError("access SQL does not match fixed SELECT/FROM contract")
     source_clause = match.group("source")
     table_names = re.findall(
-        r"\b(?:FROM|JOIN)\s+(?:[A-Za-z_][A-Za-z0-9_]*\.)?([A-Za-z_][A-Za-z0-9_]*)",
+        r"\b(?:FROM|JOIN)\s+([A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)?)",
         "FROM " + source_clause, re.IGNORECASE,
     )
     return _split_projection(match.group("select")), tuple(name.lower() for name in table_names)
 
 
-def _projection_uses(field, expression, alias=None):
-    """验证固定 projection 的一个逻辑字段直接来自其预期列。"""
-    expression = expression.lower().strip()
-    expected_alias = alias or field
-    return bool(re.search(
-        rf"(?:^|\.){re.escape(field)}(?:\s+as\s+{re.escape(expected_alias)})?$", expression,
-    ))
+def _normalize_projection(expression):
+    """规范化固定 SQL projection 的空白和大小写。"""
+    return re.sub(r"\s+", " ", expression.strip().lower())
 
 
-def _validate_sql_contract(engine, layout, kind, statement):
+def _validate_sql_contract(engine, layout, kind, statement, namespace=None):
     """以 runner 生成的 source/projection 契约校验 adapter 实际保存 SQL。"""
     projection, sources = _actual_query_shape(statement)
-    expected = _expected_query_contract(engine, layout, kind)
+    expected = _expected_query_contract(engine, layout, kind, namespace)
     if sources != expected["sources"]:
         raise RuntimeError("access source mismatch")
     if len(projection) != len(LOGICAL_FIELDS):
         raise RuntimeError("access projection field count mismatch")
-    for position, field in enumerate(LOGICAL_FIELDS[:-1]):
-        expression = projection[position].lower()
-        if field == "preview" and not expected["preview_selected"]:
-            if expected["null_projection"] not in expression:
-                raise RuntimeError("access projection selects preview for list")
-        elif not _projection_uses(field, projection[position]):
-            raise RuntimeError(f"access projection mismatch: {field}")
-    payload = projection[-1].lower()
-    if expected["payload"] == "null":
-        if expected["null_projection"] not in payload:
-            raise RuntimeError("access projection selects payload for list or preview")
-    elif not _projection_uses(expected["payload"], projection[-1], "payload_value"):
-        raise RuntimeError("access projection omits required full payload")
+    actual_projection = tuple(_normalize_projection(expression) for expression in projection)
+    if actual_projection != expected["projection"]:
+        raise RuntimeError("access projection mismatch")
     return expected
 
 
@@ -1197,7 +1200,18 @@ def _formal_access_structure(engine, kind, plan):
     return "test-engine"
 
 
-def _validate_access(engine, layout, input_kind, samples, access):
+def _adapter_access_namespace(engine, adapter):
+    """从 live adapter 读取 SQL 来源应使用的 schema 或 database。"""
+    attribute = {"opengauss": "schema", "clickhouse": "database"}.get(engine)
+    if attribute is None:
+        return None
+    namespace = getattr(adapter, attribute, None)
+    if not isinstance(namespace, str) or not namespace:
+        raise RuntimeError(f"access namespace is missing: {attribute}")
+    return namespace
+
+
+def _validate_access(engine, layout, input_kind, samples, access, namespace=None):
     """机检实际 SQL、原始 plan、query 级 rows/bytes 与正式访问结构。"""
     sample_by_id = {sample.query_id: sample for sample in samples}
     if set(access.query_details) != set(sample_by_id):
@@ -1211,7 +1225,9 @@ def _validate_access(engine, layout, input_kind, samples, access):
             or sample.validation.row_count < 0 or sample.response_bytes <= 0
         ):
             raise RuntimeError(f"access contract mismatch: {query_id}")
-        expected = _validate_sql_contract(engine, layout, sample.kind, detail.get("statement"))
+        expected = _validate_sql_contract(
+            engine, layout, sample.kind, detail.get("statement"), namespace,
+        )
         query_finish = None
         if engine == "clickhouse":
             query_finish = access.query_finish.get(query_id)
@@ -1244,7 +1260,7 @@ def _validate_access(engine, layout, input_kind, samples, access):
     return validation
 
 
-def _evidence_gate(engine, layout, input_kind, samples, access, storage, cleanup):
+def _evidence_gate(engine, layout, input_kind, samples, access, storage, cleanup, namespace=None):
     """验证完成 manifest 所需的结果字节、访问、物理状态和清理证据。"""
     failed = [sample for sample in samples if sample.status != "success"]
     if failed:
@@ -1256,7 +1272,7 @@ def _evidence_gate(engine, layout, input_kind, samples, access, storage, cleanup
         raise RuntimeError("QueryFinish does not cover every formal query")
     if engine == "opengauss" and not access.index_scans:
         raise RuntimeError("openGauss index scan evidence is missing")
-    access_validation = _validate_access(engine, layout, input_kind, samples, access)
+    access_validation = _validate_access(engine, layout, input_kind, samples, access, namespace)
     expected_tables = set(build_layout_catalog(layout).write_tables)
     if set(storage.tables) != expected_tables:
         raise RuntimeError("storage evidence does not cover every write target")
@@ -1354,19 +1370,19 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
         payload_bytes = sum(row["content_length"] or 0 for row in events)
         block_times = [item["ingest"]["wall_ms"] for item in block_evidence]
         logical_target_bytes = {table: 0 for table in build_layout_catalog(config.layout).write_tables}
-        protocol_target_bytes = {table: 0 for table in logical_target_bytes}
-        protocol_available = {table: True for table in logical_target_bytes}
+        ingest_request_body_bytes = {table: 0 for table in logical_target_bytes}
+        ingest_request_body_available = {table: True for table in logical_target_bytes}
         for item in block_evidence:
             ingest = item["ingest"]
             for table, value in ingest.get("logical_target_row_bytes", {}).items():
                 logical_target_bytes[table] = logical_target_bytes.get(table, 0) + value
-            for table, value in ingest.get("database_protocol_body_bytes", {}).items():
+            for table, value in ingest.get("database_ingest_request_body_bytes", {}).items():
                 if value is None:
-                    protocol_available[table] = False
+                    ingest_request_body_available[table] = False
                 else:
-                    protocol_target_bytes[table] = protocol_target_bytes.get(table, 0) + value
-        protocol_manifest = {
-            table: protocol_target_bytes[table] if protocol_available[table] else "unavailable"
+                    ingest_request_body_bytes[table] = ingest_request_body_bytes.get(table, 0) + value
+        ingest_request_body_manifest = {
+            table: ingest_request_body_bytes[table] if ingest_request_body_available[table] else "unavailable"
             for table in logical_target_bytes
         }
         logical_submitted = sum(logical_target_bytes.values())
@@ -1384,9 +1400,10 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
             "logical_target_row_bytes_total": logical_submitted,
             "logical_target_row_bytes_to_raw_payload_ratio":
                 logical_submitted / payload_bytes if payload_bytes else None,
-            "database_protocol_request_body_bytes": protocol_manifest,
-            "database_protocol_request_body_bytes_total": (
-                sum(protocol_target_bytes.values()) if all(protocol_available.values()) else "unavailable"
+            "database_ingest_request_body_bytes": ingest_request_body_manifest,
+            "database_ingest_request_body_bytes_total": (
+                sum(ingest_request_body_bytes.values())
+                if all(ingest_request_body_available.values()) else "unavailable"
             ),
             "asset_raw_object_bytes": asset_submitted,
             "asset_raw_object_bytes_to_raw_payload_ratio":
@@ -1428,8 +1445,10 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
         successful_ids = [sample.query_id for sample in samples if sample.status == "success"]
         access = adapter.collect_access_evidence(successful_ids)
         manifest["access"] = _as_json(access)
+        access_namespace = _adapter_access_namespace(config.engine, adapter)
         manifest["access_validation"] = _validate_access(
             config.engine, config.layout, loaded_identity["kind"], samples, access,
+            access_namespace,
         )
     except Exception as exception:
         error = exception
@@ -1467,6 +1486,7 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
             manifest["access_validation"] = _evidence_gate(
                 config.engine, config.layout, loaded_identity["kind"],
                 samples, access, storage, cleanup,
+                _adapter_access_namespace(config.engine, adapter),
             )
             if not asset_removed:
                 raise RuntimeError("Asset directory cleanup was not confirmed")

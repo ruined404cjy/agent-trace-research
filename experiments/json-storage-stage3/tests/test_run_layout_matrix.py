@@ -43,13 +43,33 @@ def logical_row(payload=b"abc"):
     }
 
 
-def access_statement(payload_expression):
+def access_statement(payload_expression, preview_expression="preview", source="jsons3_test.events"):
     """构造与固定 adapter 投影一致、仅 payload 列可变的 SQL。"""
-    return (
-        "SELECT event_id,trace_id,project_id,start_time,profile,content_type,encoding,"
-        "content_length,preview,sha256," + payload_expression + " AS payload_value "
-        "FROM events WHERE project_id=%s"
+    fields = (
+        "event_id", "trace_id", "project_id", "start_time", "profile", "content_type",
+        "encoding", "content_length", "preview", "sha256",
     )
+    projection = [
+        (preview_expression + " AS preview") if field == "preview" else field + " AS " + field
+        for field in fields
+    ]
+    projection.append(payload_expression + " AS payload_value")
+    return "SELECT " + ",".join(projection) + " FROM " + source + " WHERE project_id=%s"
+
+
+def clickhouse_access_statement(payload_expression, preview_expression,
+                                source="jsons3_test.events"):
+    """构造 ClickHouse 固定别名投影，供 SQL 门禁反例使用。"""
+    fields = (
+        "event_id", "trace_id", "project_id", "start_time", "profile", "content_type",
+        "encoding", "content_length", "preview", "sha256",
+    )
+    projection = [
+        (preview_expression + " AS preview") if field == "preview" else field + " AS " + field
+        for field in fields
+    ]
+    projection.append(payload_expression + " AS payload_value")
+    return "SELECT " + ",".join(projection) + " FROM " + source + " WHERE project_id={project_id:String}"
 
 
 class OneResultAdapter:
@@ -90,7 +110,7 @@ class SmokeAdapter:
             len(block), watermark, {"events": watermark}, 0.5,
             write_target_ms={"events": 0.4},
             logical_target_row_bytes={"events": 17},
-            database_protocol_body_bytes={"events": None},
+            database_ingest_request_body_bytes={"events": None},
         )
 
     def wait_write_complete(self, watermark):
@@ -283,12 +303,14 @@ class LayoutMatrixUnitTest(unittest.TestCase):
             {"list-1": "Index Scan using events_list_idx (actual time=0.1..0.2 rows=1 loops=1)\nBuffers: shared hit=1"},
             {"events_list_idx": 1},
             query_details={"list-1": {
-                "kind": "list", "statement": access_statement("payload"),
+                "kind": "list", "statement": access_statement("payload", "NULL::text"),
                 "payload_selected": False, "declared_source": "events",
             }},
         )
         with self.assertRaisesRegex(RuntimeError, "projection"):
-            runner._validate_access("opengauss", "same_table", "formal", (sample,), access)
+            runner._validate_access(
+                "opengauss", "same_table", "formal", (sample,), access, "jsons3_test",
+            )
 
     def test_formal_access_rejects_index_seen_by_another_query(self):
         """捕获累计 idx_scan 非零却不能证明当前 SQL 使用索引的情况。"""
@@ -305,7 +327,9 @@ class LayoutMatrixUnitTest(unittest.TestCase):
             }},
         )
         with self.assertRaisesRegex(RuntimeError, "access structure"):
-            runner._validate_access("opengauss", "same_table", "formal", (sample,), access)
+            runner._validate_access(
+                "opengauss", "same_table", "formal", (sample,), access, "jsons3_test",
+            )
 
     def test_formal_clickhouse_access_rejects_mergetree_full_scan(self):
         """捕获仅出现 MergeTree 字样、没有 primary-key/mark 裁剪的全扫计划。"""
@@ -317,12 +341,70 @@ class LayoutMatrixUnitTest(unittest.TestCase):
             {"trace-1": "ReadFromMergeTree (events)"},
             query_finish={"trace-1": {"read_rows": 100, "read_bytes": 1000}},
             query_details={"trace-1": {
-                "kind": "trace", "statement": access_statement("payload"),
+                "kind": "trace", "statement": clickhouse_access_statement("payload", "preview"),
                 "payload_selected": True, "declared_source": "events",
             }},
         )
         with self.assertRaisesRegex(RuntimeError, "access structure"):
-            runner._validate_access("clickhouse", "same_table", "formal", (sample,), access)
+            runner._validate_access(
+                "clickhouse", "same_table", "formal", (sample,), access, "jsons3_test",
+            )
+
+    def test_access_rejects_opengauss_composite_null_projection(self):
+        """捕获 COALESCE 形式的 NULL 投影仍实际读取 payload。"""
+        statement = access_statement(
+            "COALESCE(payload,NULL::text)", "NULL::text", "jsons3_actual.events",
+        )
+        with self.assertRaisesRegex(RuntimeError, "projection"):
+            runner._validate_sql_contract(
+                "opengauss", "same_table", "list", statement, "jsons3_actual",
+            )
+
+    def test_access_rejects_clickhouse_composite_null_projection(self):
+        """捕获 if 形式的 NULL 投影仍实际读取 payload。"""
+        statement = clickhouse_access_statement(
+            "if(payload != '',payload,CAST(NULL AS Nullable(String)))",
+            "CAST(NULL AS Nullable(String))", "jsons3_actual.events",
+        )
+        with self.assertRaisesRegex(RuntimeError, "projection"):
+            runner._validate_sql_contract(
+                "clickhouse", "same_table", "list", statement, "jsons3_actual",
+            )
+
+    def test_access_rejects_opengauss_wrong_qualified_namespace(self):
+        """捕获同名 events 表位于错误 schema 时的来源混淆。"""
+        statement = access_statement("NULL::text", "NULL::text", "wrong_schema.events")
+        with self.assertRaisesRegex(RuntimeError, "source"):
+            runner._validate_sql_contract(
+                "opengauss", "same_table", "list", statement, "jsons3_actual",
+            )
+
+    def test_access_rejects_clickhouse_wrong_qualified_namespace(self):
+        """捕获同名 events 表位于错误 database 时的来源混淆。"""
+        statement = clickhouse_access_statement(
+            "CAST(NULL AS Nullable(String))", "CAST(NULL AS Nullable(String))",
+            "wrong_database.events",
+        )
+        with self.assertRaisesRegex(RuntimeError, "source"):
+            runner._validate_sql_contract(
+                "clickhouse", "same_table", "list", statement, "jsons3_actual",
+            )
+
+    def test_access_accepts_separate_payload_projection_from_payload_alias(self):
+        """捕获 separate 查询把 p.payload 错当作 analytics 表字段而拒绝。"""
+        fields = (
+            "event_id", "trace_id", "project_id", "start_time", "profile", "content_type",
+            "encoding", "content_length", "preview", "sha256",
+        )
+        statement = (
+            "SELECT " + ",".join("a." + field + " AS " + field for field in fields)
+            + " ,p.payload AS payload_value FROM jsons3_actual.events_analytics a "
+            "LEFT JOIN jsons3_actual.event_payloads p ON p.event_id=a.event_id "
+            "WHERE a.project_id=%s"
+        )
+        runner._validate_sql_contract(
+            "opengauss", "separate", "detail", statement, "jsons3_actual",
+        )
 
     def test_summary_keeps_each_workload_scenario_independent(self):
         """捕获 main 与控制 workload 的同名 list scenario 被汇总到同一计数。"""
@@ -603,7 +685,64 @@ class LayoutMatrixUnitTest(unittest.TestCase):
             evidence = _validate_dataset_audit(audit, events, root, "asset_ref")
             self.assertEqual(evidence["physical_targets"]["assets"]["event_mapping_count"], 2)
 
-    def test_write_manifest_separates_logical_targets_and_unavailable_protocol_bytes(self):
+    def test_dataset_audit_accepts_asset_catalog_sorted_by_two_unordered_digests(self):
+        """捕获预期按事件顺序而 adapter 按 asset_id 返回时的假失败。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "input"
+            build_smoke_input(root)
+            _, source_events, _ = load_run_input(root)
+            events = sorted(
+                (row for row in source_events if row["sha256"] is not None),
+                key=lambda row: row["sha256"], reverse=True,
+            )[:2]
+            self.assertEqual(len(events), 2)
+            self.assertNotEqual(
+                [row["sha256"] for row in events],
+                sorted(row["sha256"] for row in events),
+            )
+            logical_rows = tuple({
+                "ingest_seq": row["ingest_seq"],
+                **{field: row[field] for field in (
+                    "event_id", "trace_id", "project_id", "start_time", "profile",
+                    "content_type", "encoding", "content_length", "preview", "sha256",
+                )},
+                "payload": (root / row["payload_path"]).read_bytes(),
+            } for row in events)
+            event_fields = (
+                "ingest_seq", "event_id", "trace_id", "span_id", "parent_span_id",
+                "project_id", "start_time", "end_time", "duration_ms", "span_type",
+                "framework", "level", "cohort", "profile", "content_type", "encoding",
+                "content_length", "preview", "sha256",
+            )
+            asset_rows = tuple(sorted(({
+                "asset_id": row["sha256"], "sha256": row["sha256"],
+                "content_type": row["content_type"], "encoding": row["encoding"],
+                "content_length": row["content_length"], "status": "available",
+            } for row in events), key=lambda row: row["asset_id"]))
+            audit = SimpleNamespace(
+                rows=logical_rows, duplicate_event_ids=0,
+                logical_response_bytes=logical_response_bytes(logical_rows),
+                database_protocol_bytes=None,
+                target_audits={
+                    "events_analytics": SimpleNamespace(
+                        rows=tuple({
+                            **{field: row[field] for field in event_fields},
+                            "asset_id": row["sha256"],
+                        } for row in events), duplicate_identities=0,
+                    ),
+                    "assets": SimpleNamespace(
+                        rows=asset_rows, duplicate_identities=0,
+                        event_mappings=tuple({
+                            "ingest_seq": row["ingest_seq"], "event_id": row["event_id"],
+                            "asset_id": row["sha256"],
+                        } for row in events),
+                    ),
+                },
+            )
+
+            _validate_dataset_audit(audit, events, root, "asset_ref")
+
+    def test_write_manifest_separates_logical_targets_and_unavailable_ingest_body_bytes(self):
         """捕获将 COPY 传输开销伪报为可观测 bytes，或把目标行统计合并到单一计数。"""
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -618,8 +757,8 @@ class LayoutMatrixUnitTest(unittest.TestCase):
             write = json.loads((output / "run-manifest.json").read_text())["write"]
             self.assertEqual(write["logical_target_row_bytes"], {"events": 68})
             self.assertEqual(write["logical_target_row_bytes_total"], 68)
-            self.assertEqual(write["database_protocol_request_body_bytes"], {"events": "unavailable"})
-            self.assertEqual(write["database_protocol_request_body_bytes_total"], "unavailable")
+            self.assertEqual(write["database_ingest_request_body_bytes"], {"events": "unavailable"})
+            self.assertEqual(write["database_ingest_request_body_bytes_total"], "unavailable")
             self.assertEqual(write["asset_raw_object_bytes"], 0)
 
     def test_logical_response_bytes_do_not_depend_on_engine_protocol_encoding(self):

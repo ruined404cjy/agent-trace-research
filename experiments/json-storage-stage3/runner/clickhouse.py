@@ -186,7 +186,8 @@ class ClickHouseAdapter:
         except json.JSONDecodeError as error:
             raise RuntimeError("invalid ClickHouse JSONEachRow response") from error
 
-    def _request(self, connection, statement, body=None, parameters=None, query_id=None):
+    def _request(self, connection, statement, body=None, parameters=None, query_id=None,
+                 return_request_body_bytes=False):
         """发送 SQL/HTTP 请求并在返回前完整读取响应。"""
         if query_id is not None and not QUERY_ID.fullmatch(query_id):
             raise ValueError("query_id contains unsupported characters")
@@ -202,8 +203,9 @@ class ClickHouseAdapter:
             query.update({"param_" + key: str(value) for key, value in parameters.items()})
         path = "/?" + urllib.parse.urlencode(query)
         payload = statement if body is None else statement + "\n" + body
+        request_body = payload.encode("utf-8")
         try:
-            connection.request("POST", path, body=payload.encode("utf-8"),
+            connection.request("POST", path, body=request_body,
                                headers={"Content-Type": "text/plain; charset=utf-8"})
             response = connection.getresponse()
             response_body = response.read().decode("utf-8", errors="replace")
@@ -211,6 +213,8 @@ class ClickHouseAdapter:
             raise RuntimeError("ClickHouse HTTP request failed") from error
         if not 200 <= response.status < 300:
             raise RuntimeError(f"ClickHouse request failed ({response.status}): {response_body.strip()}")
+        if return_request_body_bytes:
+            return response_body, len(request_body)
         return response_body
 
     def namespace_exists(self):
@@ -301,8 +305,11 @@ class ClickHouseAdapter:
         """通过 JSONEachRow 向一个明确写目标插入完整 block。"""
         body = "".join(json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n"
                        for row in rows)
-        self._request(connection, f"INSERT INTO {self.database}.{table} FORMAT JSONEachRow", body)
-        return len(body.encode("utf-8"))
+        _, request_body_bytes = self._request(
+            connection, f"INSERT INTO {self.database}.{table} FORMAT JSONEachRow", body,
+            return_request_body_bytes=True,
+        )
+        return request_body_bytes
 
     def _insert_assets(self, connection, block, payloads):
         """记录 pending，原子发布对象后同步转换为 available。"""
@@ -332,12 +339,12 @@ class ClickHouseAdapter:
                 self.asset_store.publish_bytes(row["sha256"], payload)
                 publish_ms += (time.perf_counter() - publish_started) * 1000
             except Exception as error:
-                self.set_asset_status(
+                database_bytes += self.set_asset_status(
                     row["sha256"], "failed",
                     getattr(error, "category", type(error).__name__),
                 )
                 raise
-            self.set_asset_status(row["sha256"], "available")
+            database_bytes += self.set_asset_status(row["sha256"], "available")
             asset_bytes += len(payload)
         self._asset_ids.update(pending_ids)
         return pending_ids, database_bytes, asset_bytes, (time.perf_counter() - assets_started) * 1000, publish_ms
@@ -404,7 +411,7 @@ class ClickHouseAdapter:
                  if self.layout == "asset_ref" else None),
                 submitted_asset_ids if self.layout == "asset_ref" else None,
             ),
-            database_protocol_body_bytes=protocol_body_bytes,
+            database_ingest_request_body_bytes=protocol_body_bytes,
             asset_raw_object_bytes=asset_submitted,
         )
 
@@ -508,13 +515,15 @@ class ClickHouseAdapter:
         connection = self.connect_worker()
         try:
             error = "NULL" if error_category is None else "{error:String}"
-            self._request(
+            _, request_body_bytes = self._request(
                 connection,
                 f"ALTER TABLE {self.database}.assets UPDATE status={{status:String}},error_category={error},updated_at=now64(3) "
                 "WHERE asset_id={asset_id:String} SETTINGS mutations_sync=2",
                 parameters={"status": status, "asset_id": asset_id,
                             **({"error": error_category} if error_category is not None else {})},
+                return_request_body_bytes=True,
             )
+            return request_body_bytes
         finally:
             connection.close()
 

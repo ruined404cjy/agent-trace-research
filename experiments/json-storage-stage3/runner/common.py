@@ -115,7 +115,7 @@ class BlockResult:
     write_target_ms: dict[str, float] = field(default_factory=dict)
     asset_publish_ms: float = 0.0
     logical_target_row_bytes: dict[str, int] = field(default_factory=dict)
-    database_protocol_body_bytes: dict[str, int | None] = field(default_factory=dict)
+    database_ingest_request_body_bytes: dict[str, int | None] = field(default_factory=dict)
     asset_raw_object_bytes: int = 0
 
 
@@ -301,7 +301,7 @@ def logical_target_rows(layout, rows, payloads, asset_paths=None, submitted_asse
             "asset_id": asset_id, "sha256": asset_id,
             "content_type": row["content_type"], "encoding": row["encoding"],
             "content_length": row["content_length"], "storage_path": asset_paths[asset_id],
-            "status": "pending",
+            "status": "pending", "error_category": None,
         })
     return {"events_analytics": analytics_rows, "assets": tuple(assets)}
 
