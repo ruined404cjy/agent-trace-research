@@ -520,6 +520,18 @@ class ClickHouseAdapter:
         finally:
             connection.close()
 
+    def force_single_part(self):
+        """仅供 part-state 控制对当前布局所有物理写目标执行 FINAL merge。"""
+        targets = build_layout_catalog(self.layout).write_tables
+        connection = self.connect_worker()
+        try:
+            for table in targets:
+                validate_identifier(table, "table")
+                self._request(connection, f"OPTIMIZE TABLE {self.database}.{table} FINAL")
+        finally:
+            connection.close()
+        return targets
+
     def set_asset_status(self, asset_id, status, error_category=None):
         """同步执行 catalog 状态转换，供故障实验控制。"""
         if self.layout != "asset_ref" or status not in ASSET_STATUSES:

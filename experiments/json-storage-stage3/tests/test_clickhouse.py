@@ -89,6 +89,31 @@ class ClickHouseAdapterUnitTest(unittest.TestCase):
         self.assertNotIn("OPTIMIZE", source.upper())
         self.assertNotIn("FINAL", source.upper())
 
+    def test_single_part_control_optimizes_each_layout_write_target(self):
+        """捕获遗漏物理写目标或向调用方开放任意控制 SQL。"""
+        with tempfile.TemporaryDirectory() as directory:
+            for layout in clickhouse.LAYOUTS:
+                with self.subTest(layout=layout):
+                    requests = []
+                    store = LocalAssetStore(Path(directory) / layout) if layout == "asset_ref" else None
+                    adapter = clickhouse.ClickHouseAdapter(
+                        "127.0.0.1", 18123, "unused", "jsons3_test", layout,
+                        Path(directory), store,
+                    )
+                    adapter.connect_worker = lambda: RecordingConnection(requests)
+
+                    targets = adapter.force_single_part()
+
+                    expected_targets = build_layout_catalog(layout).write_tables
+                    self.assertEqual(targets, expected_targets)
+                    self.assertEqual(
+                        [request["body"].decode("utf-8") for request in requests],
+                        [
+                            f"OPTIMIZE TABLE {adapter.database}.{table} FINAL"
+                            for table in expected_targets
+                        ],
+                    )
+
     def test_batch_sql_binds_cohort_and_excludes_payloadless_rows(self):
         adapter = clickhouse.ClickHouseAdapter(
             "127.0.0.1", 18123, "unused", "jsons3_test", "same_table", Path("."),
@@ -322,6 +347,13 @@ class ClickHouseAdapterIntegrationTest(unittest.TestCase):
                         storage = adapter.collect_storage()
                         self.assertEqual(set(storage.tables), set(build_layout_catalog(layout).write_tables))
                         self.assertTrue(all("marks" in value for value in storage.tables.values()))
+                        optimized_targets = adapter.force_single_part()
+                        self.assertEqual(optimized_targets, build_layout_catalog(layout).write_tables)
+                        single_part_storage = adapter.collect_storage()
+                        self.assertTrue(all(
+                            value["part_count"] <= 1
+                            for value in single_part_storage.tables.values()
+                        ))
                         audit = adapter.audit_dataset()
                         self.assertEqual(set(audit.target_audits), set(build_layout_catalog(layout).write_tables))
                         self.assertTrue(all(
