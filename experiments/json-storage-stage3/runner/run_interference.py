@@ -155,6 +155,7 @@ class PhaseProcessPolicy:
     control_budget_seconds: float = PHASE_CONTROL_BUDGET_SECONDS
     terminate_join_seconds: float = 1.0
     kill_join_seconds: float = 1.0
+    reader_join_seconds: float = 1.0
     poll_interval_seconds: float = 0.01
 
     def __post_init__(self):
@@ -171,6 +172,7 @@ class PhaseProcessPolicy:
             ("control_budget_seconds", self.control_budget_seconds, True),
             ("terminate_join_seconds", self.terminate_join_seconds, False),
             ("kill_join_seconds", self.kill_join_seconds, False),
+            ("reader_join_seconds", self.reader_join_seconds, False),
             ("poll_interval_seconds", self.poll_interval_seconds, False),
         ):
             if (
@@ -221,6 +223,40 @@ class _PhaseTerminal:
     """请求 child wrapper 原样发送已形成的 phase terminal payload。"""
 
     payload: dict[str, object]
+
+
+class _ParentEventTimeout(BaseException):
+    """中断主线程内超过 phase deadline 的同步 event consumer。"""
+
+
+def _validate_parent_event_boundary():
+    """在 fork 前确认当前线程可安全独占 Linux real-time timer。"""
+    if threading.current_thread() is not threading.main_thread():
+        raise RuntimeError("bounded parent event consumer requires the main thread")
+    if not hasattr(signal, "setitimer") or not hasattr(signal, "ITIMER_REAL"):
+        raise RuntimeError("bounded parent event consumer requires Linux setitimer")
+    delay, interval = signal.getitimer(signal.ITIMER_REAL)
+    if delay > 0 or interval > 0:
+        raise RuntimeError("bounded parent event consumer requires an idle SIGALRM timer")
+
+
+def _consume_parent_event(event_consumer, event, deadline):
+    """以 phase 剩余时间为硬上界同步消费一个 parent event。"""
+    remaining = deadline - time.monotonic()
+    if remaining <= 0:
+        raise _ParentEventTimeout("parent event consumer exceeded phase deadline")
+    previous_handler = signal.getsignal(signal.SIGALRM)
+
+    def interrupt(_signum, _frame):
+        raise _ParentEventTimeout("parent event consumer exceeded phase deadline")
+
+    signal.signal(signal.SIGALRM, interrupt)
+    try:
+        signal.setitimer(signal.ITIMER_REAL, remaining)
+        return event_consumer(event)
+    finally:
+        signal.setitimer(signal.ITIMER_REAL, 0)
+        signal.signal(signal.SIGALRM, previous_handler)
 
 
 class _PhaseEventSender:
@@ -297,7 +333,11 @@ def _read_phase_events(connection, messages):
     except OSError as error:
         messages.put(("reader_error", str(error) or type(error).__name__))
     finally:
-        connection.close()
+        try:
+            connection.close()
+        except OSError:
+            # 父进程在 reader 未收束时也会关闭同一 Pipe 端点以解除 recv。
+            pass
         messages.put(("eof", None))
 
 
@@ -381,6 +421,8 @@ def run_owned_phase_process(operation, *, run_id, phase, policy, event_consumer=
         raise ValueError("owned phase execution requires process policy")
     if "fork" not in multiprocessing.get_all_start_methods():
         raise RuntimeError("owned phase execution requires Linux fork support")
+    if event_consumer is not None:
+        _validate_parent_event_boundary()
 
     context = multiprocessing.get_context("fork")
     receive_connection, send_connection = context.Pipe(duplex=False)
@@ -429,7 +471,11 @@ def run_owned_phase_process(operation, *, run_id, phase, policy, event_consumer=
                 terminal_seen = event["type"] == "phase_terminal"
                 if event_consumer is not None:
                     try:
-                        event_consumer(event)
+                        _consume_parent_event(event_consumer, event, deadline)
+                    except _ParentEventTimeout as error:
+                        failure_reason = "parent_event_timeout"
+                        protocol_error = str(error)
+                        break
                     except Exception as error:
                         failure_reason = "parent_event_error"
                         protocol_error = str(error) or type(error).__name__
@@ -455,6 +501,20 @@ def run_owned_phase_process(operation, *, run_id, phase, policy, event_consumer=
     lifecycle = _stop_phase_process(process, policy) if failure_reason else []
     if not process.is_alive():
         process.join(0)
+    reader.join(policy.reader_join_seconds)
+    reader_join_attempts = 1
+    receive_connection.close()
+    if reader.is_alive():
+        reader.join(policy.reader_join_seconds)
+        reader_join_attempts += 1
+    reader_evidence = {
+        "connection_closed": True,
+        "join_timeout_seconds": policy.reader_join_seconds,
+        "join_attempts": reader_join_attempts,
+        "alive": reader.is_alive(),
+    }
+    if reader.is_alive() and failure_reason is None:
+        failure_reason = "ipc_reader_join_timeout"
     child_exit = _explain_process_exit(process.exitcode)
     if failure_reason is None:
         if child_exit != {"kind": "exited", "exit_code": 0}:
@@ -473,9 +533,16 @@ def run_owned_phase_process(operation, *, run_id, phase, policy, event_consumer=
             "event_count": len(events),
             "last_sequence": events[-1]["sequence"] if events else None,
             "terminal_received": terminal_seen,
+            "reader": reader_evidence,
         }
         if protocol_error is not None:
             evidence["protocol_error"] = protocol_error
+        if failure_reason == "parent_event_timeout":
+            evidence["artifact_publication"] = {
+                "status": "unavailable",
+                "reason": "parent_event_timeout",
+                "retry_safe": False,
+            }
         if not process.is_alive():
             process.close()
         raise UnresolvedExecution(evidence)
@@ -1616,6 +1683,11 @@ def _run_phase_process(adapter_factory, targets_factory, phase_output, phase, na
             policy=process_policy, event_consumer=reducer.consume,
         )
     except UnresolvedExecution as unresolved:
+        if unresolved.evidence.get("artifact_publication", {}).get(
+            "status"
+        ) == "unavailable":
+            # 同一 writer 已知可能阻塞；异常 evidence 是唯一可靠的失败出口。
+            raise
         evidence = {**(reducer.unresolved or {}), **unresolved.evidence}
         evidence["server_side_completion"] = "unknown"
         phase_manifest["execution_resolution"] = evidence

@@ -1,3 +1,4 @@
+import fcntl
 import hashlib
 import json
 import multiprocessing
@@ -572,6 +573,115 @@ class PhaseProcessBoundaryTest(unittest.TestCase):
         self.assertEqual(len(outcome.events[1]["payload"]["payload"]), len(payload))
         self.assertEqual(outcome.events[-1]["type"], "phase_terminal")
 
+    def test_blocking_parent_consumer_is_interrupted_and_child_reaped_within_hard_bound(self):
+        """捕获同步 consumer 阻塞后 parent watchdog 停止检查 deadline。"""
+        context = multiprocessing.get_context("fork")
+        receive_result, send_result = context.Pipe(duplex=False)
+
+        def invoke():
+            receive_result.close()
+            original_handler = signal.getsignal(signal.SIGALRM)
+
+            def previous_handler(_signum, _frame):
+                return None
+
+            signal.signal(signal.SIGALRM, previous_handler)
+            try:
+                try:
+                    run_owned_phase_process(
+                        lambda _send: threading.Event().wait(),
+                        run_id="run-blocking-consumer", phase="quiet",
+                        policy=PhaseProcessPolicy(
+                            watchdog_seconds=0.1, terminate_join_seconds=0.05,
+                            kill_join_seconds=0.05, poll_interval_seconds=0.005,
+                        ),
+                        event_consumer=lambda _event: threading.Event().wait(),
+                    )
+                except UnresolvedExecution as error:
+                    send_result.send({
+                        "evidence": error.evidence,
+                        "handler_restored": (
+                            signal.getsignal(signal.SIGALRM) is previous_handler
+                        ),
+                        "timer": signal.getitimer(signal.ITIMER_REAL),
+                    })
+            finally:
+                signal.signal(signal.SIGALRM, original_handler)
+                send_result.close()
+
+        worker = context.Process(target=invoke)
+        started = time.monotonic()
+        worker.start()
+        send_result.close()
+        worker.join(2.0)
+        elapsed = time.monotonic() - started
+        if worker.is_alive():
+            worker.terminate()
+            worker.join(1.0)
+            self.fail("blocking consumer exceeded the outer two-second watchdog")
+
+        self.assertEqual(worker.exitcode, 0)
+        self.assertTrue(receive_result.poll(0.1))
+        result = receive_result.recv()
+        receive_result.close()
+        self.assertLess(elapsed, 0.6)
+        self.assertEqual(result["evidence"]["reason"], "parent_event_timeout")
+        self.assertNotEqual(result["evidence"]["child_exit"]["kind"], "running")
+        self.assertTrue(result["handler_restored"])
+        self.assertEqual(result["timer"], (0.0, 0.0))
+
+    def test_bounded_parent_consumer_fails_closed_outside_the_main_thread(self):
+        """捕获 signal timeout 从非 main thread 静默降级为无界调用。"""
+        operation_started = threading.Event()
+        errors = []
+
+        def invoke():
+            try:
+                run_owned_phase_process(
+                    lambda _send: operation_started.set(),
+                    run_id="run-thread", phase="quiet",
+                    policy=PhaseProcessPolicy(watchdog_seconds=0.1),
+                    event_consumer=lambda _event: None,
+                )
+            except BaseException as error:
+                errors.append(error)
+
+        worker = threading.Thread(target=invoke)
+        worker.start()
+        worker.join(0.5)
+
+        self.assertFalse(worker.is_alive())
+        self.assertFalse(operation_started.is_set())
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], RuntimeError)
+        self.assertIn("main thread", str(errors[0]))
+
+    def test_unjoined_pipe_reader_is_reported_before_another_phase_can_fork(self):
+        """捕获收到 EOF 后返回时仍遗留 daemon Pipe reader。"""
+        original_reader = interference_runner._read_phase_events
+        release = threading.Event()
+
+        def delayed_reader(connection, messages):
+            original_reader(connection, messages)
+            release.wait()
+
+        interference_runner._read_phase_events = delayed_reader
+        try:
+            with self.assertRaises(UnresolvedExecution) as raised:
+                run_owned_phase_process(
+                    lambda _send: None,
+                    run_id="run-reader", phase="quiet",
+                    policy=PhaseProcessPolicy(
+                        watchdog_seconds=1.0, reader_join_seconds=0.05,
+                    ),
+                )
+        finally:
+            release.set()
+            interference_runner._read_phase_events = original_reader
+
+        self.assertEqual(raised.exception.evidence["reason"], "ipc_reader_join_timeout")
+        self.assertTrue(raised.exception.evidence["reader"]["alive"])
+
     def test_child_reports_unresolved_execution_as_an_ordered_ipc_event(self):
         """捕获未解决请求证据仍依赖 child 内同步 artifact writer。"""
         evidence = {
@@ -806,6 +916,7 @@ class InterferenceRunnerTest(unittest.TestCase):
             phase_manifest = json.loads(
                 (output / "quiet" / "run-manifest.json").read_text()
             )
+            root_manifest = json.loads((output / "run-manifest.json").read_text())
             root_manifest = json.loads((output / "run-manifest.json").read_text())
 
         self.assertEqual(factory_calls.value, 1)
@@ -1050,10 +1161,12 @@ class InterferenceRunnerTest(unittest.TestCase):
             phase_manifest = json.loads(
                 (output / "quiet" / "run-manifest.json").read_text()
             )
+            root_manifest = json.loads((output / "run-manifest.json").read_text())
 
         self.assertLess(elapsed, 0.6)
         self.assertEqual(factory_calls.value, 1)
         self.assertEqual(cleanup_calls.value, 0)
+        self.assertEqual(root_manifest["status"], "failed")
         self.assertEqual(
             phase_manifest["cleanup"]["status"],
             "not_attempted_server_completion_unknown",
@@ -1061,6 +1174,95 @@ class InterferenceRunnerTest(unittest.TestCase):
         self.assertFalse(phase_manifest["cleanup"]["removed"])
         self.assertEqual(
             phase_manifest["execution_resolution"]["server_side_completion"], "unknown",
+        )
+
+    def test_blocking_manifest_write_is_interrupted_without_retrying_that_writer(self):
+        """捕获 parent writer 超时后使用同一已知阻塞 writer 重试失败发布。"""
+        context = multiprocessing.get_context("fork")
+        receive_result, send_result = context.Pipe(duplex=False)
+
+        def invoke():
+            receive_result.close()
+            reader_errors = []
+            previous_excepthook = threading.excepthook
+            threading.excepthook = lambda args: reader_errors.append(
+                str(args.exc_value) or type(args.exc_value).__name__
+            )
+            read_fd, write_fd = os.pipe()
+            flags = fcntl.fcntl(write_fd, fcntl.F_GETFL)
+            fcntl.fcntl(write_fd, fcntl.F_SETFL, flags | os.O_NONBLOCK)
+            try:
+                while True:
+                    os.write(write_fd, b"x" * 4096)
+            except BlockingIOError:
+                pass
+            fcntl.fcntl(write_fd, fcntl.F_SETFL, flags)
+            attempts = 0
+
+            def blocking_writer(_path, _manifest):
+                nonlocal attempts
+                attempts += 1
+                if attempts == 4:
+                    os.write(write_fd, b"x")
+
+            def targets_factory(adapter, phase, _seed):
+                return {
+                    name: fixed_query_target(adapter, name)
+                    for name in fixed_phase_schedules(phase, measurement=True)
+                }
+
+            def blocking_phase_runner(_targets, _schedules, **_kwargs):
+                threading.Event().wait()
+
+            try:
+                with tempfile.TemporaryDirectory() as directory:
+                    try:
+                        run_interference(
+                            lambda namespace, *_: FakeAdapter(namespace),
+                            targets_factory, Path(directory), scope="diagnostic",
+                            phases=FIXED_PHASES[:1],
+                            phase_runner=blocking_phase_runner,
+                            resource_collector=lambda: {
+                                "cpu": {}, "memory": {}, "io": {},
+                            },
+                            manifest_writer=blocking_writer,
+                            process_policy=PhaseProcessPolicy(
+                                watchdog_seconds=0.1, terminate_join_seconds=0.05,
+                                kill_join_seconds=0.05, poll_interval_seconds=0.005,
+                            ),
+                        )
+                    except UnresolvedExecution as error:
+                        send_result.send({
+                            "attempts": attempts, "evidence": error.evidence,
+                            "reader_errors": reader_errors,
+                        })
+            finally:
+                threading.excepthook = previous_excepthook
+                os.close(read_fd)
+                os.close(write_fd)
+                send_result.close()
+
+        worker = context.Process(target=invoke)
+        worker.start()
+        send_result.close()
+        worker.join(2.0)
+        if worker.is_alive():
+            worker.terminate()
+            worker.join(1.0)
+            self.fail("blocking manifest writer exceeded the outer two-second watchdog")
+
+        self.assertEqual(worker.exitcode, 0)
+        self.assertTrue(receive_result.poll(0.1))
+        result = receive_result.recv()
+        receive_result.close()
+        self.assertEqual(result["attempts"], 4)
+        self.assertEqual(result["reader_errors"], [])
+        self.assertEqual(
+            result["evidence"]["artifact_publication"]["status"], "unavailable",
+        )
+        self.assertEqual(
+            result["evidence"]["artifact_publication"]["reason"],
+            "parent_event_timeout",
         )
 
     def test_formal_coverage_requires_actual_warmup_and_measurement_windows(self):
