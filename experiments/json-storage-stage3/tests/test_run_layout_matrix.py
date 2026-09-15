@@ -225,6 +225,39 @@ class SmokeAdapter:
         return CleanupResult("jsons3_fake_same_table", self.cleanup_removed)
 
 
+class FailingIngestEvidenceAdapter(SmokeAdapter):
+    """第二个 block 失败，并发布实际已发送的 transport bytes。"""
+
+    def __init__(self, events, input_root):
+        super().__init__(events, input_root)
+        self.ingest_calls = 0
+        self.failure_evidence = {}
+
+    def ingest_block(self, block):
+        self.ingest_calls += 1
+        if self.ingest_calls == 2:
+            self.failure_evidence = {"events": 13}
+            raise RuntimeError("injected ingest failure")
+        self.ingested.extend(block)
+        watermark = block[-1]["ingest_seq"] + 1
+        return BlockResult(
+            len(block), watermark, {"events": watermark}, 0.5,
+            write_target_ms={"events": 0.4},
+            logical_target_row_bytes={"events": 17},
+            database_ingest_request_body_bytes={"events": 11},
+        )
+
+    def ingest_failure_evidence(self):
+        return dict(self.failure_evidence)
+
+
+class FailingWarmupAdapter(SmokeAdapter):
+    """在完整写入证据形成后注入查询失败。"""
+
+    def run_query(self, query):
+        raise RuntimeError("injected warmup failure")
+
+
 class LayoutMatrixUnitTest(unittest.TestCase):
     """验证主矩阵的顺序、客户端校验、汇总和发布门禁。"""
 
@@ -533,6 +566,51 @@ class LayoutMatrixUnitTest(unittest.TestCase):
             manifest = json.loads((output / "run-manifest.json").read_text())
             self.assertEqual(manifest["status"], "failed")
             self.assertFalse(manifest["cleanup"]["removed"])
+
+    def test_ingest_failure_manifest_preserves_all_handed_request_bodies(self):
+        """捕获 failed manifest 遗漏成功 block 与失败 block 的已发送 bytes。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_root, output = root / "input", root / "output"
+            build_smoke_input(input_root)
+            truth, events, identity = load_run_input(input_root)
+            adapter = FailingIngestEvidenceAdapter(events, input_root)
+
+            with self.assertRaisesRegex(RuntimeError, "injected ingest failure"):
+                run_layout(adapter, truth, RunConfig(
+                    input_root=input_root, output=output, engine="fake",
+                    layout="same_table", round_index=0,
+                    round_order=("same_table", "separate", "full_core", "asset_ref"),
+                    measurements=1, batch_measurements=1, input_identity=identity,
+                ))
+
+            manifest = json.loads((output / "run-manifest.json").read_text())
+            write = manifest.get("write", {})
+            self.assertEqual(manifest["status"], "failed")
+            self.assertEqual(
+                write.get("database_ingest_request_body_bytes"), {"events": 24},
+            )
+            self.assertEqual(write.get("database_ingest_request_body_bytes_total"), 24)
+
+    def test_post_ingest_failure_does_not_replace_complete_write_evidence(self):
+        """捕获查询失败分支用部分 transport 统计覆盖完整 write 证据。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_root, output = root / "input", root / "output"
+            build_smoke_input(input_root)
+            truth, events, identity = load_run_input(input_root)
+
+            with self.assertRaisesRegex(RuntimeError, "query warmup failed"):
+                run_layout(FailingWarmupAdapter(events, input_root), truth, RunConfig(
+                    input_root=input_root, output=output, engine="fake",
+                    layout="same_table", round_index=0,
+                    round_order=("same_table", "separate", "full_core", "asset_ref"),
+                    measurements=1, batch_measurements=1, input_identity=identity,
+                ))
+
+            write = json.loads((output / "run-manifest.json").read_text())["write"]
+            self.assertEqual(write.get("logical_target_row_bytes"), {"events": 68})
+            self.assertEqual(write.get("block_count"), 4)
 
     def test_empty_asset_workspace_parent_tree_is_removed(self):
         from run_layout_matrix import remove_empty_asset_workspace

@@ -167,6 +167,7 @@ class ClickHouseAdapter:
         self._merges_stopped = set()
         self._target_watermark = 0
         self._asset_ids = set()
+        self._active_ingest_request_body_bytes = None
 
     def connect_worker(self):
         """建立供一个 worker 复用且由调用方关闭的 HTTP 连接。"""
@@ -187,7 +188,7 @@ class ClickHouseAdapter:
             raise RuntimeError("invalid ClickHouse JSONEachRow response") from error
 
     def _request(self, connection, statement, body=None, parameters=None, query_id=None,
-                 return_request_body_bytes=False):
+                 return_request_body_bytes=False, ingest_target=None):
         """发送 SQL/HTTP 请求并在返回前完整读取响应。"""
         if query_id is not None and not QUERY_ID.fullmatch(query_id):
             raise ValueError("query_id contains unsupported characters")
@@ -205,8 +206,12 @@ class ClickHouseAdapter:
         payload = statement if body is None else statement + "\n" + body
         request_body = payload.encode("utf-8")
         try:
-            connection.request("POST", path, body=request_body,
-                               headers={"Content-Type": "text/plain; charset=utf-8"})
+            request = connection.request
+            if ingest_target is not None and self._active_ingest_request_body_bytes is not None:
+                current = self._active_ingest_request_body_bytes.get(ingest_target, 0)
+                self._active_ingest_request_body_bytes[ingest_target] = current + len(request_body)
+            request("POST", path, body=request_body,
+                    headers={"Content-Type": "text/plain; charset=utf-8"})
             response = connection.getresponse()
             response_body = response.read().decode("utf-8", errors="replace")
         except (OSError, http.client.HTTPException) as error:
@@ -307,9 +312,13 @@ class ClickHouseAdapter:
                        for row in rows)
         _, request_body_bytes = self._request(
             connection, f"INSERT INTO {self.database}.{table} FORMAT JSONEachRow", body,
-            return_request_body_bytes=True,
+            return_request_body_bytes=True, ingest_target=table,
         )
         return request_body_bytes
+
+    def ingest_failure_evidence(self):
+        """返回最近失败 block 已交给 HTTP client 的 request-body bytes。"""
+        return dict(self._active_ingest_request_body_bytes or {})
 
     def _insert_assets(self, connection, block, payloads):
         """记录 pending，原子发布对象后同步转换为 available。"""
@@ -351,6 +360,7 @@ class ClickHouseAdapter:
 
     def ingest_block(self, block):
         """顺序完成 layout 的单写或显式双写并返回联合水位。"""
+        self._active_ingest_request_body_bytes = {}
         if not isinstance(block, list) or not block:
             raise ValueError("block must be a non-empty list")
         payloads = [self._payload(row) for row in block]
@@ -398,7 +408,7 @@ class ClickHouseAdapter:
             connection.close()
         watermark = max(int(row["ingest_seq"]) for row in block) + 1
         self._target_watermark = watermark
-        return BlockResult(
+        result = BlockResult(
             len(block), watermark,
             {table: watermark for table in build_layout_catalog(self.layout).write_tables},
             (time.perf_counter() - started) * 1000,
@@ -414,6 +424,8 @@ class ClickHouseAdapter:
             database_ingest_request_body_bytes=protocol_body_bytes,
             asset_raw_object_bytes=asset_submitted,
         )
+        self._active_ingest_request_body_bytes = None
+        return result
 
     def _watermarks(self):
         """读取各写目标的真实可见联合水位。"""
@@ -521,7 +533,7 @@ class ClickHouseAdapter:
                 "WHERE asset_id={asset_id:String} SETTINGS mutations_sync=2",
                 parameters={"status": status, "asset_id": asset_id,
                             **({"error": error_category} if error_category is not None else {})},
-                return_request_body_bytes=True,
+                return_request_body_bytes=True, ingest_target="assets",
             )
             return request_body_bytes
         finally:

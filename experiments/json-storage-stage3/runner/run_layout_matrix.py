@@ -1078,6 +1078,40 @@ def _as_json(value):
     return value
 
 
+def _ingest_request_body_summary(layout, block_evidence, failure_evidence=None,
+                                 include_all_targets=False):
+    """汇总成功 block 与失败 block 已提交的数据库 request-body bytes。"""
+    expected = build_layout_catalog(layout).write_tables
+    observed = set(expected) if include_all_targets else set()
+    totals = {table: 0 for table in expected}
+    available = {table: True for table in expected}
+    mappings = [
+        item["ingest"].get("database_ingest_request_body_bytes", {})
+        for item in block_evidence
+    ]
+    if failure_evidence:
+        mappings.append(failure_evidence)
+    for mapping in mappings:
+        for table in expected:
+            if table not in mapping:
+                continue
+            observed.add(table)
+            value = mapping[table]
+            if value is None:
+                available[table] = False
+            else:
+                totals[table] += value
+    body_bytes = {
+        table: totals[table] if available[table] else "unavailable"
+        for table in expected if table in observed
+    }
+    total = (
+        sum(totals[table] for table in observed)
+        if all(available[table] for table in observed) else "unavailable"
+    )
+    return body_bytes, total
+
+
 def _write_samples(path, samples):
     """以 JSONL 保存每个正式样本，失败样本也完整保留。"""
     content = b"".join(_json_bytes(_as_json(sample)) for sample in samples)
@@ -1307,6 +1341,7 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
     error = None
     cleanup = None
     asset_removed = config.asset_root is None
+    block_evidence = []
     preflight_started = time.perf_counter()
     try:
         if config.verified_events:
@@ -1338,7 +1373,6 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
         events = build_workload_events(source_events, config.workload)
         manifest["workload"] = config.workload
         manifest["preflight_ms"] = (time.perf_counter() - preflight_started) * 1000
-        block_evidence = []
         previous = 0
         ingestion_started = time.perf_counter()
         for watermark in truth.watermarks:
@@ -1370,21 +1404,13 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
         payload_bytes = sum(row["content_length"] or 0 for row in events)
         block_times = [item["ingest"]["wall_ms"] for item in block_evidence]
         logical_target_bytes = {table: 0 for table in build_layout_catalog(config.layout).write_tables}
-        ingest_request_body_bytes = {table: 0 for table in logical_target_bytes}
-        ingest_request_body_available = {table: True for table in logical_target_bytes}
         for item in block_evidence:
             ingest = item["ingest"]
             for table, value in ingest.get("logical_target_row_bytes", {}).items():
                 logical_target_bytes[table] = logical_target_bytes.get(table, 0) + value
-            for table, value in ingest.get("database_ingest_request_body_bytes", {}).items():
-                if value is None:
-                    ingest_request_body_available[table] = False
-                else:
-                    ingest_request_body_bytes[table] = ingest_request_body_bytes.get(table, 0) + value
-        ingest_request_body_manifest = {
-            table: ingest_request_body_bytes[table] if ingest_request_body_available[table] else "unavailable"
-            for table in logical_target_bytes
-        }
+        ingest_request_body_manifest, ingest_request_body_total = _ingest_request_body_summary(
+            config.layout, block_evidence, include_all_targets=True,
+        )
         logical_submitted = sum(logical_target_bytes.values())
         asset_submitted = sum(item["ingest"].get("asset_raw_object_bytes", 0) for item in block_evidence)
         write_target_ms = {}
@@ -1401,10 +1427,7 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
             "logical_target_row_bytes_to_raw_payload_ratio":
                 logical_submitted / payload_bytes if payload_bytes else None,
             "database_ingest_request_body_bytes": ingest_request_body_manifest,
-            "database_ingest_request_body_bytes_total": (
-                sum(ingest_request_body_bytes.values())
-                if all(ingest_request_body_available.values()) else "unavailable"
-            ),
+            "database_ingest_request_body_bytes_total": ingest_request_body_total,
             "asset_raw_object_bytes": asset_submitted,
             "asset_raw_object_bytes_to_raw_payload_ratio":
                 asset_submitted / payload_bytes if payload_bytes else None,
@@ -1452,6 +1475,17 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
         )
     except Exception as exception:
         error = exception
+        evidence_reader = getattr(adapter, "ingest_failure_evidence", None)
+        failure_evidence = evidence_reader() if callable(evidence_reader) else {}
+        body_bytes, body_bytes_total = _ingest_request_body_summary(
+            config.layout, block_evidence, failure_evidence,
+        )
+        if body_bytes and "write" not in manifest:
+            manifest["write"] = {
+                "completed_block_count": len(block_evidence),
+                "database_ingest_request_body_bytes": body_bytes,
+                "database_ingest_request_body_bytes_total": body_bytes_total,
+            }
     finally:
         try:
             cleanup = adapter.cleanup()

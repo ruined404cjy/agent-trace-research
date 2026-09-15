@@ -69,6 +69,64 @@ def fixture(root):
 class OpenGaussAdapterUnitTest(unittest.TestCase):
     """验证 openGauss 四布局的 SQL、状态和公共协议。"""
 
+    def test_ingest_failure_has_no_observable_request_body_bytes(self):
+        adapter = opengauss.OpenGaussAdapter(
+            "127.0.0.1", 15432, "unused", "jsons3_test", "same_table", Path("."),
+        )
+        evidence = getattr(adapter, "ingest_failure_evidence", None)
+        self.assertIsNotNone(evidence)
+        self.assertEqual(evidence(), {})
+
+    def test_asset_pending_insert_projects_every_logical_catalog_column(self):
+        """捕获 pending INSERT 遗漏 logical Asset row 的显式 NULL 列。"""
+        class RecordingConnection:
+            def __init__(self):
+                self.executions = []
+
+            def transaction(self):
+                return self
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exception_type, exception, traceback):
+                return False
+
+            def execute(self, statement, parameters):
+                self.executions.append((statement, parameters))
+
+            def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rows = fixture(root)[:1]
+            connection = RecordingConnection()
+            adapter = opengauss.OpenGaussAdapter(
+                "127.0.0.1", 15432, "unused", "jsons3_test", "asset_ref", root,
+                FailAfterPublishStore(root / "assets"),
+            )
+            adapter.connect_worker = lambda: connection
+            adapter.set_asset_status = lambda *arguments: None
+
+            with self.assertRaisesRegex(AssetError, "^failed$"):
+                adapter._ingest_assets(rows, [adapter._payload(rows[0])])
+
+            statement, parameters = connection.executions[0]
+            columns = statement.split("assets(", 1)[1].split(")", 1)[0].split(",")
+            self.assertEqual(columns, [
+                "asset_id", "sha256", "content_type", "encoding", "content_length",
+                "storage_path", "status", "error_category",
+            ])
+            self.assertTrue(statement.endswith(
+                "VALUES (%s,%s,%s,%s,%s,%s,'pending',NULL)"
+            ))
+            self.assertEqual(parameters, (
+                rows[0]["sha256"], rows[0]["sha256"], rows[0]["content_type"],
+                rows[0]["encoding"], rows[0]["content_length"],
+                str(adapter.asset_store.object_path(rows[0]["sha256"])),
+            ))
+
     def test_layout_catalog_has_distinct_tables_and_completion_watermarks(self):
         catalog = build_layout_catalog("full_core")
         self.assertEqual(catalog.write_tables, ("events_full", "events_core"))

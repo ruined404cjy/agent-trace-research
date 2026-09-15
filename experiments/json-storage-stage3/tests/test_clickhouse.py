@@ -16,7 +16,38 @@ sys.path.insert(0, str(STAGE_DIR / "tests"))
 import clickhouse
 from assets import AssetError, AssetReference, AssetResolver, LocalAssetStore
 from common import QuerySpec, build_layout_catalog
-from test_opengauss import CONTROL_PAYLOAD, EXPECTED_KEYS, PAYLOAD, fixture
+from test_opengauss import (
+    CONTROL_PAYLOAD, EXPECTED_KEYS, PAYLOAD, FailAfterPublishStore, fixture,
+)
+
+
+class RecordingConnection:
+    """记录实际交给 HTTP client 的 body，并按请求序号返回状态。"""
+
+    def __init__(self, requests, statuses=()):
+        self.requests = requests
+        self.statuses = statuses
+
+    def request(self, method, path, body, headers):
+        self.requests.append({
+            "method": method, "path": path, "body": body, "headers": headers,
+        })
+
+    def getresponse(self):
+        index = len(self.requests) - 1
+        status = self.statuses[index] if index < len(self.statuses) else 200
+
+        class Response:
+            def __init__(self, response_status):
+                self.status = response_status
+
+            def read(self):
+                return b"" if self.status == 200 else b"injected failure"
+
+        return Response(status)
+
+    def close(self):
+        return None
 
 
 class ClickHouseAdapterUnitTest(unittest.TestCase):
@@ -119,6 +150,83 @@ class ClickHouseAdapterUnitTest(unittest.TestCase):
                 for body in request_bodies
             ))
 
+    def test_publish_failure_exposes_pending_and_failed_mutation_bodies(self):
+        """捕获 failed mutation 成功发送后随原发布异常丢失的请求 bytes。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            requests = []
+            adapter = clickhouse.ClickHouseAdapter(
+                "127.0.0.1", 18123, "unused", "jsons3_test", "asset_ref", root,
+                FailAfterPublishStore(root / "assets"),
+            )
+            adapter.connect_worker = lambda: RecordingConnection(requests)
+
+            with self.assertRaisesRegex(AssetError, "^failed$"):
+                adapter.ingest_block(fixture(root)[:1])
+
+            bodies = [request["body"] for request in requests]
+            self.assertEqual(len(bodies), 2)
+            self.assertTrue(bodies[0].startswith(b"INSERT INTO"))
+            self.assertTrue(bodies[1].startswith(b"ALTER TABLE"))
+            evidence = getattr(adapter, "ingest_failure_evidence", None)
+            self.assertIsNotNone(evidence)
+            self.assertEqual(
+                evidence(), {"assets": sum(map(len, bodies))},
+            )
+
+    def test_available_mutation_failure_exposes_every_handed_asset_body(self):
+        """捕获 available mutation 失败时只保留 pending INSERT bytes。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            requests = []
+            adapter = clickhouse.ClickHouseAdapter(
+                "127.0.0.1", 18123, "unused", "jsons3_test", "asset_ref", root,
+                LocalAssetStore(root / "assets"),
+            )
+            adapter.connect_worker = lambda: RecordingConnection(requests, (200, 500))
+
+            with self.assertRaisesRegex(RuntimeError, "ClickHouse request failed"):
+                adapter.ingest_block(fixture(root)[:1])
+
+            bodies = [request["body"] for request in requests]
+            self.assertEqual(len(bodies), 2)
+            evidence = getattr(adapter, "ingest_failure_evidence", None)
+            self.assertIsNotNone(evidence)
+            self.assertEqual(
+                evidence(), {"assets": sum(map(len, bodies))},
+            )
+
+    def test_status_connection_failure_does_not_count_an_unhanded_body(self):
+        """捕获 status 连接建立失败时把未交给 HTTP client 的 body 计入证据。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            requests = []
+            connection_count = 0
+
+            def connect_worker():
+                nonlocal connection_count
+                connection_count += 1
+                if connection_count == 2:
+                    raise OSError("injected connection failure")
+                return RecordingConnection(requests)
+
+            adapter = clickhouse.ClickHouseAdapter(
+                "127.0.0.1", 18123, "unused", "jsons3_test", "asset_ref", root,
+                LocalAssetStore(root / "assets"),
+            )
+            adapter.connect_worker = connect_worker
+
+            with self.assertRaisesRegex(OSError, "injected connection failure"):
+                adapter.ingest_block(fixture(root)[:1])
+
+            bodies = [request["body"] for request in requests]
+            self.assertEqual(len(bodies), 1)
+            evidence = getattr(adapter, "ingest_failure_evidence", None)
+            self.assertIsNotNone(evidence)
+            self.assertEqual(
+                evidence(), {"assets": len(bodies[0])},
+            )
+
 
 @unittest.skipUnless(os.environ.get("RUN_CLICKHOUSE_INTEGRATION") == "1",
                      "set RUN_CLICKHOUSE_INTEGRATION=1")
@@ -150,14 +258,18 @@ class ClickHouseAdapterIntegrationTest(unittest.TestCase):
                             value is not None for value in block.database_ingest_request_body_bytes.values()
                         ))
                         if layout == "same_table":
-                            expected_body = "".join(
+                            data = "".join(
                                 json.dumps(adapter._event_row(row, adapter._payload(row), True),
                                            ensure_ascii=False, separators=(",", ":")) + "\n"
                                 for row in rows
                             )
+                            expected_body = (
+                                f"INSERT INTO {adapter.database}.events FORMAT JSONEachRow\n"
+                                + data
+                            ).encode("utf-8")
                             self.assertEqual(
                                 block.database_ingest_request_body_bytes["events"],
-                                len(expected_body.encode("utf-8")),
+                                len(expected_body),
                             )
                         ready = adapter.wait_write_complete(3)
                         self.assertTrue(ready.completed)

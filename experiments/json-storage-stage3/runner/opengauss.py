@@ -190,6 +190,10 @@ class OpenGaussAdapter:
                                user="gaussdb", password=self._password_from_container(),
                                autocommit=False)
 
+    def ingest_failure_evidence(self):
+        """返回可发布的失败写入 body；psycopg 不暴露该协议 bytes。"""
+        return {}
+
     def namespace_exists(self):
         """返回本 adapter schema 当前是否存在。"""
         connection = self.connect_worker()
@@ -298,8 +302,8 @@ class OpenGaussAdapter:
                 for row, _ in pending:
                     path = self.asset_store.object_path(row["sha256"])
                     connection.execute(
-                        f"INSERT INTO {self.schema}.assets(asset_id,sha256,content_type,encoding,content_length,storage_path,status) "
-                        "VALUES (%s,%s,%s,%s,%s,%s,'pending')",
+                        f"INSERT INTO {self.schema}.assets(asset_id,sha256,content_type,encoding,content_length,storage_path,status,error_category) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,'pending',NULL)",
                         (row["sha256"], row["sha256"], row["content_type"], row["encoding"],
                          row["content_length"], str(path)),
                     )
