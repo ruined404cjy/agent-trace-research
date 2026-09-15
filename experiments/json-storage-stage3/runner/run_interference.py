@@ -4,7 +4,10 @@
 import json
 import inspect
 import math
+import multiprocessing
 import os
+import queue
+import signal
 import tempfile
 import threading
 import time
@@ -20,8 +23,16 @@ from run_layout_matrix import QuerySample, QueryTruth, measure_query, write_mani
 
 P99_MINIMUM_SUCCESSES = 1_000
 QUERY_EVIDENCE_BATCH_SIZE = 200
-TERMINAL_ABORT_EXIT_CODE = 70
+IPC_PROTOCOL_VERSION = 1
+IPC_DRAIN_BATCH_SIZE = 256
+PHASE_START_DELAY_SECONDS = 0.05
+PHASE_CONTROL_BUDGET_SECONDS = 300.0
 TERMINATION_GRACE_SECONDS = 0.1
+IPC_EVENT_TYPES = frozenset({
+    "phase_initialized", "snapshot_captured", "segment_complete",
+    "phase_terminal", "execution_unresolved",
+})
+_OPERATION_EVENT_TYPES = frozenset({"snapshot_captured", "segment_complete"})
 QUERY_STREAMS = {
     "list": ("list", None),
     "preview": ("preview", None),
@@ -118,6 +129,328 @@ FIXED_PHASES = (
     InterferencePhase("batch_loop", "batch_loop", None, "continuous"),
     InterferencePhase("continuous_ingest", "continuous_ingest", 1.0),
 )
+
+
+class UnresolvedExecution(RuntimeError):
+    """携带可序列化证据，表示调用边界内仍有未退出执行。"""
+
+    def __init__(self, evidence):
+        encoded = json.dumps(evidence, ensure_ascii=False, allow_nan=False)
+        self.evidence = json.loads(encoded)
+        reason = self.evidence.get("reason", self.evidence.get("status", "unresolved"))
+        super().__init__(f"unresolved execution: {reason}")
+
+
+@dataclass(frozen=True)
+class PhaseProcessPolicy:
+    """冻结 phase 执行模式、watchdog 和两级进程收束上界。"""
+
+    mode: str = "process"
+    watchdog_seconds: float | None = None
+    control_budget_seconds: float = PHASE_CONTROL_BUDGET_SECONDS
+    terminate_join_seconds: float = 1.0
+    kill_join_seconds: float = 1.0
+    poll_interval_seconds: float = 0.01
+
+    def __post_init__(self):
+        if self.mode not in {"process", "inline"}:
+            raise ValueError("phase process mode must be process or inline")
+        if self.watchdog_seconds is not None and (
+            not isinstance(self.watchdog_seconds, (int, float))
+            or isinstance(self.watchdog_seconds, bool)
+            or not math.isfinite(self.watchdog_seconds)
+            or self.watchdog_seconds <= 0
+        ):
+            raise ValueError("watchdog_seconds must be positive when provided")
+        for name, value, allow_zero in (
+            ("control_budget_seconds", self.control_budget_seconds, True),
+            ("terminate_join_seconds", self.terminate_join_seconds, False),
+            ("kill_join_seconds", self.kill_join_seconds, False),
+            ("poll_interval_seconds", self.poll_interval_seconds, False),
+        ):
+            if (
+                not isinstance(value, (int, float))
+                or isinstance(value, bool)
+                or not math.isfinite(value)
+                or value < 0
+                or (not allow_zero and value == 0)
+            ):
+                requirement = "non-negative" if allow_zero else "positive"
+                raise ValueError(f"{name} must be {requirement}")
+
+    def watchdog_seconds_for(self, phase):
+        """按两段到达窗口、请求 drain 和控制预算计算 phase 上界。"""
+        if self.watchdog_seconds is not None:
+            return float(self.watchdog_seconds)
+        if isinstance(phase, str):
+            matches = [item for item in FIXED_PHASES if item.name == phase]
+            if not matches:
+                raise ValueError(f"unsupported interference phase: {phase}")
+            phase = matches[0]
+        if not isinstance(phase, InterferencePhase):
+            raise ValueError("phase must be an InterferencePhase")
+        bound = self.control_budget_seconds
+        for measurement in (False, True):
+            schedules = fixed_phase_schedules(phase, measurement=measurement)
+            bound += (
+                PHASE_START_DELAY_SECONDS
+                + max(
+                    schedule.duration_seconds + schedule.timeout_seconds
+                    for schedule in schedules.values()
+                )
+                + TERMINATION_GRACE_SECONDS
+            )
+        return bound
+
+
+@dataclass(frozen=True)
+class PhaseProcessOutcome:
+    """保存父进程验证后的有序 IPC 事件与 child 退出解释。"""
+
+    events: tuple[dict[str, object], ...]
+    exit: dict[str, object]
+
+
+class _PhaseEventSender:
+    def __init__(self, connection, run_id, phase):
+        self.connection = connection
+        self.run_id = run_id
+        self.phase = phase
+        self.sequence = 0
+
+    def __call__(self, event_type, payload):
+        if event_type not in _OPERATION_EVENT_TYPES:
+            raise ValueError(f"operation cannot emit IPC event type: {event_type}")
+        self._send(event_type, payload)
+
+    def _send(self, event_type, payload):
+        event = {
+            "protocol_version": IPC_PROTOCOL_VERSION,
+            "run_id": self.run_id,
+            "phase": self.phase,
+            "sequence": self.sequence,
+            "type": event_type,
+            "payload": payload,
+        }
+        encoded = json.dumps(
+            event, ensure_ascii=False, allow_nan=False, sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        self.connection.send_bytes(encoded)
+        self.sequence += 1
+
+
+def _phase_process_child(receive_connection, send_connection, operation, run_id, phase):
+    receive_connection.close()
+    sender = _PhaseEventSender(send_connection, run_id, phase)
+    try:
+        sender._send("phase_initialized", {"pid": os.getpid()})
+        try:
+            result = operation(sender)
+        except UnresolvedExecution as error:
+            sender._send("execution_unresolved", error.evidence)
+            sender._send("phase_terminal", {
+                "status": "failed", "error": str(error),
+                "error_type": type(error).__name__,
+            })
+        except BaseException as error:
+            sender._send("phase_terminal", {
+                "status": "failed", "error": str(error) or type(error).__name__,
+                "error_type": type(error).__name__,
+            })
+        else:
+            payload = {"status": "complete"}
+            if result is not None:
+                payload["result"] = result
+            sender._send("phase_terminal", payload)
+    finally:
+        send_connection.close()
+
+
+def _read_phase_events(connection, messages):
+    try:
+        while True:
+            messages.put(("event", connection.recv_bytes()))
+    except EOFError:
+        pass
+    except OSError as error:
+        messages.put(("reader_error", str(error) or type(error).__name__))
+    finally:
+        connection.close()
+        messages.put(("eof", None))
+
+
+def _validate_phase_event(raw, run_id, phase, expected_sequence, terminal_seen):
+    try:
+        event = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise RuntimeError("child emitted malformed phase IPC JSON") from error
+    fields = {"protocol_version", "run_id", "phase", "sequence", "type", "payload"}
+    if not isinstance(event, dict) or set(event) != fields:
+        raise RuntimeError("child emitted invalid phase IPC fields")
+    if event["protocol_version"] != IPC_PROTOCOL_VERSION:
+        raise RuntimeError("child emitted unsupported phase IPC version")
+    if event["run_id"] != run_id or event["phase"] != phase:
+        raise RuntimeError("child emitted mismatched phase IPC identity")
+    if type(event["sequence"]) is not int or event["sequence"] != expected_sequence:
+        raise RuntimeError("child emitted non-contiguous phase IPC sequence")
+    if event["type"] not in IPC_EVENT_TYPES:
+        raise RuntimeError("child emitted unsupported phase IPC event")
+    if terminal_seen:
+        raise RuntimeError("child emitted phase IPC after terminal")
+    if expected_sequence == 0 and event["type"] != "phase_initialized":
+        raise RuntimeError("child phase IPC does not start with initialization")
+    if expected_sequence > 0 and event["type"] == "phase_initialized":
+        raise RuntimeError("child emitted duplicate phase initialization")
+    return event
+
+
+def _explain_process_exit(exit_code):
+    if exit_code is None:
+        return {"kind": "running", "exit_code": None}
+    if exit_code < 0:
+        number = -exit_code
+        try:
+            name = signal.Signals(number).name
+        except ValueError:
+            name = "UNKNOWN"
+        return {
+            "kind": "signal", "exit_code": exit_code,
+            "signal": number, "signal_name": name,
+        }
+    return {"kind": "exited", "exit_code": exit_code}
+
+
+def _stop_phase_process(process, policy):
+    lifecycle = []
+    if process.is_alive():
+        process.terminate()
+        lifecycle.append({"action": "terminate"})
+        process.join(policy.terminate_join_seconds)
+        lifecycle.append({
+            "action": "join_after_terminate",
+            "timeout_seconds": policy.terminate_join_seconds,
+            "alive": process.is_alive(),
+        })
+    if process.is_alive():
+        process.kill()
+        lifecycle.append({"action": "kill"})
+        process.join(policy.kill_join_seconds)
+        lifecycle.append({
+            "action": "join_after_kill",
+            "timeout_seconds": policy.kill_join_seconds,
+            "alive": process.is_alive(),
+        })
+    return lifecycle
+
+
+def run_owned_phase_process(operation, *, run_id, phase, policy):
+    """在 Linux fork child 中执行局部闭包，并由父 watchdog 收束生命周期。"""
+    if not callable(operation):
+        raise ValueError("phase operation must be callable")
+    try:
+        inspect.signature(operation).bind(lambda *_: None)
+    except (TypeError, ValueError) as error:
+        raise ValueError("phase operation must accept one event sender") from error
+    if not isinstance(run_id, str) or not run_id or not isinstance(phase, str) or not phase:
+        raise ValueError("run_id and phase must be non-empty strings")
+    if not isinstance(policy, PhaseProcessPolicy) or policy.mode != "process":
+        raise ValueError("owned phase execution requires process policy")
+    if "fork" not in multiprocessing.get_all_start_methods():
+        raise RuntimeError("owned phase execution requires Linux fork support")
+
+    context = multiprocessing.get_context("fork")
+    receive_connection, send_connection = context.Pipe(duplex=False)
+    process = context.Process(
+        target=_phase_process_child,
+        args=(receive_connection, send_connection, operation, run_id, phase),
+        name=f"stage3-interference-{phase}",
+    )
+    try:
+        process.start()
+    except BaseException:
+        receive_connection.close()
+        send_connection.close()
+        raise
+    send_connection.close()
+    messages = queue.Queue()
+    reader = threading.Thread(
+        target=_read_phase_events, args=(receive_connection, messages),
+        name=f"stage3-interference-ipc-{phase}", daemon=True,
+    )
+    reader.start()
+
+    watchdog_seconds = policy.watchdog_seconds_for(phase)
+    deadline = time.monotonic() + watchdog_seconds
+    events = []
+    terminal_seen = False
+    eof_seen = False
+    failure_reason = None
+    protocol_error = None
+    while True:
+        for _ in range(IPC_DRAIN_BATCH_SIZE):
+            try:
+                message_type, value = messages.get_nowait()
+            except queue.Empty:
+                break
+            if message_type == "event":
+                try:
+                    event = _validate_phase_event(
+                        value, run_id, phase, len(events), terminal_seen,
+                    )
+                except RuntimeError as error:
+                    failure_reason = "protocol_error"
+                    protocol_error = str(error)
+                    break
+                events.append(event)
+                terminal_seen = event["type"] == "phase_terminal"
+            elif message_type == "reader_error":
+                failure_reason = "ipc_reader_error"
+                protocol_error = value
+                break
+            else:
+                eof_seen = True
+        if failure_reason is not None:
+            break
+        if not process.is_alive() and eof_seen and messages.empty():
+            break
+        now = time.monotonic()
+        if now >= deadline:
+            failure_reason = (
+                "watchdog_timeout" if process.is_alive() else "ipc_drain_timeout"
+            )
+            break
+        time.sleep(min(policy.poll_interval_seconds, deadline - now))
+
+    lifecycle = _stop_phase_process(process, policy) if failure_reason else []
+    if not process.is_alive():
+        process.join(0)
+    child_exit = _explain_process_exit(process.exitcode)
+    if failure_reason is None:
+        if child_exit != {"kind": "exited", "exit_code": 0}:
+            failure_reason = "child_exit"
+        elif not terminal_seen:
+            failure_reason = "missing_terminal_event"
+    if failure_reason is not None:
+        evidence = {
+            "status": "unresolved_execution",
+            "reason": failure_reason,
+            "run_id": run_id,
+            "phase": phase,
+            "watchdog_seconds": watchdog_seconds,
+            "lifecycle": lifecycle,
+            "child_exit": child_exit,
+            "event_count": len(events),
+            "last_sequence": events[-1]["sequence"] if events else None,
+            "terminal_received": terminal_seen,
+        }
+        if protocol_error is not None:
+            evidence["protocol_error"] = protocol_error
+        if not process.is_alive():
+            process.close()
+        raise UnresolvedExecution(evidence)
+    process.close()
+    return PhaseProcessOutcome(tuple(events), child_exit)
 
 
 @dataclass(frozen=True)
@@ -346,12 +679,10 @@ def _submit(target, schedule, sequence, deadline, executor, clock, pending):
 
 def run_offered_load(target, schedule: LoadSchedule, *, clock=time.monotonic,
                      sleep=time.sleep, executor_factory=ThreadPoolExecutor,
-                     phase_origin=None, terminal_abort=None) -> LoadResult:
+                     phase_origin=None) -> LoadResult:
     """从单一 monotonic origin 产生到达 deadline，并按真实阶段 wall time计数。"""
     if not isinstance(target, DeadlineTarget) or not isinstance(schedule, LoadSchedule):
         raise ValueError("DeadlineTarget and LoadSchedule are required")
-    if terminal_abort is not None and not callable(terminal_abort):
-        raise ValueError("terminal_abort must be callable")
     origin = clock() if phase_origin is None else phase_origin
     now = clock()
     if now < origin:
@@ -439,14 +770,13 @@ def run_offered_load(target, schedule: LoadSchedule, *, clock=time.monotonic,
                 ],
                 "request_classifications": [_json_value(sample) for sample in samples],
             }
-            try:
-                if terminal_abort is not None:
-                    terminal_abort(evidence)
-            finally:
-                os._exit(TERMINAL_ABORT_EXIT_CODE)
+            executor.shutdown(wait=False, cancel_futures=True)
+            executor = None
+            raise UnresolvedExecution(evidence)
     finally:
-        # ClickHouse 请求自身受同一 30 秒超时约束；等待 worker 退出后再允许 phase cleanup。
-        executor.shutdown(wait=True, cancel_futures=True)
+        # 已收束请求在返回前回收；未解决线程交给 owned child 的父进程处理。
+        if executor is not None:
+            executor.shutdown(wait=True, cancel_futures=True)
     return _load_result(schedule, origin, clock(), samples)
 
 
@@ -498,18 +828,18 @@ def summarize_load(result: LoadResult):
 
 
 def run_load_phase(targets, schedules, *, clock=time.monotonic, sleep=time.sleep,
-                   executor_factory=ThreadPoolExecutor, terminal_abort=None):
+                   executor_factory=ThreadPoolExecutor):
     """使用同一 phase origin 并发执行各自独立 worker pool 的请求流。"""
     if set(targets) != set(schedules):
         raise ValueError("targets must exactly match schedules")
-    origin = clock() + 0.05
+    origin = clock() + PHASE_START_DELAY_SECONDS
     coordinator = ThreadPoolExecutor(max_workers=len(targets))
     try:
         futures = {
             name: coordinator.submit(
                 run_offered_load, targets[name], schedule,
                 clock=clock, sleep=sleep, executor_factory=executor_factory,
-                phase_origin=origin, terminal_abort=terminal_abort,
+                phase_origin=origin,
             )
             for name, schedule in schedules.items()
         }
@@ -765,7 +1095,7 @@ def _coerce_cleanup(adapter):
 
 def _run_phase(adapter_factory, targets_factory, output, phase, seed, *,
                scope, phase_runner, resource_collector, namespace_factory,
-               manifest_writer, clock, sleep, executor_factory, terminal_abort):
+               manifest_writer, clock, sleep, executor_factory):
     namespace = namespace_factory(phase)
     phase_output = output / phase.name
     phase_output.mkdir(parents=True, exist_ok=True)
@@ -792,19 +1122,6 @@ def _run_phase(adapter_factory, targets_factory, output, phase, seed, *,
     warmup = measured = {}
     origin = clock()
 
-    def report_terminal_abort(evidence):
-        manifest["execution_resolution"] = evidence
-        manifest["cleanup"] = {
-            "namespace": namespace,
-            "removed": False,
-            "status": "not_attempted_unresolved_execution",
-        }
-        manifest["status"] = "failed"
-        manifest["classification"] = scope + "_failed"
-        manifest["error"] = "request worker remained unresolved after terminal cancellation"
-        manifest_writer(manifest_path, manifest)
-        terminal_abort(manifest)
-
     try:
         adapter = adapter_factory(namespace, phase, seed)
         manifest["layout"] = adapter.layout
@@ -824,7 +1141,6 @@ def _run_phase(adapter_factory, targets_factory, output, phase, seed, *,
         warmup = _normalize_phase_wall(phase_runner(
             targets, fixed_phase_schedules(phase, measurement=False),
             clock=clock, sleep=sleep, executor_factory=executor_factory,
-            terminal_abort=report_terminal_abort,
         ))
         _write_jsonl_atomic(phase_output / "warmup-samples.jsonl", warmup)
         manifest["snapshots"].append(
@@ -836,7 +1152,6 @@ def _run_phase(adapter_factory, targets_factory, output, phase, seed, *,
         measured = _normalize_phase_wall(phase_runner(
             targets, fixed_phase_schedules(phase, measurement=True),
             clock=clock, sleep=sleep, executor_factory=executor_factory,
-            terminal_abort=report_terminal_abort,
         ))
         _write_jsonl_atomic(phase_output / "samples.jsonl", measured)
         if scope == "formal":
@@ -881,13 +1196,16 @@ def run_interference(adapter_factory, targets_factory, output: Path, *, scope, s
                          f"jsons3_if_{phase.name}_{uuid.uuid4().hex[:8]}"
                      ),
                      manifest_writer=write_manifest_atomic, clock=time.monotonic,
-                     sleep=time.sleep, executor_factory=ThreadPoolExecutor):
+                     sleep=time.sleep, executor_factory=ThreadPoolExecutor,
+                     process_policy=PhaseProcessPolicy()):
     """以同一 seed 和全新 namespace 运行安静阶段及四类独立干扰。"""
     phases = tuple(phases)
     if scope not in {"formal", "diagnostic"}:
         raise ValueError("scope must be formal or diagnostic")
     if not phases or len({phase.name for phase in phases}) != len(phases):
         raise ValueError("phases must be non-empty and unique")
+    if not isinstance(process_policy, PhaseProcessPolicy):
+        raise ValueError("process_policy must be a PhaseProcessPolicy")
     if scope == "formal":
         if phases != FIXED_PHASES:
             raise ValueError("formal scope requires the exact fixed five phases")
@@ -899,6 +1217,12 @@ def run_interference(adapter_factory, targets_factory, output: Path, *, scope, s
             or resource_collector is not collect_resource_snapshot
         ):
             raise ValueError("formal scope does not allow injected execution controls")
+        if process_policy.mode != "process":
+            raise ValueError("formal scope requires process phase execution")
+    if process_policy.mode == "process":
+        raise RuntimeError(
+            "process phase execution requires the parent event reducer integration"
+        )
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     manifest_path = output / "run-manifest.json"
@@ -916,23 +1240,12 @@ def run_interference(adapter_factory, targets_factory, output: Path, *, scope, s
     errors = []
     namespaces = set()
 
-    def report_terminal_abort(phase_manifest):
-        manifest["phases"] = [*phase_manifests, phase_manifest]
-        manifest["status"] = "failed"
-        manifest["classification"] = scope + "_failed"
-        manifest["execution_resolution"] = phase_manifest["execution_resolution"]
-        manifest["errors"] = [
-            f"{phase_manifest['phase']}: {phase_manifest['error']}"
-        ]
-        manifest_writer(manifest_path, manifest)
-
     for phase in phases:
         phase_manifest, error = _run_phase(
             adapter_factory, targets_factory, output, phase, seed,
             scope=scope, phase_runner=phase_runner, resource_collector=resource_collector,
             namespace_factory=namespace_factory, manifest_writer=manifest_writer,
             clock=clock, sleep=sleep, executor_factory=executor_factory,
-            terminal_abort=report_terminal_abort,
         )
         namespace = phase_manifest["namespace"]
         if namespace in namespaces:

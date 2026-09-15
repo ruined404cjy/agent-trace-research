@@ -1,12 +1,12 @@
 import hashlib
 import json
-import subprocess
+import signal
 import sys
 import tempfile
 import threading
 import time
 import unittest
-from dataclasses import replace
+from dataclasses import FrozenInstanceError, replace
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -16,9 +16,11 @@ sys.path.insert(0, str(STAGE_DIR / "runner"))
 
 from common import AccessEvidence, CleanupResult, QueryResult, QuerySpec, StorageEvidence
 from run_interference import (
-    FIXED_PHASES, DeadlineTarget, LoadResult, LoadSchedule, build_query_target,
-    fixed_phase_schedules, run_interference, run_offered_load, summarize_load,
-    validate_formal_phase_coverage, validate_resource_snapshot,
+    FIXED_PHASES, IPC_PROTOCOL_VERSION, DeadlineTarget, LoadResult, LoadSchedule,
+    PhaseProcessPolicy, UnresolvedExecution, build_query_target,
+    fixed_phase_schedules, run_interference, run_offered_load,
+    run_owned_phase_process, summarize_load, validate_formal_phase_coverage,
+    validate_resource_snapshot,
 )
 from run_layout_matrix import QueryTruth, write_manifest_atomic
 
@@ -36,6 +38,7 @@ QUERY = QuerySpec("detail", {
     "start_time": "2030-01-01T00:00:00.000Z", "event_id": "event-a",
 })
 TRUTH = QueryTruth("detail:text_2m", (ROW,))
+INLINE_PROCESS_POLICY = PhaseProcessPolicy(mode="inline")
 
 
 class FakeClock:
@@ -114,6 +117,23 @@ class CountingExecutor(InlineExecutor):
 
     def submit(self, function):
         return CountingFuture(function(), self)
+
+
+class NeverDoneFuture:
+    def done(self):
+        return False
+
+
+class TrackingExecutor:
+    def __init__(self, max_workers):
+        self.max_workers = max_workers
+        self.shutdown_calls = []
+
+    def submit(self, _function):
+        return NeverDoneFuture()
+
+    def shutdown(self, wait=True, cancel_futures=False):
+        self.shutdown_calls.append((wait, cancel_futures))
 
 
 def success_sample(latency_ms=1.0):
@@ -237,165 +257,46 @@ def fixed_query_target(adapter, stream):
 
 
 class OfferedLoadTest(unittest.TestCase):
-    def test_uncooperative_deadline_target_terminates_process_within_hard_bound(self):
-        """捕获二参数 target 忽略 cancellation 后永久阻塞整个运行。"""
-        script = f"""
-import sys
-import threading
-from pathlib import Path
-sys.path.insert(0, {str(STAGE_DIR / 'runner')!r})
-from run_interference import DeadlineTarget, LoadSchedule, run_offered_load
+    def test_uncooperative_target_raises_json_unresolved_evidence_without_exiting_host(self):
+        """捕获不合作 worker 从请求线程直接终止宿主进程。"""
+        entered = threading.Event()
+        release = threading.Event()
 
-def target(_deadline, _cancellation):
-    threading.Event().wait()
+        def target(_deadline, _cancellation):
+            entered.set()
+            release.wait()
 
-run_offered_load(
-    DeadlineTarget(target),
-    LoadSchedule('list', 1.0, 0.05, 1, timeout_seconds=0.05),
-)
-Path(sys.argv[1]).write_text('continued')
-"""
-        with tempfile.TemporaryDirectory() as directory:
-            continued = Path(directory) / "continued"
-            process = subprocess.Popen([
-                sys.executable, "-c", script, str(continued),
-            ])
-            started = time.monotonic()
-            try:
-                returncode = process.wait(timeout=1.0)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-                self.fail("uncooperative target exceeded the hard execution bound")
-            elapsed = time.monotonic() - started
-
-        self.assertEqual(returncode, 70)
-        self.assertLess(elapsed, 1.0)
-        self.assertFalse(continued.exists())
-
-    def test_terminal_abort_publishes_failed_manifests_without_cleanup(self):
-        """捕获终止失控 worker 前未发布 failed 和不可清理证据。"""
-        script = f"""
-import sys
-import threading
-from pathlib import Path
-from types import SimpleNamespace
-sys.path.insert(0, {str(STAGE_DIR / 'runner')!r})
-from common import CleanupResult, StorageEvidence
-from run_interference import (
-    DeadlineTarget, InterferencePhase, LoadSchedule, run_interference,
-    run_offered_load,
-)
-
-class Adapter:
-    layout = 'same_table'
-    def __init__(self, namespace):
-        self.database = namespace
-    def create(self):
-        return {{'database': self.database}}
-    def collect_storage(self):
-        return StorageEvidence({{'events': {{
-            'part_count': 1, 'marks': 1, 'compressed_bytes': 1,
-            'uncompressed_bytes': 1,
-        }}}})
-    def cleanup(self):
-        Path(sys.argv[2]).write_text('cleanup')
-        return CleanupResult(self.database, True)
-
-calls = 0
-def blocked(_deadline, _cancellation):
-    global calls
-    calls += 1
-    if calls == 1:
-        return SimpleNamespace(status='success', application_ready_ms=1.0)
-    threading.Event().wait()
-
-def targets_factory(_adapter, _phase, _seed):
-    return {{
-        'list': DeadlineTarget(blocked),
-        'preview': DeadlineTarget(blocked),
-    }}
-
-def short_runner(targets, _schedules, **kwargs):
-    return {{'list': run_offered_load(
-        targets['list'],
-        LoadSchedule('list', 20.0, 0.1, 1, timeout_seconds=0.05),
-        terminal_abort=kwargs.get('terminal_abort'),
-    )}}
-
-run_interference(
-    lambda namespace, *_: Adapter(namespace), targets_factory, Path(sys.argv[1]),
-    scope='diagnostic',
-    phases=(InterferencePhase('quiet', None, warmup_seconds=0.05,
-                              measurement_seconds=0.05),),
-    phase_runner=short_runner,
-)
-Path(sys.argv[3]).write_text('continued')
-"""
-        with tempfile.TemporaryDirectory() as directory:
-            output = Path(directory) / "run"
-            cleanup = Path(directory) / "cleanup"
-            continued = Path(directory) / "continued"
-            process = subprocess.Popen([
-                sys.executable, "-c", script, str(output), str(cleanup), str(continued),
-            ])
-            try:
-                returncode = process.wait(timeout=1.5)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-                self.fail("terminal abort manifest publication exceeded the hard bound")
-            root = json.loads((output / "run-manifest.json").read_text())
-            phase = json.loads((output / "quiet" / "run-manifest.json").read_text())
-
-        self.assertEqual(returncode, 70)
-        self.assertEqual(root["status"], "failed")
-        self.assertEqual(phase["status"], "failed")
-        self.assertEqual(
-            phase["execution_resolution"]["status"], "unresolved_execution",
-        )
-        self.assertEqual(
-            phase["cleanup"]["status"], "not_attempted_unresolved_execution",
-        )
-        self.assertEqual(
-            [
-                item["status"]
-                for item in phase["execution_resolution"]["request_classifications"]
-            ],
-            ["success", "timed_out"],
-        )
-        self.assertFalse(cleanup.exists())
-        self.assertFalse(continued.exists())
-
-    def test_terminal_abort_still_exits_when_evidence_publication_fails(self):
-        """捕获失败证据写入异常后重新进入无界 executor shutdown。"""
-        script = f"""
-import sys
-import threading
-sys.path.insert(0, {str(STAGE_DIR / 'runner')!r})
-from run_interference import DeadlineTarget, LoadSchedule, run_offered_load
-
-def target(_deadline, _cancellation):
-    threading.Event().wait()
-
-def fail_publication(_evidence):
-    raise OSError('evidence write failed')
-
-run_offered_load(
-    DeadlineTarget(target),
-    LoadSchedule('list', 1.0, 0.05, 1, timeout_seconds=0.05),
-    terminal_abort=fail_publication,
-)
-"""
-        process = subprocess.Popen([sys.executable, "-c", script])
+        started = time.monotonic()
         try:
-            returncode = process.wait(timeout=1.0)
-        except subprocess.TimeoutExpired:
-            process.kill()
-            process.wait()
-            self.fail("publication failure bypassed the terminal execution bound")
+            with self.assertRaises(UnresolvedExecution) as raised:
+                run_offered_load(
+                    DeadlineTarget(target),
+                    LoadSchedule("list", 1.0, 0.02, 1, timeout_seconds=0.02),
+                )
+        finally:
+            release.set()
+        elapsed = time.monotonic() - started
 
-        self.assertEqual(returncode, 70)
+        self.assertTrue(entered.is_set())
+        self.assertLess(elapsed, 0.5)
+        self.assertEqual(raised.exception.evidence["status"], "unresolved_execution")
+        self.assertEqual(raised.exception.evidence["stream"], "list")
+        json.dumps(raised.exception.evidence, allow_nan=False)
+
+    def test_unresolved_worker_uses_non_waiting_executor_shutdown(self):
+        """捕获未解决 worker 再次进入等待式 executor shutdown。"""
+        clock = FakeClock()
+        executor = TrackingExecutor(1)
+
+        with self.assertRaises(UnresolvedExecution):
+            run_offered_load(
+                deadline_target(lambda: success_sample()),
+                LoadSchedule("list", 1.0, 0.01, 1, timeout_seconds=0.01),
+                clock=clock, sleep=clock.sleep,
+                executor_factory=lambda max_workers: executor,
+            )
+
+        self.assertEqual(executor.shutdown_calls, [(False, True)])
 
     def test_zero_argument_target_is_rejected_before_a_worker_can_block(self):
         """捕获通用零参数 target 进入线程后无法在 drain 上界内中断。"""
@@ -615,7 +516,123 @@ run_offered_load(
         self.assertEqual(result.phase_wall_seconds, 1.0)
 
 
+class PhaseProcessBoundaryTest(unittest.TestCase):
+    def test_policy_is_frozen_and_keeps_the_fixed_formal_watchdog(self):
+        """捕获 phase watchdog 脱离冻结的 30/300 秒请求上界。"""
+        policy = PhaseProcessPolicy()
+
+        self.assertAlmostEqual(policy.watchdog_seconds_for(FIXED_PHASES[0]), 690.3)
+        with self.assertRaises(FrozenInstanceError):
+            policy.mode = "inline"
+
+    def test_linux_fork_child_executes_local_closure_and_emits_versioned_events(self):
+        """捕获 process seam 改用需要 pickle 的启动方式。"""
+        closed_over = "local-closure"
+
+        def execute(send):
+            send("segment_complete", {"value": closed_over})
+            return {"result": closed_over}
+
+        outcome = run_owned_phase_process(
+            execute, run_id="run-a", phase="quiet",
+            policy=PhaseProcessPolicy(watchdog_seconds=1.0),
+        )
+
+        self.assertEqual(
+            [event["type"] for event in outcome.events],
+            ["phase_initialized", "segment_complete", "phase_terminal"],
+        )
+        self.assertEqual([event["sequence"] for event in outcome.events], [0, 1, 2])
+        self.assertTrue(all(
+            event["protocol_version"] == IPC_PROTOCOL_VERSION
+            and event["run_id"] == "run-a"
+            and event["phase"] == "quiet"
+            for event in outcome.events
+        ))
+        self.assertEqual(outcome.events[1]["payload"], {"value": closed_over})
+        self.assertEqual(
+            outcome.events[-1]["payload"],
+            {"status": "complete", "result": {"result": closed_over}},
+        )
+        self.assertEqual(outcome.exit, {"kind": "exited", "exit_code": 0})
+
+    def test_parent_continuously_drains_a_large_child_event(self):
+        """捕获父进程等 child 退出后才读取 IPC，导致 sender 填满 pipe。"""
+        payload = "x" * (2 * 1024 * 1024)
+
+        outcome = run_owned_phase_process(
+            lambda send: send("snapshot_captured", {"payload": payload}),
+            run_id="run-large", phase="quiet",
+            policy=PhaseProcessPolicy(watchdog_seconds=1.0),
+        )
+
+        self.assertEqual(len(outcome.events[1]["payload"]["payload"]), len(payload))
+        self.assertEqual(outcome.events[-1]["type"], "phase_terminal")
+
+    def test_child_reports_unresolved_execution_as_an_ordered_ipc_event(self):
+        """捕获未解决请求证据仍依赖 child 内同步 artifact writer。"""
+        evidence = {
+            "status": "unresolved_execution", "stream": "list",
+            "unresolved_requests": [{"sequence": 7}],
+        }
+
+        def execute(_send):
+            raise UnresolvedExecution(evidence)
+
+        outcome = run_owned_phase_process(
+            execute,
+            run_id="run-unresolved", phase="quiet",
+            policy=PhaseProcessPolicy(watchdog_seconds=1.0),
+        )
+
+        self.assertEqual(
+            [event["type"] for event in outcome.events],
+            ["phase_initialized", "execution_unresolved", "phase_terminal"],
+        )
+        self.assertEqual(outcome.events[1]["payload"], evidence)
+        self.assertEqual(outcome.events[-1]["payload"]["status"], "failed")
+        self.assertEqual(outcome.exit, {"kind": "exited", "exit_code": 0})
+
+    def test_parent_kills_child_that_ignores_sigterm_within_hard_bound(self):
+        """捕获 terminate 后无界等待忽略 SIGTERM 的 owned child。"""
+        def execute(send):
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            send("snapshot_captured", {"ready": True})
+            threading.Event().wait()
+
+        policy = PhaseProcessPolicy(
+            watchdog_seconds=0.15, terminate_join_seconds=0.05,
+            kill_join_seconds=0.05, poll_interval_seconds=0.005,
+        )
+        started = time.monotonic()
+        with self.assertRaises(UnresolvedExecution) as raised:
+            run_owned_phase_process(
+                execute, run_id="run-stuck", phase="quiet", policy=policy,
+            )
+        elapsed = time.monotonic() - started
+
+        self.assertLess(elapsed, 0.5)
+        evidence = raised.exception.evidence
+        self.assertEqual(evidence["reason"], "watchdog_timeout")
+        self.assertEqual(evidence["child_exit"]["kind"], "signal")
+        self.assertEqual(evidence["child_exit"]["signal_name"], "SIGKILL")
+        self.assertEqual(
+            [step["action"] for step in evidence["lifecycle"]],
+            ["terminate", "join_after_terminate", "kill", "join_after_kill"],
+        )
+        json.dumps(evidence, allow_nan=False)
+
+
 class InterferenceRunnerTest(unittest.TestCase):
+    def test_formal_scope_rejects_inline_phase_execution(self):
+        """捕获 formal interference 继续使用不可强杀的 inline 边界。"""
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "formal.*process"):
+                run_interference(
+                    lambda *_: None, lambda *_: {}, Path(directory), scope="formal",
+                    process_policy=PhaseProcessPolicy(mode="inline"),
+                )
+
     def test_formal_scope_rejects_any_phase_subset_before_execution(self):
         """捕获少于固定五阶段的运行被标为 formal complete。"""
         with tempfile.TemporaryDirectory() as directory:
@@ -757,6 +774,7 @@ class InterferenceRunnerTest(unittest.TestCase):
                 resource_collector=lambda: resources,
                 namespace_factory=lambda phase: "jsons3_if_" + phase.name,
                 manifest_writer=manifest_writer,
+                process_policy=INLINE_PROCESS_POLICY,
             )
             quiet_manifest = json.loads((output / "quiet" / "run-manifest.json").read_text())
             detail_manifest = json.loads((output / "detail_2m" / "run-manifest.json").read_text())
@@ -815,6 +833,7 @@ class InterferenceRunnerTest(unittest.TestCase):
                 phases=FIXED_PHASES[:1], phase_runner=uneven_phase_runner,
                 resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
                 namespace_factory=lambda phase: "jsons3_wall_" + phase.name,
+                process_policy=INLINE_PROCESS_POLICY,
             )
 
         statistics = result.phases[0]["statistics"]
@@ -852,6 +871,7 @@ class InterferenceRunnerTest(unittest.TestCase):
                 phases=FIXED_PHASES[:1], phase_runner=many_samples_runner,
                 resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
                 namespace_factory=lambda phase: "jsons3_batches_" + phase.name,
+                process_policy=INLINE_PROCESS_POLICY,
             )
 
         self.assertGreater(len(adapters[0].evidence_batches), 1)
@@ -880,6 +900,7 @@ class InterferenceRunnerTest(unittest.TestCase):
                     phases=FIXED_PHASES[:1], phase_runner=short_phase_runner,
                     resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
                     namespace_factory=lambda phase: "jsons3_fail_" + phase.name,
+                    process_policy=INLINE_PROCESS_POLICY,
                 )
             phase_manifest = json.loads((output / "quiet" / "run-manifest.json").read_text())
             root_manifest = json.loads((output / "run-manifest.json").read_text())
@@ -913,6 +934,7 @@ class InterferenceRunnerTest(unittest.TestCase):
                     scope="diagnostic", phases=FIXED_PHASES[:1],
                     phase_runner=short_phase_runner,
                     resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
+                    process_policy=INLINE_PROCESS_POLICY,
                 )
         self.assertTrue(adapters[0].cleaned)
 
@@ -934,6 +956,7 @@ class InterferenceRunnerTest(unittest.TestCase):
                     scope="diagnostic", phases=FIXED_PHASES[:1],
                     phase_runner=short_phase_runner,
                     resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
+                    process_policy=INLINE_PROCESS_POLICY,
                 )
 
     def test_continuous_ingest_success_requires_block_result_evidence(self):
@@ -959,6 +982,7 @@ class InterferenceRunnerTest(unittest.TestCase):
                     phases=FIXED_PHASES[-1:], phase_runner=short_phase_runner,
                     resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
                     namespace_factory=lambda phase: "jsons3_ingest_" + phase.name,
+                    process_policy=INLINE_PROCESS_POLICY,
                 )
 
         self.assertTrue(adapters[0].cleaned)
@@ -987,6 +1011,7 @@ class InterferenceRunnerTest(unittest.TestCase):
                         resource_collector=lambda: {
                             "cpu": {}, "memory": {}, "io": {},
                         },
+                        process_policy=INLINE_PROCESS_POLICY,
                     )
                 for name in expected_files:
                     records = [json.loads(line) for line in (
