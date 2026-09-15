@@ -12,8 +12,8 @@ from pathlib import Path
 from assets import AssetRecord, AssetReference, AssetResolver, LocalAssetStore
 from common import (
     AccessEvidence, AssetStorageEvidence, BlockResult, CleanupResult, DatasetAudit, LAYOUTS,
-    MaintenanceResult, QueryResult, QuerySpec, StorageEvidence, build_layout_catalog,
-    logical_response_bytes,
+    MaintenanceResult, PhysicalTargetAudit, QueryResult, QuerySpec, StorageEvidence, build_layout_catalog,
+    logical_response_bytes, logical_target_row_bytes,
 )
 
 
@@ -22,6 +22,16 @@ QUERY_ID = re.compile(r"^[A-Za-z0-9_-]+$")
 ASSET_STATUSES = ("pending", "available", "failed", "deleting")
 LOGICAL_FIELDS = (
     "event_id", "trace_id", "project_id", "start_time", "profile",
+    "content_type", "encoding", "content_length", "preview", "sha256",
+)
+EVENT_AUDIT_FIELDS = (
+    "ingest_seq", "event_id", "trace_id", "span_id", "parent_span_id",
+    "project_id", "start_time", "end_time", "duration_ms", "span_type",
+    "framework", "level", "cohort", "profile", "content_type", "encoding",
+    "content_length", "preview", "sha256",
+)
+PAYLOAD_AUDIT_FIELDS = (
+    "ingest_seq", "event_id", "trace_id", "project_id", "start_time", "profile",
     "content_type", "encoding", "content_length", "preview", "sha256",
 )
 QUERY_FINISH_FIELDS = (
@@ -156,6 +166,7 @@ class ClickHouseAdapter:
         self._queries = {}
         self._merges_stopped = set()
         self._target_watermark = 0
+        self._asset_ids = set()
 
     def connect_worker(self):
         """建立供一个 worker 复用且由调用方关闭的 HTTP 连接。"""
@@ -295,21 +306,27 @@ class ClickHouseAdapter:
 
     def _insert_assets(self, connection, block, payloads):
         """记录 pending，原子发布对象后同步转换为 available。"""
-        database_bytes = 0
         asset_bytes = 0
         assets_started = time.perf_counter()
         publish_ms = 0.0
+        pending = []
+        pending_ids = set()
         for row, payload in zip(block, payloads):
-            if payload is None:
+            if payload is None or row["sha256"] in self._asset_ids or row["sha256"] in pending_ids:
                 continue
+            pending.append((row, payload))
+            pending_ids.add(row["sha256"])
+        catalog_rows = []
+        for row, _ in pending:
             path = self.asset_store.object_path(row["sha256"])
-            asset = {
+            catalog_rows.append({
                 "asset_id": row["sha256"], "sha256": row["sha256"],
                 "content_type": row["content_type"], "encoding": row["encoding"],
                 "content_length": row["content_length"], "storage_path": str(path),
                 "status": "pending", "error_category": None,
-            }
-            database_bytes += self._insert(connection, "assets", [asset])
+            })
+        database_bytes = self._insert(connection, "assets", catalog_rows) if catalog_rows else 0
+        for row, payload in pending:
             try:
                 publish_started = time.perf_counter()
                 self.asset_store.publish_bytes(row["sha256"], payload)
@@ -322,7 +339,8 @@ class ClickHouseAdapter:
                 raise
             self.set_asset_status(row["sha256"], "available")
             asset_bytes += len(payload)
-        return database_bytes, asset_bytes, (time.perf_counter() - assets_started) * 1000, publish_ms
+        self._asset_ids.update(pending_ids)
+        return pending_ids, database_bytes, asset_bytes, (time.perf_counter() - assets_started) * 1000, publish_ms
 
     def ingest_block(self, block):
         """顺序完成 layout 的单写或显式双写并返回联合水位。"""
@@ -330,15 +348,17 @@ class ClickHouseAdapter:
             raise ValueError("block must be a non-empty list")
         payloads = [self._payload(row) for row in block]
         started = time.perf_counter()
-        submitted = 0
+        protocol_body_bytes = {}
         asset_submitted = 0
         target_ms = {}
         connection = self.connect_worker()
         try:
             if self.layout == "same_table":
                 target_started = time.perf_counter()
-                submitted += self._insert(connection, "events", [self._event_row(row, payload, True)
-                                                                  for row, payload in zip(block, payloads)])
+                protocol_body_bytes["events"] = self._insert(
+                    connection, "events", [self._event_row(row, payload, True)
+                                              for row, payload in zip(block, payloads)],
+                )
                 target_ms["events"] = (time.perf_counter() - target_started) * 1000
             elif self.layout == "separate":
                 for table, rows in (
@@ -346,7 +366,7 @@ class ClickHouseAdapter:
                     ("event_payloads", [self._payload_row(row, payload) for row, payload in zip(block, payloads)]),
                 ):
                     target_started = time.perf_counter()
-                    submitted += self._insert(connection, table, rows)
+                    protocol_body_bytes[table] = self._insert(connection, table, rows)
                     target_ms[table] = (time.perf_counter() - target_started) * 1000
             elif self.layout == "full_core":
                 for table, rows in (
@@ -354,15 +374,18 @@ class ClickHouseAdapter:
                     ("events_core", [self._event_row(row) for row in block]),
                 ):
                     target_started = time.perf_counter()
-                    submitted += self._insert(connection, table, rows)
+                    protocol_body_bytes[table] = self._insert(connection, table, rows)
                     target_ms[table] = (time.perf_counter() - target_started) * 1000
             else:
-                catalog_bytes, asset_submitted, assets_ms, publish_ms = self._insert_assets(connection, block, payloads)
-                submitted += catalog_bytes
+                submitted_asset_ids, catalog_bytes, asset_submitted, assets_ms, publish_ms = self._insert_assets(
+                    connection, block, payloads,
+                )
+                protocol_body_bytes["assets"] = catalog_bytes
                 target_ms["assets"] = assets_ms
                 target_started = time.perf_counter()
-                submitted += self._insert(connection, "events_analytics", [self._event_row(row, include_asset=True)
-                                                                            for row in block])
+                protocol_body_bytes["events_analytics"] = self._insert(
+                    connection, "events_analytics", [self._event_row(row, include_asset=True) for row in block],
+                )
                 target_ms["events_analytics"] = (time.perf_counter() - target_started) * 1000
         finally:
             connection.close()
@@ -372,7 +395,17 @@ class ClickHouseAdapter:
             len(block), watermark,
             {table: watermark for table in build_layout_catalog(self.layout).write_tables},
             (time.perf_counter() - started) * 1000,
-            submitted, asset_submitted, target_ms, publish_ms if self.layout == "asset_ref" else 0.0,
+            write_target_ms=target_ms,
+            asset_publish_ms=publish_ms if self.layout == "asset_ref" else 0.0,
+            logical_target_row_bytes=logical_target_row_bytes(
+                self.layout, block, payloads,
+                ({row["sha256"]: str(self.asset_store.object_path(row["sha256"]))
+                  for row, payload in zip(block, payloads) if payload is not None}
+                 if self.layout == "asset_ref" else None),
+                submitted_asset_ids if self.layout == "asset_ref" else None,
+            ),
+            database_protocol_body_bytes=protocol_body_bytes,
+            asset_raw_object_bytes=asset_submitted,
         )
 
     def _watermarks(self):
@@ -704,7 +737,7 @@ class ClickHouseAdapter:
         )
 
     def audit_dataset(self):
-        """在清理前按 ingest_seq 传回全量 identity、metadata 和 payload bytes。"""
+        """传回重建逻辑行及每个物理写目标的独立有序审计。"""
         if self.layout in {"same_table", "full_core"}:
             table = "events" if self.layout == "same_table" else "events_full"
             source, prefix, payload = f"{self.database}.{table}", "", "payload"
@@ -720,6 +753,47 @@ class ClickHouseAdapter:
         connection = self.connect_worker()
         try:
             body = self._request(connection, statement)
+            target_audits = {}
+            target_protocol_bytes = 0
+            for target in build_layout_catalog(self.layout).write_tables:
+                if target == "assets":
+                    fields = (
+                        "asset_id", "sha256", "content_type", "encoding", "content_length", "status",
+                    )
+                    target_statement = (
+                        f"SELECT asset_id,sha256,content_type,encoding,content_length,toString(status) AS status "
+                        f"FROM {self.database}.assets ORDER BY asset_id FORMAT JSONEachRow"
+                    )
+                    identity = "asset_id"
+                    mapping_body = self._request(
+                        connection,
+                        f"SELECT ingest_seq,event_id,asset_id FROM {self.database}.events_analytics "
+                        "WHERE asset_id IS NOT NULL ORDER BY ingest_seq FORMAT JSONEachRow",
+                    )
+                    target_protocol_bytes += len(mapping_body.encode("utf-8"))
+                    event_mappings = tuple(self._json_rows(mapping_body))
+                else:
+                    fields = PAYLOAD_AUDIT_FIELDS if target == "event_payloads" else EVENT_AUDIT_FIELDS
+                    if target == "events_analytics" and self.layout == "asset_ref":
+                        fields += ("asset_id",)
+                    selected = ",".join(f"{field} AS {field}" for field in fields)
+                    target_statement = (
+                        f"SELECT {selected} FROM {self.database}.{target} "
+                        "ORDER BY ingest_seq FORMAT JSONEachRow"
+                    )
+                    identity = "event_id"
+                    event_mappings = ()
+                target_body = self._request(connection, target_statement)
+                target_protocol_bytes += len(target_body.encode("utf-8"))
+                projected = self._json_rows(target_body)
+                for item in projected:
+                    for timestamp in ("start_time", "end_time"):
+                        if item.get(timestamp) is not None:
+                            item[timestamp] = self._timestamp(item[timestamp])
+                duplicate_identities = len(projected) - len({row[identity] for row in projected})
+                target_audits[target] = PhysicalTargetAudit(
+                    tuple(projected), duplicate_identities, event_mappings,
+                )
         finally:
             connection.close()
         raw_rows = self._json_rows(body)
@@ -729,7 +803,8 @@ class ClickHouseAdapter:
         duplicate_count = len(rows) - len({row["event_id"] for row in rows})
         return DatasetAudit(
             rows, duplicate_count, logical_response_bytes(rows),
-            len(body.encode("utf-8")) + catalog_bytes,
+            len(body.encode("utf-8")) + catalog_bytes + target_protocol_bytes,
+            target_audits,
         )
 
     def collect_storage(self):

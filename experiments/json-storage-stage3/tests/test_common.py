@@ -67,6 +67,60 @@ class RunnerCommonTest(unittest.TestCase):
             "46b7a65cbee9e5a96cd669ceabac4f48e00eabcdb9259a39c45245098a72802f",
         )
 
+    def test_logical_target_rows_use_each_layouts_actual_submitted_columns(self):
+        """捕获提交统计把源行、payload_path 或另一目标列计入任何物理目标。"""
+        row = {
+            "ingest_seq": 0, "event_id": "event-a", "trace_id": "trace-a",
+            "span_id": "span-a", "parent_span_id": None, "project_id": "project-a",
+            "start_time": "2030-01-01T00:00:00.000Z", "end_time": "2030-01-01T00:00:01.000Z",
+            "duration_ms": 1, "span_type": "llm", "framework": "fixture", "level": "INFO",
+            "cohort": "main", "profile": "text_64k", "content_type": "application/json",
+            "encoding": "utf-8", "content_length": 3, "preview": "abc",
+            "sha256": "a" * 64, "payload_path": "payloads/a.json",
+        }
+        paths = {"a" * 64: "/objects/" + "a" * 64}
+
+        targets = common.logical_target_rows("asset_ref", [row], [b"abc"], paths)
+
+        self.assertEqual(set(targets), {"events_analytics", "assets"})
+        self.assertEqual(
+            targets["events_analytics"][0],
+            {
+                "ingest_seq": 0, "event_id": "event-a", "trace_id": "trace-a",
+                "span_id": "span-a", "parent_span_id": None, "project_id": "project-a",
+                "start_time": "2030-01-01T00:00:00.000Z", "end_time": "2030-01-01T00:00:01.000Z",
+                "duration_ms": 1, "span_type": "llm", "framework": "fixture", "level": "INFO",
+                "cohort": "main", "profile": "text_64k", "content_type": "application/json",
+                "encoding": "utf-8", "content_length": 3, "preview": "abc", "sha256": "a" * 64,
+                "asset_id": "a" * 64,
+            },
+        )
+        self.assertEqual(
+            targets["assets"][0],
+            {
+                "asset_id": "a" * 64, "sha256": "a" * 64,
+                "content_type": "application/json", "encoding": "utf-8", "content_length": 3,
+                "storage_path": "/objects/" + "a" * 64, "status": "pending",
+            },
+        )
+        self.assertNotIn("payload_path", targets["events_analytics"][0])
+        self.assertEqual(
+            common.logical_target_row_bytes("same_table", [row], [b"abc"], paths),
+            {"events": 478},
+        )
+        self.assertEqual(
+            common.logical_target_row_bytes("separate", [row], [b"abc"], paths),
+            {"events_analytics": 475, "event_payloads": 312},
+        )
+        self.assertEqual(
+            common.logical_target_row_bytes("full_core", [row], [b"abc"], paths),
+            {"events_full": 478, "events_core": 475},
+        )
+        self.assertEqual(
+            common.logical_target_row_bytes("asset_ref", [row], [b"abc"], paths),
+            {"events_analytics": 553, "assets": 338},
+        )
+
     def test_load_truth_returns_complete_payload_contract_and_checks_bytes(self):
         """捕获共享契约漏字段或 payload length、preview、digest 未校验。"""
         with tempfile.TemporaryDirectory() as directory:

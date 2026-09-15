@@ -112,10 +112,11 @@ class BlockResult:
     watermark: int
     watermarks: dict[str, int]
     wall_ms: float
-    database_submitted_bytes: int = 0
-    asset_submitted_bytes: int = 0
     write_target_ms: dict[str, float] = field(default_factory=dict)
     asset_publish_ms: float = 0.0
+    logical_target_row_bytes: dict[str, int] = field(default_factory=dict)
+    database_protocol_body_bytes: dict[str, int | None] = field(default_factory=dict)
+    asset_raw_object_bytes: int = 0
 
 
 @dataclass(frozen=True)
@@ -185,6 +186,15 @@ class CleanupResult:
 
 
 @dataclass(frozen=True)
+class PhysicalTargetAudit:
+    """保存单个物理写目标的有序 identity 与 metadata 审计行。"""
+
+    rows: tuple[dict[str, object], ...]
+    duplicate_identities: int
+    event_mappings: tuple[dict[str, object], ...] = ()
+
+
+@dataclass(frozen=True)
 class DatasetAudit:
     """保存数据库全量 identity、顺序、payload 和重复项审计结果。"""
 
@@ -192,6 +202,7 @@ class DatasetAudit:
     duplicate_event_ids: int
     logical_response_bytes: int
     database_protocol_bytes: int | None = None
+    target_audits: dict[str, PhysicalTargetAudit] = field(default_factory=dict)
 
 
 class LayoutAdapter(Protocol):
@@ -233,6 +244,78 @@ def logical_submission_bytes(rows, include_payload):
         if include_payload and payload is not None:
             total += len(payload)
     return total
+
+
+EVENT_TARGET_FIELDS = (
+    "ingest_seq", "event_id", "trace_id", "span_id", "parent_span_id",
+    "project_id", "start_time", "end_time", "duration_ms", "span_type",
+    "framework", "level", "cohort", "profile", "content_type", "encoding",
+    "content_length", "preview", "sha256",
+)
+PAYLOAD_TARGET_FIELDS = (
+    "ingest_seq", "event_id", "trace_id", "project_id", "start_time",
+    "profile", "content_type", "encoding", "content_length", "preview", "sha256",
+)
+
+
+def logical_target_rows(layout, rows, payloads, asset_paths=None, submitted_asset_ids=None):
+    """按布局实际 INSERT 列构造跨引擎一致的确定性逻辑目标行。"""
+    if len(rows) != len(payloads):
+        raise ValueError("rows and payloads must have the same length")
+    catalog = build_layout_catalog(layout)
+
+    def project(fields, row):
+        return {field_name: row[field_name] for field_name in fields}
+
+    event_rows = tuple(project(EVENT_TARGET_FIELDS, row) for row in rows)
+    full_rows = tuple(
+        {**project(EVENT_TARGET_FIELDS, row), "_payload_bytes": payload}
+        for row, payload in zip(rows, payloads)
+    )
+    payload_rows = tuple(
+        {**project(PAYLOAD_TARGET_FIELDS, row), "_payload_bytes": payload}
+        for row, payload in zip(rows, payloads)
+    )
+    if catalog.name == "same_table":
+        return {"events": full_rows}
+    if catalog.name == "separate":
+        return {"events_analytics": event_rows, "event_payloads": payload_rows}
+    if catalog.name == "full_core":
+        return {"events_full": full_rows, "events_core": event_rows}
+    if asset_paths is None:
+        raise ValueError("asset_ref logical rows require asset paths")
+    analytics_rows = tuple(
+        {**project(EVENT_TARGET_FIELDS, row), "asset_id": row["sha256"]}
+        for row in rows
+    )
+    assets = []
+    seen = set()
+    for row, payload in zip(rows, payloads):
+        if payload is None:
+            continue
+        asset_id = row["sha256"]
+        if asset_id in seen or (submitted_asset_ids is not None and asset_id not in submitted_asset_ids):
+            continue
+        seen.add(asset_id)
+        assets.append({
+            "asset_id": asset_id, "sha256": asset_id,
+            "content_type": row["content_type"], "encoding": row["encoding"],
+            "content_length": row["content_length"], "storage_path": asset_paths[asset_id],
+            "status": "pending",
+        })
+    return {"events_analytics": analytics_rows, "assets": tuple(assets)}
+
+
+def logical_target_row_bytes(layout, rows, payloads, asset_paths=None, submitted_asset_ids=None):
+    """返回每个物理 INSERT 目标的 deterministic logical target-row bytes。"""
+    return {
+        target: logical_submission_bytes(
+            list(target_rows), any("_payload_bytes" in row for row in target_rows),
+        )
+        for target, target_rows in logical_target_rows(
+            layout, rows, payloads, asset_paths, submitted_asset_ids,
+        ).items()
+    }
 
 
 def _canonical_bytes(value):

@@ -780,8 +780,55 @@ def _expected_row(row, input_root, kind):
     return result
 
 
-def _validate_dataset_audit(audit, events, input_root):
-    """对全量数据库读回执行精确 identity、顺序、重复及 payload 审计。"""
+def _expected_target_audits(layout, events):
+    """按物理目标列构造独立于 adapter 的有序审计预期。"""
+    event_fields = (
+        "ingest_seq", "event_id", "trace_id", "span_id", "parent_span_id",
+        "project_id", "start_time", "end_time", "duration_ms", "span_type",
+        "framework", "level", "cohort", "profile", "content_type", "encoding",
+        "content_length", "preview", "sha256",
+    )
+    payload_fields = (
+        "ingest_seq", "event_id", "trace_id", "project_id", "start_time",
+        "profile", "content_type", "encoding", "content_length", "preview", "sha256",
+    )
+
+    def project(fields, rows):
+        return tuple({field_name: row[field_name] for field_name in fields} for row in rows)
+
+    all_events = project(event_fields, events)
+    payload_events = tuple(row for row in events if row["sha256"] is not None)
+    asset_rows = []
+    asset_ids = set()
+    for row in payload_events:
+        if row["sha256"] in asset_ids:
+            continue
+        asset_ids.add(row["sha256"])
+        asset_rows.append({
+            "asset_id": row["sha256"], "sha256": row["sha256"],
+            "content_type": row["content_type"], "encoding": row["encoding"],
+            "content_length": row["content_length"], "status": "available",
+        })
+    if layout == "same_table":
+        return {"events": all_events}
+    if layout == "separate":
+        return {
+            "events_analytics": all_events,
+            "event_payloads": project(payload_fields, events),
+        }
+    if layout == "full_core":
+        return {"events_full": all_events, "events_core": all_events}
+    return {
+        "events_analytics": tuple(
+            {**row, "asset_id": source["sha256"]}
+            for row, source in zip(all_events, events)
+        ),
+        "assets": tuple(asset_rows),
+    }
+
+
+def _validate_dataset_audit(audit, events, input_root, layout):
+    """对逻辑重建和每个物理写目标执行精确全量审计。"""
     if audit.duplicate_event_ids != 0 or len(audit.rows) != len(events):
         raise RuntimeError("dataset audit row count or duplicate mismatch")
     expected = tuple(
@@ -792,6 +839,30 @@ def _validate_dataset_audit(audit, events, input_root):
         raise RuntimeError("dataset audit identity/order/payload mismatch")
     if audit.logical_response_bytes <= 0:
         raise RuntimeError("dataset audit response bytes missing")
+    expected_targets = _expected_target_audits(layout, events)
+    if set(audit.target_audits) != set(expected_targets):
+        raise RuntimeError("physical target audit target set mismatch")
+    target_evidence = {}
+    for target, expected_rows in expected_targets.items():
+        actual = audit.target_audits[target]
+        if actual.duplicate_identities != 0 or actual.rows != expected_rows:
+            raise RuntimeError(f"physical target audit mismatch: {target}")
+        expected_mappings = ()
+        if target == "assets":
+            expected_mappings = tuple({
+                "ingest_seq": row["ingest_seq"], "event_id": row["event_id"],
+                "asset_id": row["sha256"],
+            } for row in events if row["sha256"] is not None)
+            if actual.event_mappings != expected_mappings:
+                raise RuntimeError("physical target audit asset mapping mismatch")
+        target_evidence[target] = {
+            "row_count": len(actual.rows),
+            "duplicate_identities": actual.duplicate_identities,
+            "identity_metadata_sha256": canonical_digest(actual.rows),
+        }
+        if target == "assets":
+            target_evidence[target]["event_mapping_count"] = len(actual.event_mappings)
+            target_evidence[target]["event_mapping_sha256"] = canonical_digest(actual.event_mappings)
     return {
         "row_count": len(audit.rows),
         "duplicate_event_ids": audit.duplicate_event_ids,
@@ -804,6 +875,7 @@ def _validate_dataset_audit(audit, events, input_root):
         "logical_response_bytes": audit.logical_response_bytes,
         "database_protocol_bytes": audit.database_protocol_bytes
         if audit.database_protocol_bytes is not None else "unavailable",
+        "physical_targets": target_evidence,
     }
 
 
@@ -1122,12 +1194,28 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
             raise RuntimeError("query readiness or final joint watermark incomplete")
         ready_total_ms = (time.perf_counter() - ingestion_started) * 1000
         audit = adapter.audit_dataset()
-        audit_evidence = _validate_dataset_audit(audit, events, config.input_root)
+        audit_evidence = _validate_dataset_audit(audit, events, config.input_root, config.layout)
         storage = adapter.collect_storage()
         payload_bytes = sum(row["content_length"] or 0 for row in events)
         block_times = [item["ingest"]["wall_ms"] for item in block_evidence]
-        database_submitted = sum(item["ingest"]["database_submitted_bytes"] for item in block_evidence)
-        asset_submitted = sum(item["ingest"]["asset_submitted_bytes"] for item in block_evidence)
+        logical_target_bytes = {table: 0 for table in build_layout_catalog(config.layout).write_tables}
+        protocol_target_bytes = {table: 0 for table in logical_target_bytes}
+        protocol_available = {table: True for table in logical_target_bytes}
+        for item in block_evidence:
+            ingest = item["ingest"]
+            for table, value in ingest.get("logical_target_row_bytes", {}).items():
+                logical_target_bytes[table] = logical_target_bytes.get(table, 0) + value
+            for table, value in ingest.get("database_protocol_body_bytes", {}).items():
+                if value is None:
+                    protocol_available[table] = False
+                else:
+                    protocol_target_bytes[table] = protocol_target_bytes.get(table, 0) + value
+        protocol_manifest = {
+            table: protocol_target_bytes[table] if protocol_available[table] else "unavailable"
+            for table in logical_target_bytes
+        }
+        logical_submitted = sum(logical_target_bytes.values())
+        asset_submitted = sum(item["ingest"].get("asset_raw_object_bytes", 0) for item in block_evidence)
         write_target_ms = {}
         for item in block_evidence:
             for target, duration in item["ingest"]["write_target_ms"].items():
@@ -1137,15 +1225,17 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
             "final_watermark": truth.record_count, "wall_ms": write_wall_ms,
             "rows_per_second": truth.record_count / (write_wall_ms / 1000),
             "raw_payload_bytes": payload_bytes,
-            "database_submitted_bytes": database_submitted,
-            "database_submitted_bytes_kind": (
-                "http-json-each-row-body" if config.engine == "clickhouse"
-                else "deterministic-logical-copy-row-encoding"
+            "logical_target_row_bytes": logical_target_bytes,
+            "logical_target_row_bytes_total": logical_submitted,
+            "logical_target_row_bytes_to_raw_payload_ratio":
+                logical_submitted / payload_bytes if payload_bytes else None,
+            "database_protocol_request_body_bytes": protocol_manifest,
+            "database_protocol_request_body_bytes_total": (
+                sum(protocol_target_bytes.values()) if all(protocol_available.values()) else "unavailable"
             ),
-            "asset_submitted_bytes": asset_submitted,
-            "client_submitted_bytes": database_submitted + asset_submitted,
-            "client_submitted_to_raw_payload_ratio":
-                (database_submitted + asset_submitted) / payload_bytes if payload_bytes else None,
+            "asset_raw_object_bytes": asset_submitted,
+            "asset_raw_object_bytes_to_raw_payload_ratio":
+                asset_submitted / payload_bytes if payload_bytes else None,
             "write_target_ms": write_target_ms,
             "asset_publish_ms": sum(
                 item["ingest"].get("asset_publish_ms", 0.0) for item in block_evidence

@@ -153,6 +153,13 @@ class OpenGaussAdapterIntegrationTest(unittest.TestCase):
                     try:
                         block = adapter.ingest_block(rows)
                         self.assertEqual(block.watermark, 3)
+                        self.assertEqual(
+                            set(block.logical_target_row_bytes),
+                            set(build_layout_catalog(layout).write_tables),
+                        )
+                        self.assertTrue(all(
+                            value is None for value in block.database_protocol_body_bytes.values()
+                        ))
                         ready = adapter.wait_write_complete(3)
                         self.assertTrue(ready.completed)
                         self.assertEqual(set(ready.watermarks), set(build_layout_catalog(layout).write_tables))
@@ -202,6 +209,15 @@ class OpenGaussAdapterIntegrationTest(unittest.TestCase):
                         storage = adapter.collect_storage()
                         self.assertEqual(set(storage.tables), set(build_layout_catalog(layout).write_tables))
                         self.assertTrue(all("toast_bytes" in value for value in storage.tables.values()))
+                        audit = adapter.audit_dataset()
+                        self.assertEqual(set(audit.target_audits), set(build_layout_catalog(layout).write_tables))
+                        self.assertTrue(all(
+                            target.duplicate_identities == 0 for target in audit.target_audits.values()
+                        ))
+                        if layout == "separate":
+                            self.assertEqual(len(audit.target_audits["event_payloads"].rows), 3)
+                        if layout == "full_core":
+                            self.assertEqual(len(audit.target_audits["events_core"].rows), 3)
 
                         if layout == "asset_ref":
                             record = adapter.get_available(rows[0]["sha256"])
@@ -215,6 +231,8 @@ class OpenGaussAdapterIntegrationTest(unittest.TestCase):
                             self.assertGreater(detail.database_response_bytes, 0)
                             self.assertEqual(detail.response_bytes,
                                              detail.database_response_bytes + len(PAYLOAD))
+                            self.assertEqual(len(audit.target_audits["assets"].rows), 2)
+                            self.assertEqual(len(audit.target_audits["assets"].event_mappings), 2)
                             for status in ("pending", "failed", "deleting", "available"):
                                 adapter.set_asset_status(record.asset_id, status)
                                 actual = adapter.get_available(record.asset_id)
@@ -237,6 +255,31 @@ class OpenGaussAdapterIntegrationTest(unittest.TestCase):
                         cleanup = adapter.cleanup()
                     self.assertTrue(cleanup.removed)
                     self.assertFalse(adapter.namespace_exists())
+
+    def test_asset_catalog_deduplicates_digest_without_losing_event_mappings(self):
+        """以真实 schema 捕获目录按 digest 去重时遗漏第二个事件引用。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            rows = fixture(root)[:2]
+            rows[1].update({
+                "cohort": "main", "profile": rows[0]["profile"],
+                "content_type": rows[0]["content_type"], "encoding": rows[0]["encoding"],
+                "content_length": rows[0]["content_length"], "preview": rows[0]["preview"],
+                "sha256": rows[0]["sha256"], "payload_path": rows[0]["payload_path"],
+            })
+            adapter = opengauss.OpenGaussAdapter(
+                "127.0.0.1", 15432, "agent-trace-opengauss-v6",
+                "jsons3_" + uuid.uuid4().hex[:10], "asset_ref", root,
+                LocalAssetStore(root / "assets"),
+            )
+            adapter.create()
+            try:
+                adapter.ingest_block(rows)
+                audit = adapter.audit_dataset().target_audits["assets"]
+                self.assertEqual(len(audit.rows), 1)
+                self.assertEqual([row["event_id"] for row in audit.event_mappings], ["event-a", "event-b"])
+            finally:
+                self.assertTrue(adapter.cleanup().removed)
 
     def test_failed_ingest_still_allows_confirmed_cleanup(self):
         with tempfile.TemporaryDirectory() as directory:

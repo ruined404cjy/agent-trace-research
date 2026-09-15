@@ -4,6 +4,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 
 STAGE_DIR = Path(__file__).resolve().parents[1]
@@ -11,11 +12,11 @@ sys.path.insert(0, str(STAGE_DIR / "runner"))
 
 from common import (
     AccessEvidence, BlockResult, CleanupResult, DatasetAudit, MaintenanceResult,
-    QueryResult, QuerySpec, StorageEvidence, logical_response_bytes,
+    PhysicalTargetAudit, QueryResult, QuerySpec, StorageEvidence, logical_response_bytes,
 )
 from run_layout_matrix import (
     QueryTruth, RunConfig, build_smoke_input, build_workload_events, latin_square,
-    load_run_input, measure_query, run_layout, summarize_samples,
+    _validate_dataset_audit, load_run_input, measure_query, run_layout, summarize_samples,
     validate_formal_contract, validate_watermark_keys, workload_query_cases,
     write_manifest_atomic,
 )
@@ -76,7 +77,9 @@ class SmokeAdapter:
         watermark = block[-1]["ingest_seq"] + 1
         return BlockResult(
             len(block), watermark, {"events": watermark}, 0.5,
-            database_submitted_bytes=128, write_target_ms={"events": 0.4},
+            write_target_ms={"events": 0.4},
+            logical_target_row_bytes={"events": 17},
+            database_protocol_body_bytes={"events": None},
         )
 
     def wait_write_complete(self, watermark):
@@ -166,7 +169,19 @@ class SmokeAdapter:
             )},
             "payload": self._payload(row),
         } for row in self.ingested)
-        return DatasetAudit(rows, 0, logical_response_bytes(rows))
+        fields = (
+            "ingest_seq", "event_id", "trace_id", "span_id", "parent_span_id",
+            "project_id", "start_time", "end_time", "duration_ms", "span_type",
+            "framework", "level", "cohort", "profile", "content_type", "encoding",
+            "content_length", "preview", "sha256",
+        )
+        return DatasetAudit(
+            rows, 0, logical_response_bytes(rows), target_audits={
+                "events": PhysicalTargetAudit(
+                    tuple({field: row[field] for field in fields} for row in self.ingested), 0,
+                ),
+            },
+        )
 
     def cleanup(self):
         return CleanupResult("jsons3_fake_same_table", self.cleanup_removed)
@@ -380,6 +395,109 @@ class LayoutMatrixUnitTest(unittest.TestCase):
     def test_watermark_gate_requires_exact_layout_targets(self):
         with self.assertRaisesRegex(RuntimeError, "watermark keys"):
             validate_watermark_keys("separate", {"events_analytics": 8}, 8)
+
+    def test_dataset_audit_rejects_missing_middle_full_core_replica_row(self):
+        """捕获 Core 中间行缺失但最大 ingest_seq 水位仍完整。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "input"
+            build_smoke_input(root)
+            _, events, _ = load_run_input(root)
+            adapter = SmokeAdapter(events, root)
+            adapter.ingested = list(events)
+            logical = adapter.audit_dataset()
+            fields = (
+                "ingest_seq", "event_id", "trace_id", "span_id", "parent_span_id",
+                "project_id", "start_time", "end_time", "duration_ms", "span_type",
+                "framework", "level", "cohort", "profile", "content_type", "encoding",
+                "content_length", "preview", "sha256",
+            )
+            complete = tuple({field: row[field] for field in fields} for row in events)
+            missing_middle = complete[:3] + complete[4:]
+            self.assertEqual(max(row["ingest_seq"] for row in missing_middle) + 1, len(events))
+            audit = SimpleNamespace(
+                rows=logical.rows,
+                duplicate_event_ids=logical.duplicate_event_ids,
+                logical_response_bytes=logical.logical_response_bytes,
+                database_protocol_bytes=logical.database_protocol_bytes,
+                target_audits={
+                    "events_full": SimpleNamespace(rows=complete, duplicate_identities=0),
+                    "events_core": SimpleNamespace(rows=missing_middle, duplicate_identities=0),
+                },
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "physical target audit"):
+                _validate_dataset_audit(audit, events, root, "full_core")
+
+    def test_dataset_audit_requires_unique_asset_catalog_and_all_event_mappings(self):
+        """捕获内容寻址目录唯一却漏掉使用同一 digest 的事件映射。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "input"
+            build_smoke_input(root)
+            _, events, _ = load_run_input(root)
+            duplicate = dict(events[1])
+            duplicate.update({
+                "sha256": events[0]["sha256"], "content_length": events[0]["content_length"],
+                "content_type": events[0]["content_type"], "encoding": events[0]["encoding"],
+                "preview": events[0]["preview"], "payload_path": events[0]["payload_path"],
+            })
+            events = [events[0], duplicate]
+            adapter = SmokeAdapter(events, root)
+            adapter.ingested = list(events)
+            logical = adapter.audit_dataset()
+            asset_id = events[0]["sha256"]
+            audit = SimpleNamespace(
+                rows=logical.rows,
+                duplicate_event_ids=logical.duplicate_event_ids,
+                logical_response_bytes=logical.logical_response_bytes,
+                database_protocol_bytes=logical.database_protocol_bytes,
+                target_audits={
+                    "events_analytics": SimpleNamespace(
+                        rows=tuple({
+                            **{field: row[field] for field in (
+                                "ingest_seq", "event_id", "trace_id", "span_id", "parent_span_id",
+                                "project_id", "start_time", "end_time", "duration_ms", "span_type",
+                                "framework", "level", "cohort", "profile", "content_type", "encoding",
+                                "content_length", "preview", "sha256",
+                            )},
+                            "asset_id": row["sha256"],
+                        } for row in events),
+                        duplicate_identities=0,
+                    ),
+                    "assets": SimpleNamespace(
+                        rows=({
+                            "asset_id": asset_id, "sha256": asset_id,
+                            "content_type": events[0]["content_type"], "encoding": events[0]["encoding"],
+                            "content_length": events[0]["content_length"], "status": "available",
+                        },),
+                        duplicate_identities=0,
+                        event_mappings=tuple({
+                            "ingest_seq": row["ingest_seq"], "event_id": row["event_id"], "asset_id": asset_id,
+                        } for row in events),
+                    ),
+                },
+            )
+
+            evidence = _validate_dataset_audit(audit, events, root, "asset_ref")
+            self.assertEqual(evidence["physical_targets"]["assets"]["event_mapping_count"], 2)
+
+    def test_write_manifest_separates_logical_targets_and_unavailable_protocol_bytes(self):
+        """捕获将 COPY 传输开销伪报为可观测 bytes，或把目标行统计合并到单一计数。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_root, output = root / "input", root / "output"
+            build_smoke_input(input_root)
+            truth, events, identity = load_run_input(input_root)
+            run_layout(SmokeAdapter(events, input_root), truth, RunConfig(
+                input_root=input_root, output=output, engine="fake", layout="same_table",
+                round_index=0, round_order=("same_table", "separate", "full_core", "asset_ref"),
+                measurements=1, batch_measurements=1, input_identity=identity,
+            ))
+            write = json.loads((output / "run-manifest.json").read_text())["write"]
+            self.assertEqual(write["logical_target_row_bytes"], {"events": 68})
+            self.assertEqual(write["logical_target_row_bytes_total"], 68)
+            self.assertEqual(write["database_protocol_request_body_bytes"], {"events": "unavailable"})
+            self.assertEqual(write["database_protocol_request_body_bytes_total"], "unavailable")
+            self.assertEqual(write["asset_raw_object_bytes"], 0)
 
     def test_logical_response_bytes_do_not_depend_on_engine_protocol_encoding(self):
         from common import logical_response_bytes
