@@ -20,6 +20,8 @@ from run_layout_matrix import QuerySample, QueryTruth, measure_query, write_mani
 
 P99_MINIMUM_SUCCESSES = 1_000
 QUERY_EVIDENCE_BATCH_SIZE = 200
+TERMINAL_ABORT_EXIT_CODE = 70
+TERMINATION_GRACE_SECONDS = 0.1
 QUERY_STREAMS = {
     "list": ("list", None),
     "preview": ("preview", None),
@@ -344,10 +346,12 @@ def _submit(target, schedule, sequence, deadline, executor, clock, pending):
 
 def run_offered_load(target, schedule: LoadSchedule, *, clock=time.monotonic,
                      sleep=time.sleep, executor_factory=ThreadPoolExecutor,
-                     phase_origin=None) -> LoadResult:
+                     phase_origin=None, terminal_abort=None) -> LoadResult:
     """从单一 monotonic origin 产生到达 deadline，并按真实阶段 wall time计数。"""
     if not isinstance(target, DeadlineTarget) or not isinstance(schedule, LoadSchedule):
         raise ValueError("DeadlineTarget and LoadSchedule are required")
+    if terminal_abort is not None and not callable(terminal_abort):
+        raise ValueError("terminal_abort must be callable")
     origin = clock() if phase_origin is None else phase_origin
     now = clock()
     if now < origin:
@@ -413,6 +417,33 @@ def run_offered_load(target, schedule: LoadSchedule, *, clock=time.monotonic,
             if any(not item.future.done() for item in pending) and clock() < drain_end:
                 sleep(min(0.01, drain_end - clock()))
         _harvest(schedule, pending, samples, clock(), origin, final=True)
+        termination_end = clock() + TERMINATION_GRACE_SECONDS
+        while any(not item.future.done() for item in pending) and clock() < termination_end:
+            sleep(min(0.01, termination_end - clock()))
+        unresolved = [item for item in pending if not item.future.done()]
+        if unresolved:
+            evidence = {
+                "status": "unresolved_execution",
+                "stream": schedule.name,
+                "termination_grace_seconds": TERMINATION_GRACE_SECONDS,
+                "unresolved_requests": [
+                    {
+                        "sequence": item.invocation.sequence,
+                        "scheduled_offset_seconds": item.invocation.scheduled_at - origin,
+                        "started_offset_seconds": (
+                            None if item.invocation.started_at is None
+                            else item.invocation.started_at - origin
+                        ),
+                    }
+                    for item in unresolved
+                ],
+                "request_classifications": [_json_value(sample) for sample in samples],
+            }
+            try:
+                if terminal_abort is not None:
+                    terminal_abort(evidence)
+            finally:
+                os._exit(TERMINAL_ABORT_EXIT_CODE)
     finally:
         # ClickHouse 请求自身受同一 30 秒超时约束；等待 worker 退出后再允许 phase cleanup。
         executor.shutdown(wait=True, cancel_futures=True)
@@ -467,7 +498,7 @@ def summarize_load(result: LoadResult):
 
 
 def run_load_phase(targets, schedules, *, clock=time.monotonic, sleep=time.sleep,
-                   executor_factory=ThreadPoolExecutor):
+                   executor_factory=ThreadPoolExecutor, terminal_abort=None):
     """使用同一 phase origin 并发执行各自独立 worker pool 的请求流。"""
     if set(targets) != set(schedules):
         raise ValueError("targets must exactly match schedules")
@@ -478,7 +509,7 @@ def run_load_phase(targets, schedules, *, clock=time.monotonic, sleep=time.sleep
             name: coordinator.submit(
                 run_offered_load, targets[name], schedule,
                 clock=clock, sleep=sleep, executor_factory=executor_factory,
-                phase_origin=origin,
+                phase_origin=origin, terminal_abort=terminal_abort,
             )
             for name, schedule in schedules.items()
         }
@@ -734,7 +765,7 @@ def _coerce_cleanup(adapter):
 
 def _run_phase(adapter_factory, targets_factory, output, phase, seed, *,
                scope, phase_runner, resource_collector, namespace_factory,
-               manifest_writer, clock, sleep, executor_factory):
+               manifest_writer, clock, sleep, executor_factory, terminal_abort):
     namespace = namespace_factory(phase)
     phase_output = output / phase.name
     phase_output.mkdir(parents=True, exist_ok=True)
@@ -760,6 +791,20 @@ def _run_phase(adapter_factory, targets_factory, output, phase, seed, *,
     cleanup = {"namespace": namespace, "removed": False}
     warmup = measured = {}
     origin = clock()
+
+    def report_terminal_abort(evidence):
+        manifest["execution_resolution"] = evidence
+        manifest["cleanup"] = {
+            "namespace": namespace,
+            "removed": False,
+            "status": "not_attempted_unresolved_execution",
+        }
+        manifest["status"] = "failed"
+        manifest["classification"] = scope + "_failed"
+        manifest["error"] = "request worker remained unresolved after terminal cancellation"
+        manifest_writer(manifest_path, manifest)
+        terminal_abort(manifest)
+
     try:
         adapter = adapter_factory(namespace, phase, seed)
         manifest["layout"] = adapter.layout
@@ -779,6 +824,7 @@ def _run_phase(adapter_factory, targets_factory, output, phase, seed, *,
         warmup = _normalize_phase_wall(phase_runner(
             targets, fixed_phase_schedules(phase, measurement=False),
             clock=clock, sleep=sleep, executor_factory=executor_factory,
+            terminal_abort=report_terminal_abort,
         ))
         _write_jsonl_atomic(phase_output / "warmup-samples.jsonl", warmup)
         manifest["snapshots"].append(
@@ -790,6 +836,7 @@ def _run_phase(adapter_factory, targets_factory, output, phase, seed, *,
         measured = _normalize_phase_wall(phase_runner(
             targets, fixed_phase_schedules(phase, measurement=True),
             clock=clock, sleep=sleep, executor_factory=executor_factory,
+            terminal_abort=report_terminal_abort,
         ))
         _write_jsonl_atomic(phase_output / "samples.jsonl", measured)
         if scope == "formal":
@@ -868,12 +915,24 @@ def run_interference(adapter_factory, targets_factory, output: Path, *, scope, s
     phase_manifests = []
     errors = []
     namespaces = set()
+
+    def report_terminal_abort(phase_manifest):
+        manifest["phases"] = [*phase_manifests, phase_manifest]
+        manifest["status"] = "failed"
+        manifest["classification"] = scope + "_failed"
+        manifest["execution_resolution"] = phase_manifest["execution_resolution"]
+        manifest["errors"] = [
+            f"{phase_manifest['phase']}: {phase_manifest['error']}"
+        ]
+        manifest_writer(manifest_path, manifest)
+
     for phase in phases:
         phase_manifest, error = _run_phase(
             adapter_factory, targets_factory, output, phase, seed,
             scope=scope, phase_runner=phase_runner, resource_collector=resource_collector,
             namespace_factory=namespace_factory, manifest_writer=manifest_writer,
             clock=clock, sleep=sleep, executor_factory=executor_factory,
+            terminal_abort=report_terminal_abort,
         )
         namespace = phase_manifest["namespace"]
         if namespace in namespaces:

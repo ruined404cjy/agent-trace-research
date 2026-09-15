@@ -1,5 +1,6 @@
 import hashlib
 import json
+import subprocess
 import sys
 import tempfile
 import threading
@@ -84,7 +85,7 @@ class DelayedFuture(ImmediateFuture):
         self.ready_at = ready_at
 
     def done(self):
-        return self.clock() >= self.ready_at
+        return self.clock() >= self.ready_at or self.value.cancellation.is_set()
 
 
 class DelayedExecutor(InlineExecutor):
@@ -236,6 +237,166 @@ def fixed_query_target(adapter, stream):
 
 
 class OfferedLoadTest(unittest.TestCase):
+    def test_uncooperative_deadline_target_terminates_process_within_hard_bound(self):
+        """捕获二参数 target 忽略 cancellation 后永久阻塞整个运行。"""
+        script = f"""
+import sys
+import threading
+from pathlib import Path
+sys.path.insert(0, {str(STAGE_DIR / 'runner')!r})
+from run_interference import DeadlineTarget, LoadSchedule, run_offered_load
+
+def target(_deadline, _cancellation):
+    threading.Event().wait()
+
+run_offered_load(
+    DeadlineTarget(target),
+    LoadSchedule('list', 1.0, 0.05, 1, timeout_seconds=0.05),
+)
+Path(sys.argv[1]).write_text('continued')
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            continued = Path(directory) / "continued"
+            process = subprocess.Popen([
+                sys.executable, "-c", script, str(continued),
+            ])
+            started = time.monotonic()
+            try:
+                returncode = process.wait(timeout=1.0)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+                self.fail("uncooperative target exceeded the hard execution bound")
+            elapsed = time.monotonic() - started
+
+        self.assertEqual(returncode, 70)
+        self.assertLess(elapsed, 1.0)
+        self.assertFalse(continued.exists())
+
+    def test_terminal_abort_publishes_failed_manifests_without_cleanup(self):
+        """捕获终止失控 worker 前未发布 failed 和不可清理证据。"""
+        script = f"""
+import sys
+import threading
+from pathlib import Path
+from types import SimpleNamespace
+sys.path.insert(0, {str(STAGE_DIR / 'runner')!r})
+from common import CleanupResult, StorageEvidence
+from run_interference import (
+    DeadlineTarget, InterferencePhase, LoadSchedule, run_interference,
+    run_offered_load,
+)
+
+class Adapter:
+    layout = 'same_table'
+    def __init__(self, namespace):
+        self.database = namespace
+    def create(self):
+        return {{'database': self.database}}
+    def collect_storage(self):
+        return StorageEvidence({{'events': {{
+            'part_count': 1, 'marks': 1, 'compressed_bytes': 1,
+            'uncompressed_bytes': 1,
+        }}}})
+    def cleanup(self):
+        Path(sys.argv[2]).write_text('cleanup')
+        return CleanupResult(self.database, True)
+
+calls = 0
+def blocked(_deadline, _cancellation):
+    global calls
+    calls += 1
+    if calls == 1:
+        return SimpleNamespace(status='success', application_ready_ms=1.0)
+    threading.Event().wait()
+
+def targets_factory(_adapter, _phase, _seed):
+    return {{
+        'list': DeadlineTarget(blocked),
+        'preview': DeadlineTarget(blocked),
+    }}
+
+def short_runner(targets, _schedules, **kwargs):
+    return {{'list': run_offered_load(
+        targets['list'],
+        LoadSchedule('list', 20.0, 0.1, 1, timeout_seconds=0.05),
+        terminal_abort=kwargs.get('terminal_abort'),
+    )}}
+
+run_interference(
+    lambda namespace, *_: Adapter(namespace), targets_factory, Path(sys.argv[1]),
+    scope='diagnostic',
+    phases=(InterferencePhase('quiet', None, warmup_seconds=0.05,
+                              measurement_seconds=0.05),),
+    phase_runner=short_runner,
+)
+Path(sys.argv[3]).write_text('continued')
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "run"
+            cleanup = Path(directory) / "cleanup"
+            continued = Path(directory) / "continued"
+            process = subprocess.Popen([
+                sys.executable, "-c", script, str(output), str(cleanup), str(continued),
+            ])
+            try:
+                returncode = process.wait(timeout=1.5)
+            except subprocess.TimeoutExpired:
+                process.kill()
+                process.wait()
+                self.fail("terminal abort manifest publication exceeded the hard bound")
+            root = json.loads((output / "run-manifest.json").read_text())
+            phase = json.loads((output / "quiet" / "run-manifest.json").read_text())
+
+        self.assertEqual(returncode, 70)
+        self.assertEqual(root["status"], "failed")
+        self.assertEqual(phase["status"], "failed")
+        self.assertEqual(
+            phase["execution_resolution"]["status"], "unresolved_execution",
+        )
+        self.assertEqual(
+            phase["cleanup"]["status"], "not_attempted_unresolved_execution",
+        )
+        self.assertEqual(
+            [
+                item["status"]
+                for item in phase["execution_resolution"]["request_classifications"]
+            ],
+            ["success", "timed_out"],
+        )
+        self.assertFalse(cleanup.exists())
+        self.assertFalse(continued.exists())
+
+    def test_terminal_abort_still_exits_when_evidence_publication_fails(self):
+        """捕获失败证据写入异常后重新进入无界 executor shutdown。"""
+        script = f"""
+import sys
+import threading
+sys.path.insert(0, {str(STAGE_DIR / 'runner')!r})
+from run_interference import DeadlineTarget, LoadSchedule, run_offered_load
+
+def target(_deadline, _cancellation):
+    threading.Event().wait()
+
+def fail_publication(_evidence):
+    raise OSError('evidence write failed')
+
+run_offered_load(
+    DeadlineTarget(target),
+    LoadSchedule('list', 1.0, 0.05, 1, timeout_seconds=0.05),
+    terminal_abort=fail_publication,
+)
+"""
+        process = subprocess.Popen([sys.executable, "-c", script])
+        try:
+            returncode = process.wait(timeout=1.0)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            process.wait()
+            self.fail("publication failure bypassed the terminal execution bound")
+
+        self.assertEqual(returncode, 70)
+
     def test_zero_argument_target_is_rejected_before_a_worker_can_block(self):
         """捕获通用零参数 target 进入线程后无法在 drain 上界内中断。"""
         entered = threading.Event()
@@ -451,7 +612,7 @@ class OfferedLoadTest(unittest.TestCase):
         )
 
         self.assertEqual(result.timed_out_requests, 1)
-        self.assertEqual(result.phase_wall_seconds, 2.0)
+        self.assertEqual(result.phase_wall_seconds, 1.0)
 
 
 class InterferenceRunnerTest(unittest.TestCase):
