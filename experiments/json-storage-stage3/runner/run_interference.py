@@ -2,9 +2,11 @@
 """执行固定 offered-load 前台查询与独立干扰阶段。"""
 
 import json
+import inspect
 import math
 import os
 import tempfile
+import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor
@@ -87,6 +89,26 @@ class InterferencePhase:
     measurement_seconds: float = 300.0
 
 
+@dataclass(frozen=True)
+class DeadlineTarget:
+    """声明会在 deadline 到达或收到 cancellation 后结束的请求目标。"""
+
+    operation: object
+
+    def __post_init__(self):
+        if not callable(self.operation):
+            raise ValueError("deadline target operation must be callable")
+        try:
+            inspect.signature(self.operation).bind(0.0, threading.Event())
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                "deadline target operation must accept deadline and cancellation arguments"
+            ) from error
+
+    def __call__(self, deadline, cancellation):
+        return self.operation(deadline, cancellation)
+
+
 FIXED_PHASES = (
     InterferencePhase("quiet", None),
     InterferencePhase("detail_2m", "detail_2m", 1.0),
@@ -149,6 +171,8 @@ class _Invocation:
     completed_at: float | None = None
     sample: object | None = None
     error: Exception | None = None
+    deadline_at: float | None = None
+    cancellation: threading.Event = field(default_factory=threading.Event)
 
 
 @dataclass
@@ -180,17 +204,45 @@ def fixed_phase_schedules(phase, *, measurement):
     return schedules
 
 
+def validate_formal_phase_coverage(phase, warmup, measured):
+    """核对正式阶段各请求流实际覆盖冻结的 30/300 秒窗口。"""
+    coverage = {}
+    for name, results, measurement in (
+        ("warmup", warmup, False), ("measurement", measured, True),
+    ):
+        schedules = fixed_phase_schedules(phase, measurement=measurement)
+        if set(results) != set(schedules) or any(
+            not isinstance(result, LoadResult) for result in results.values()
+        ):
+            raise RuntimeError(f"{name} results do not cover fixed schedules")
+        required = phase.measurement_seconds if measurement else phase.warmup_seconds
+        actual = min(
+            min(result.phase_wall_seconds, result.phase_finished - result.phase_origin)
+            for result in results.values()
+        )
+        if actual < required:
+            raise RuntimeError(f"{name} actual duration is shorter than {required} seconds")
+        coverage[f"{name}_actual_seconds"] = actual
+    return coverage
+
+
 def build_query_target(adapter, query: QuerySpec, truth: QueryTruth):
     """构造复用 Task 4 应用可用和完整响应 bytes 门禁的查询目标。"""
     if not isinstance(query, QuerySpec) or not isinstance(truth, QueryTruth):
         raise ValueError("query target requires QuerySpec and QueryTruth")
-    return lambda: measure_query(adapter, query, truth)
+    def target(deadline, cancellation):
+        if cancellation.is_set():
+            raise TimeoutError("query target deadline expired before execution")
+        return measure_query(adapter, query, truth)
+
+    return DeadlineTarget(target)
 
 
-def _invoke(target, invocation, clock):
+def _invoke(target, invocation, clock, timeout_seconds):
     invocation.started_at = clock()
+    invocation.deadline_at = invocation.started_at + timeout_seconds
     try:
-        invocation.sample = target()
+        invocation.sample = target(invocation.deadline_at, invocation.cancellation)
     except Exception as error:
         invocation.error = error
     finally:
@@ -260,7 +312,7 @@ def _harvest(schedule, pending, samples, now, origin, final=False):
             invocation.started_at is not None
             and now - invocation.started_at >= schedule.timeout_seconds
         ):
-            item.future.cancel()
+            invocation.cancellation.set()
             samples.append(_request_sample(
                 schedule, _relative_invocation(invocation, origin), "timed_out",
                 "request exceeded timeout or phase drain boundary",
@@ -284,7 +336,9 @@ def _relative_invocation(invocation, origin):
 
 def _submit(target, schedule, sequence, deadline, executor, clock, pending):
     invocation = _Invocation(sequence, deadline)
-    future = executor.submit(lambda: _invoke(target, invocation, clock))
+    future = executor.submit(
+        lambda: _invoke(target, invocation, clock, schedule.timeout_seconds)
+    )
     pending.append(_Pending(invocation, future))
 
 
@@ -292,11 +346,12 @@ def run_offered_load(target, schedule: LoadSchedule, *, clock=time.monotonic,
                      sleep=time.sleep, executor_factory=ThreadPoolExecutor,
                      phase_origin=None) -> LoadResult:
     """从单一 monotonic origin 产生到达 deadline，并按真实阶段 wall time计数。"""
-    if not callable(target) or not isinstance(schedule, LoadSchedule):
-        raise ValueError("target and LoadSchedule are required")
+    if not isinstance(target, DeadlineTarget) or not isinstance(schedule, LoadSchedule):
+        raise ValueError("DeadlineTarget and LoadSchedule are required")
     origin = clock() if phase_origin is None else phase_origin
-    if clock() < origin:
-        sleep(origin - clock())
+    now = clock()
+    if now < origin:
+        sleep(origin - now)
     arrival_end = origin + schedule.duration_seconds
     executor = executor_factory(max_workers=schedule.workers)
     pending = []
@@ -499,6 +554,33 @@ def collect_resource_snapshot():
     return result
 
 
+def validate_resource_snapshot(resources):
+    """验证正式运行所需的宿主 CPU、内存和 I/O 观测。"""
+    if not isinstance(resources, dict):
+        raise RuntimeError("resource snapshot is invalid")
+    cpu = resources.get("cpu", {})
+    ticks = cpu.get("ticks")
+    if cpu.get("status") != "available" or not isinstance(ticks, list) or not ticks or any(
+        type(value) is not int or value < 0 for value in ticks
+    ):
+        raise RuntimeError("cpu resource evidence is unavailable or incomplete")
+    memory = resources.get("memory", {})
+    if memory.get("status") != "available" or any(
+        type(memory.get(field)) is not int or memory[field] < 0
+        for field in ("total_kib", "available_kib")
+    ) or memory["available_kib"] > memory["total_kib"]:
+        raise RuntimeError("memory resource evidence is unavailable or incomplete")
+    io = resources.get("io", {})
+    if io.get("status") != "available" or any(
+        type(io.get(field)) is not int or io[field] < minimum
+        for field, minimum in (
+            ("devices", 1), ("read_sectors", 0), ("written_sectors", 0),
+        )
+    ):
+        raise RuntimeError("io resource evidence is unavailable or incomplete")
+    return resources
+
+
 def _json_value(value):
     if is_dataclass(value):
         return {key: _json_value(item) for key, item in asdict(value).items()}
@@ -539,17 +621,20 @@ def _write_jsonl_atomic(path, load_results):
         temporary.unlink(missing_ok=True)
 
 
-def _snapshot(adapter, name, origin, clock, resource_collector):
+def _snapshot(adapter, name, origin, clock, resource_collector, require_resources=False):
     state = capture_part_state(adapter, name)
     storage = {
         "tables": state.tables,
         "merges": state.active_merges,
         "asset_store": state.asset_store,
     }
+    resources = _json_value(resource_collector())
+    if require_resources:
+        validate_resource_snapshot(resources)
     return {
         "name": name,
         "captured_offset_seconds": clock() - origin,
-        "resources": _json_value(resource_collector()),
+        "resources": resources,
         "storage": _json_value(storage),
         "active_part_backlog": sum(
             max(0, int(table.get("part_count", 0)) - 1)
@@ -598,6 +683,23 @@ def _query_evidence(adapter, warmup, measured):
         access = adapter.collect_access_evidence(batch)
         if not isinstance(access, AccessEvidence):
             raise RuntimeError("adapter returned invalid QueryFinish evidence")
+        if set(access.plans) != set(batch) or any(
+            not isinstance(plan, str) or not plan for plan in access.plans.values()
+        ):
+            raise RuntimeError("query plans do not cover successful ClickHouse samples")
+        sample_by_id = {sample.query_id: sample for sample in query_samples}
+        if set(access.query_details) != set(batch) or any(
+            detail.get("kind") != sample_by_id[query_id].kind
+            or not isinstance(detail.get("statement"), str)
+            or not detail["statement"]
+            or not isinstance(detail.get("declared_source"), str)
+            or not detail["declared_source"]
+            or any(type(detail.get(field)) is not int or detail[field] < 0
+                   for field in ("scanned_rows", "scanned_bytes"))
+            for query_id in batch
+            for detail in (access.query_details.get(query_id, {}),)
+        ):
+            raise RuntimeError("access details do not cover successful ClickHouse samples")
         if set(access.query_finish) != set(batch):
             raise RuntimeError("QueryFinish does not match successful ClickHouse samples")
         plans.update(access.plans)
@@ -613,6 +715,8 @@ def _query_evidence(adapter, warmup, measured):
         raise RuntimeError("QueryFinish does not match successful ClickHouse samples")
     if any(
         row.get("type") != "QueryFinish" or int(row.get("exception_code", -1)) != 0
+        or any(type(row.get(field)) is not int or row[field] < 0
+               for field in ("read_rows", "read_bytes"))
         for row in access.query_finish.values()
     ):
         raise RuntimeError("QueryFinish contains unsuccessful rows")
@@ -629,7 +733,7 @@ def _coerce_cleanup(adapter):
 
 
 def _run_phase(adapter_factory, targets_factory, output, phase, seed, *,
-               phase_runner, resource_collector, namespace_factory,
+               scope, phase_runner, resource_collector, namespace_factory,
                manifest_writer, clock, sleep, executor_factory):
     namespace = namespace_factory(phase)
     phase_output = output / phase.name
@@ -640,6 +744,7 @@ def _run_phase(adapter_factory, targets_factory, output, phase, seed, *,
         "format_version": 1,
         "run_id": "jsons3-interference-" + phase.name + "-" + uuid.uuid4().hex[:10],
         "status": "running", "phase": phase.name, "seed": seed,
+        "execution_scope": scope, "classification": scope + "_running",
         "namespace": namespace,
         "cache_state": "warm-fixed-offered-load-no-os-cache-drop",
         "warmup_seconds": phase.warmup_seconds,
@@ -662,28 +767,41 @@ def _run_phase(adapter_factory, targets_factory, output, phase, seed, *,
         targets = targets_factory(adapter, phase, seed)
         expected = set(fixed_phase_schedules(phase, measurement=True))
         if not isinstance(targets, dict) or set(targets) != expected or any(
-            not callable(target) for target in targets.values()
+            not isinstance(target, DeadlineTarget) for target in targets.values()
         ):
             raise RuntimeError("phase targets do not match fixed schedules")
         manifest["snapshots"] = [
-            _snapshot(adapter, "before_warmup", origin, clock, resource_collector),
+            _snapshot(
+                adapter, "before_warmup", origin, clock, resource_collector,
+                require_resources=scope == "formal",
+            ),
         ]
         warmup = _normalize_phase_wall(phase_runner(
             targets, fixed_phase_schedules(phase, measurement=False),
             clock=clock, sleep=sleep, executor_factory=executor_factory,
         ))
+        _write_jsonl_atomic(phase_output / "warmup-samples.jsonl", warmup)
         manifest["snapshots"].append(
-            _snapshot(adapter, "before_measurement", origin, clock, resource_collector)
+            _snapshot(
+                adapter, "before_measurement", origin, clock, resource_collector,
+                require_resources=scope == "formal",
+            )
         )
         measured = _normalize_phase_wall(phase_runner(
             targets, fixed_phase_schedules(phase, measurement=True),
             clock=clock, sleep=sleep, executor_factory=executor_factory,
         ))
-        manifest["snapshots"].append(
-            _snapshot(adapter, "after_measurement", origin, clock, resource_collector)
-        )
-        _write_jsonl_atomic(phase_output / "warmup-samples.jsonl", warmup)
         _write_jsonl_atomic(phase_output / "samples.jsonl", measured)
+        if scope == "formal":
+            manifest["execution_coverage"] = validate_formal_phase_coverage(
+                phase, warmup, measured,
+            )
+        manifest["snapshots"].append(
+            _snapshot(
+                adapter, "after_measurement", origin, clock, resource_collector,
+                require_resources=scope == "formal",
+            )
+        )
         manifest["warmup"] = {name: summarize_load(result) for name, result in warmup.items()}
         manifest["statistics"] = {name: summarize_load(result) for name, result in measured.items()}
         manifest["query_evidence"] = _query_evidence(adapter, warmup, measured)
@@ -702,13 +820,14 @@ def _run_phase(adapter_factory, targets_factory, output, phase, seed, *,
                     error = cleanup_error
     manifest["cleanup"] = cleanup
     manifest["status"] = "complete" if error is None else "failed"
+    manifest["classification"] = scope + "_" + manifest["status"]
     if error is not None:
         manifest["error"] = str(error) or type(error).__name__
     manifest_writer(manifest_path, manifest)
     return manifest, error
 
 
-def run_interference(adapter_factory, targets_factory, output: Path, *, seed=20260907,
+def run_interference(adapter_factory, targets_factory, output: Path, *, scope, seed=20260907,
                      phases=FIXED_PHASES, phase_runner=run_load_phase,
                      resource_collector=collect_resource_snapshot,
                      namespace_factory=lambda phase: (
@@ -718,8 +837,21 @@ def run_interference(adapter_factory, targets_factory, output: Path, *, seed=202
                      sleep=time.sleep, executor_factory=ThreadPoolExecutor):
     """以同一 seed 和全新 namespace 运行安静阶段及四类独立干扰。"""
     phases = tuple(phases)
+    if scope not in {"formal", "diagnostic"}:
+        raise ValueError("scope must be formal or diagnostic")
     if not phases or len({phase.name for phase in phases}) != len(phases):
         raise ValueError("phases must be non-empty and unique")
+    if scope == "formal":
+        if phases != FIXED_PHASES:
+            raise ValueError("formal scope requires the exact fixed five phases")
+        if (
+            phase_runner is not run_load_phase
+            or clock is not time.monotonic
+            or sleep is not time.sleep
+            or executor_factory is not ThreadPoolExecutor
+            or resource_collector is not collect_resource_snapshot
+        ):
+            raise ValueError("formal scope does not allow injected execution controls")
     output = Path(output)
     output.mkdir(parents=True, exist_ok=True)
     manifest_path = output / "run-manifest.json"
@@ -728,6 +860,7 @@ def run_interference(adapter_factory, targets_factory, output: Path, *, seed=202
         "format_version": 1,
         "run_id": "jsons3-interference-" + uuid.uuid4().hex[:10],
         "status": "running", "seed": seed,
+        "execution_scope": scope, "classification": scope + "_running",
         "phase_order": [phase.name for phase in phases], "phases": [],
         "statistics_boundary": "raw-samples-retained-p99-requires-1000-successes",
     }
@@ -738,7 +871,7 @@ def run_interference(adapter_factory, targets_factory, output: Path, *, seed=202
     for phase in phases:
         phase_manifest, error = _run_phase(
             adapter_factory, targets_factory, output, phase, seed,
-            phase_runner=phase_runner, resource_collector=resource_collector,
+            scope=scope, phase_runner=phase_runner, resource_collector=resource_collector,
             namespace_factory=namespace_factory, manifest_writer=manifest_writer,
             clock=clock, sleep=sleep, executor_factory=executor_factory,
         )
@@ -746,6 +879,7 @@ def run_interference(adapter_factory, targets_factory, output: Path, *, seed=202
         if namespace in namespaces:
             error = RuntimeError("interference phases require fresh namespaces")
             phase_manifest["status"] = "failed"
+            phase_manifest["classification"] = scope + "_failed"
             phase_manifest["error"] = str(error)
             manifest_writer(output / phase.name / "run-manifest.json", phase_manifest)
         namespaces.add(namespace)
@@ -754,6 +888,7 @@ def run_interference(adapter_factory, targets_factory, output: Path, *, seed=202
             errors.append(f"{phase.name}: {error}")
     manifest["phases"] = phase_manifests
     manifest["status"] = "failed" if errors else "complete"
+    manifest["classification"] = scope + "_" + manifest["status"]
     if errors:
         manifest["errors"] = errors
     manifest_writer(manifest_path, manifest)

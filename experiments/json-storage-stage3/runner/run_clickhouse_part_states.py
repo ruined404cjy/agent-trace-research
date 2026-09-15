@@ -30,6 +30,7 @@ class PartState:
     observations: tuple[dict[str, object], ...] = ()
     query_samples: tuple[QuerySample, ...] = ()
     query_plans: dict[str, str] = field(default_factory=dict)
+    query_details: dict[str, dict[str, object]] = field(default_factory=dict)
     query_finish: dict[str, dict[str, object]] = field(default_factory=dict)
     successful_samples: int = 0
     failed_samples: int = 0
@@ -61,6 +62,16 @@ def capture_part_state(adapter, name="snapshot") -> PartState:
             raise RuntimeError(f"part state metrics are incomplete: {table}")
         tables[table] = dict(raw)
     merges = tuple(dict(item) for item in storage.merges)
+    if catalog.name == "asset_ref":
+        asset = storage.asset_store
+        if not isinstance(asset, AssetStorageEvidence) or any(
+            type(getattr(asset, field)) is not int or getattr(asset, field) < 0
+            for field in (
+                "available_object_count", "available_bytes",
+                "orphan_object_count", "orphan_bytes",
+            )
+        ):
+            raise RuntimeError("Asset storage evidence is missing or incomplete")
     return PartState(
         name, catalog.list_source, False, tables, merges, asset_store=storage.asset_store,
     )
@@ -143,10 +154,30 @@ def _sample_state(adapter, state, query_cases, samples_per_query):
         if not isinstance(collected, AccessEvidence):
             raise RuntimeError("invalid QueryFinish evidence")
         access = collected
-        if set(access.query_finish) != set(successful_ids) or len(successful_ids) != len(set(successful_ids)):
+        if len(successful_ids) != len(set(successful_ids)):
+            raise RuntimeError("successful query IDs are duplicated")
+        if set(access.query_finish) != set(successful_ids):
             raise RuntimeError("QueryFinish does not match successful samples")
         if set(access.plans) != set(successful_ids) or any(
+            not isinstance(plan, str) or not plan for plan in access.plans.values()
+        ):
+            raise RuntimeError("query plans do not match successful samples")
+        if set(access.query_details) != set(successful_ids) or any(
+            detail.get("kind") != sample.kind
+            or not isinstance(detail.get("statement"), str)
+            or not detail["statement"]
+            or not isinstance(detail.get("declared_source"), str)
+            or not detail["declared_source"]
+            or any(type(detail.get(field)) is not int or detail[field] < 0
+                   for field in ("scanned_rows", "scanned_bytes"))
+            for sample in samples if sample.status == "success"
+            for detail in (access.query_details.get(sample.query_id, {}),)
+        ):
+            raise RuntimeError("access details do not match successful samples")
+        if any(
             row.get("type") != "QueryFinish" or int(row.get("exception_code", -1)) != 0
+            or any(type(row.get(field)) is not int or row[field] < 0
+                   for field in ("read_rows", "read_bytes"))
             for row in access.query_finish.values()
         ):
             raise RuntimeError("QueryFinish evidence is invalid")
@@ -158,6 +189,7 @@ def _sample_state(adapter, state, query_cases, samples_per_query):
         error = f"query sampling failed: {failed} sample(s)"
     return replace(
         state, query_samples=samples, query_plans=dict(access.plans),
+        query_details=dict(access.query_details),
         query_finish=dict(access.query_finish), successful_samples=successful,
         failed_samples=failed, query_finish_count=len(access.query_finish), error=error,
     )

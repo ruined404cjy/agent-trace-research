@@ -2,6 +2,8 @@ import hashlib
 import json
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from dataclasses import replace
 from pathlib import Path
@@ -13,8 +15,9 @@ sys.path.insert(0, str(STAGE_DIR / "runner"))
 
 from common import AccessEvidence, CleanupResult, QueryResult, QuerySpec, StorageEvidence
 from run_interference import (
-    FIXED_PHASES, LoadSchedule, build_query_target, fixed_phase_schedules,
-    run_interference, run_offered_load, summarize_load,
+    FIXED_PHASES, DeadlineTarget, LoadResult, LoadSchedule, build_query_target,
+    fixed_phase_schedules, run_interference, run_offered_load, summarize_load,
+    validate_formal_phase_coverage, validate_resource_snapshot,
 )
 from run_layout_matrix import QueryTruth, write_manifest_atomic
 
@@ -116,13 +119,24 @@ def success_sample(latency_ms=1.0):
     return SimpleNamespace(status="success", application_ready_ms=latency_ms)
 
 
+def deadline_target(function):
+    """把确定性即时夹具转换为 deadline/cancellation target。"""
+    return DeadlineTarget(lambda _deadline, _cancellation: function())
+
+
 class FakeAdapter:
     layout = "same_table"
 
-    def __init__(self, namespace, omit_query_finish=False):
+    def __init__(self, namespace, omit_query_finish=False, omit_plans=False,
+                 omit_query_details=False, fail_storage_call=None):
         self.database = namespace + "_same_table"
         self.omit_query_finish = omit_query_finish
+        self.omit_plans = omit_plans
+        self.omit_query_details = omit_query_details
         self.query_count = 0
+        self.query_kinds = {}
+        self.fail_storage_call = fail_storage_call
+        self.storage_calls = 0
         self.cleaned = False
         self.evidence_batches = []
 
@@ -131,28 +145,44 @@ class FakeAdapter:
 
     def run_query(self, query):
         self.query_count += 1
+        query_id = f"query-{self.database}-{self.query_count}"
+        self.query_kinds[query_id] = query.kind
         row = dict(ROW)
         if query.kind == "list":
             row["preview"] = None
         if query.kind in {"list", "preview"}:
             row["payload"] = None
         return QueryResult(
-            f"query-{self.database}-{self.query_count}", (row,), 100, 100, 0, 0.4, 0.1,
+            query_id, (row,), 100, 100, 0, 0.4, 0.1,
         )
 
     def collect_access_evidence(self, query_ids):
         self.evidence_batches.append(tuple(query_ids))
         finished = query_ids[:-1] if self.omit_query_finish else query_ids
         return AccessEvidence(
-            {query_id: "ReadFromMergeTree" for query_id in query_ids},
+            {} if self.omit_plans else {
+                query_id: "ReadFromMergeTree" for query_id in query_ids
+            },
             query_finish={
                 query_id: {"type": "QueryFinish", "exception_code": 0,
                            "read_rows": 1, "read_bytes": 100}
                 for query_id in finished
             },
+            query_details={} if self.omit_query_details else {
+                query_id: {
+                    "kind": self.query_kinds[query_id],
+                    "statement": "SELECT columns FROM events",
+                    "declared_source": "events", "scanned_rows": 1,
+                    "scanned_bytes": 100,
+                }
+                for query_id in query_ids
+            },
         )
 
     def collect_storage(self):
+        self.storage_calls += 1
+        if self.storage_calls == self.fail_storage_call:
+            raise RuntimeError("snapshot failed")
         return StorageEvidence(
             {"events": {
                 "part_count": 2, "rows": 8, "marks": 1,
@@ -206,6 +236,61 @@ def fixed_query_target(adapter, stream):
 
 
 class OfferedLoadTest(unittest.TestCase):
+    def test_zero_argument_target_is_rejected_before_a_worker_can_block(self):
+        """捕获通用零参数 target 进入线程后无法在 drain 上界内中断。"""
+        entered = threading.Event()
+        release = threading.Event()
+        errors = []
+
+        def non_returning_target():
+            entered.set()
+            release.wait()
+
+        def invoke_runner():
+            try:
+                run_offered_load(
+                    non_returning_target,
+                    LoadSchedule("list", 1.0, 0.05, 1, timeout_seconds=0.05),
+                )
+            except Exception as error:
+                errors.append(error)
+
+        watchdog = threading.Thread(target=invoke_runner)
+        watchdog.start()
+        watchdog.join(0.5)
+        try:
+            self.assertFalse(watchdog.is_alive())
+            self.assertFalse(entered.is_set())
+            self.assertEqual(len(errors), 1)
+            self.assertIsInstance(errors[0], ValueError)
+            self.assertIn("DeadlineTarget", str(errors[0]))
+        finally:
+            release.set()
+            watchdog.join(1.0)
+
+    def test_cancellation_aware_target_returns_within_drain_bound_without_worker_race(self):
+        """捕获 drain 仅标记 timeout 后仍由 worker 与下一阶段并发运行。"""
+        entered = threading.Event()
+        exited = threading.Event()
+
+        def target(deadline, cancellation):
+            entered.set()
+            cancellation.wait(max(0.0, deadline - time.monotonic()) + 0.5)
+            exited.set()
+            return success_sample()
+
+        started = time.monotonic()
+        result = run_offered_load(
+            DeadlineTarget(target),
+            LoadSchedule("list", 1.0, 0.05, 1, timeout_seconds=0.05),
+        )
+        elapsed = time.monotonic() - started
+
+        self.assertTrue(entered.is_set())
+        self.assertTrue(exited.is_set())
+        self.assertLess(elapsed, 0.5)
+        self.assertEqual(result.timed_out_requests, 1)
+
     def test_arrival_deadlines_share_one_origin_and_do_not_drift_with_completion(self):
         """捕获下一次到达时间从上一请求完成时刻串行推导。"""
         clock = FakeClock(10.0)
@@ -217,7 +302,8 @@ class OfferedLoadTest(unittest.TestCase):
             return success_sample(200.0)
 
         result = run_offered_load(
-            target, LoadSchedule("list", 2.0, 2.0, 1, timeout_seconds=1.0),
+            deadline_target(target),
+            LoadSchedule("list", 2.0, 2.0, 1, timeout_seconds=1.0),
             clock=clock, sleep=clock.sleep, executor_factory=InlineExecutor,
         )
 
@@ -245,7 +331,7 @@ class OfferedLoadTest(unittest.TestCase):
             return success_sample(750.0)
 
         result = run_offered_load(
-            target,
+            deadline_target(target),
             LoadSchedule(
                 "preview", 2.0, 2.0, 1, timeout_seconds=0.5,
                 late_tolerance_seconds=0.1,
@@ -283,7 +369,8 @@ class OfferedLoadTest(unittest.TestCase):
             return success_sample(1.0)
 
         result = run_offered_load(
-            target, LoadSchedule("list", 2.0, 1.0, 1, timeout_seconds=2.0),
+            deadline_target(target),
+            LoadSchedule("list", 2.0, 1.0, 1, timeout_seconds=2.0),
             clock=clock, sleep=clock.sleep, executor_factory=InlineExecutor,
         )
         summary = summarize_load(result)
@@ -295,13 +382,13 @@ class OfferedLoadTest(unittest.TestCase):
         """捕获小样本仍发布 p99。"""
         below_clock = FakeClock()
         below = run_offered_load(
-            lambda: success_sample(2.0),
+            deadline_target(lambda: success_sample(2.0)),
             LoadSchedule("list", 999.0, 1.0, 2, timeout_seconds=1.0),
             clock=below_clock, sleep=below_clock.sleep, executor_factory=InlineExecutor,
         )
         enough_clock = FakeClock()
         enough = run_offered_load(
-            lambda: success_sample(2.0),
+            deadline_target(lambda: success_sample(2.0)),
             LoadSchedule("list", 1000.0, 1.0, 2, timeout_seconds=1.0),
             clock=enough_clock, sleep=enough_clock.sleep, executor_factory=InlineExecutor,
         )
@@ -323,7 +410,7 @@ class OfferedLoadTest(unittest.TestCase):
         clock = FakeClock()
         executor = CountingExecutor(2)
         result = run_offered_load(
-            lambda: success_sample(),
+            deadline_target(lambda: success_sample()),
             LoadSchedule("list", 1000.0, 1.0, 2, timeout_seconds=1.0),
             clock=clock, sleep=clock.sleep,
             executor_factory=lambda max_workers: executor,
@@ -343,7 +430,7 @@ class OfferedLoadTest(unittest.TestCase):
             return success_sample(200.0)
 
         result = run_offered_load(
-            target,
+            deadline_target(target),
             LoadSchedule(
                 "batch_loop", None, 1.0, 1, timeout_seconds=1.0, mode="continuous",
             ),
@@ -357,7 +444,7 @@ class OfferedLoadTest(unittest.TestCase):
         """捕获超时计数发布后立即 cleanup，仍运行的 worker 与清理发生竞争。"""
         clock = FakeClock()
         result = run_offered_load(
-            lambda: success_sample(),
+            deadline_target(lambda: success_sample()),
             LoadSchedule("list", 1.0, 1.0, 1, timeout_seconds=1.0),
             clock=clock, sleep=clock.sleep,
             executor_factory=lambda max_workers: DelayedExecutor(max_workers, clock),
@@ -368,6 +455,65 @@ class OfferedLoadTest(unittest.TestCase):
 
 
 class InterferenceRunnerTest(unittest.TestCase):
+    def test_formal_scope_rejects_any_phase_subset_before_execution(self):
+        """捕获少于固定五阶段的运行被标为 formal complete。"""
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "exact fixed five phases"):
+                run_interference(
+                    lambda *_: None, lambda *_: {}, Path(directory),
+                    scope="formal", phases=FIXED_PHASES[:1],
+                )
+
+    def test_formal_scope_rejects_injected_execution_controls(self):
+        """捕获注入 runner 的缩短路径被标为 formal。"""
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "injected execution controls"):
+                run_interference(
+                    lambda *_: None, lambda *_: {}, Path(directory), scope="formal",
+                    phase_runner=short_phase_runner,
+                )
+
+    def test_formal_coverage_requires_actual_warmup_and_measurement_windows(self):
+        """捕获仅记录 30/300 配置却没有覆盖对应实际 wall time。"""
+        def results(duration):
+            return {
+                name: LoadResult(
+                    name, 0.0, duration, duration, schedule.rate_per_second,
+                    0, 0, 0, 0, 0, 0, 0, 0, (),
+                )
+                for name, schedule in fixed_phase_schedules(
+                    FIXED_PHASES[0], measurement=duration >= 300.0,
+                ).items()
+            }
+
+        with self.assertRaisesRegex(RuntimeError, "warmup.*actual duration"):
+            validate_formal_phase_coverage(
+                FIXED_PHASES[0], results(29.9), results(300.0),
+            )
+
+        coverage = validate_formal_phase_coverage(
+            FIXED_PHASES[0], results(30.0), results(300.0),
+        )
+        self.assertEqual(coverage["warmup_actual_seconds"], 30.0)
+        self.assertEqual(coverage["measurement_actual_seconds"], 300.0)
+
+    def test_formal_resource_snapshot_requires_cpu_memory_and_io(self):
+        """捕获平台资源缺项仍被发布为 formal complete。"""
+        resources = {
+            "cpu": {"status": "available", "ticks": [1, 2, 3]},
+            "memory": {"status": "available", "total_kib": 100,
+                       "available_kib": 50},
+            "io": {"status": "available", "devices": 1,
+                   "read_sectors": 10, "written_sectors": 20},
+        }
+        self.assertEqual(validate_resource_snapshot(resources), resources)
+        for missing in ("cpu", "memory", "io"):
+            incomplete = {name: dict(value) for name, value in resources.items()}
+            incomplete[missing] = {"status": "unavailable"}
+            with self.subTest(missing=missing):
+                with self.assertRaisesRegex(RuntimeError, missing):
+                    validate_resource_snapshot(incomplete)
+
     def test_fixed_phases_keep_foreground_and_independent_interference_contract(self):
         self.assertEqual(
             [phase.name for phase in FIXED_PHASES],
@@ -404,7 +550,7 @@ class InterferenceRunnerTest(unittest.TestCase):
         adapter = FakeAdapter("jsons3_query")
         target = build_query_target(adapter, QUERY, TRUTH)
 
-        sample = target()
+        sample = target(float("inf"), threading.Event())
 
         self.assertEqual(sample.status, "success")
         self.assertEqual(sample.response_bytes, 100)
@@ -445,6 +591,7 @@ class InterferenceRunnerTest(unittest.TestCase):
             output = Path(directory) / "interference"
             result = run_interference(
                 adapter_factory, targets_factory, output,
+                scope="diagnostic",
                 phases=FIXED_PHASES[:2], phase_runner=short_phase_runner,
                 resource_collector=lambda: resources,
                 namespace_factory=lambda phase: "jsons3_if_" + phase.name,
@@ -455,11 +602,14 @@ class InterferenceRunnerTest(unittest.TestCase):
             measured_lines = (output / "detail_2m" / "samples.jsonl").read_text().splitlines()
 
         self.assertEqual(result.manifest["status"], "complete")
+        self.assertEqual(result.manifest["execution_scope"], "diagnostic")
+        self.assertEqual(result.manifest["classification"], "diagnostic_complete")
         self.assertEqual(len({call[0] for call in factory_calls}), 2)
         self.assertEqual({call[2] for call in factory_calls}, {20260907})
         self.assertTrue(all(adapter.cleaned for adapter in adapters))
         self.assertEqual(quiet_manifest["status"], "complete")
         self.assertEqual(detail_manifest["status"], "complete")
+        self.assertEqual(detail_manifest["classification"], "diagnostic_complete")
         self.assertEqual(len(detail_manifest["snapshots"]), 3)
         self.assertEqual(
             detail_manifest["snapshots"][0]["storage"]["tables"]["events"]["part_count"], 2,
@@ -500,6 +650,7 @@ class InterferenceRunnerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             result = run_interference(
                 adapter_factory, targets_factory, Path(directory) / "interference",
+                scope="diagnostic",
                 phases=FIXED_PHASES[:1], phase_runner=uneven_phase_runner,
                 resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
                 namespace_factory=lambda phase: "jsons3_wall_" + phase.name,
@@ -536,6 +687,7 @@ class InterferenceRunnerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             run_interference(
                 adapter_factory, targets_factory, Path(directory) / "interference",
+                scope="diagnostic",
                 phases=FIXED_PHASES[:1], phase_runner=many_samples_runner,
                 resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
                 namespace_factory=lambda phase: "jsons3_batches_" + phase.name,
@@ -563,6 +715,7 @@ class InterferenceRunnerTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "QueryFinish"):
                 run_interference(
                     adapter_factory, targets_factory, output,
+                    scope="diagnostic",
                     phases=FIXED_PHASES[:1], phase_runner=short_phase_runner,
                     resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
                     namespace_factory=lambda phase: "jsons3_fail_" + phase.name,
@@ -577,6 +730,51 @@ class InterferenceRunnerTest(unittest.TestCase):
         self.assertEqual(root_manifest["status"], "failed")
         self.assertEqual(len(failed_samples), 2)
 
+    def test_missing_query_plan_fails_manifest_but_preserves_cleanup(self):
+        """捕获成功查询缺少 plan 时仍发布完整 interference 证据。"""
+        adapters = []
+
+        def adapter_factory(namespace, phase, seed):
+            adapter = FakeAdapter(namespace, omit_plans=True)
+            adapters.append(adapter)
+            return adapter
+
+        def targets_factory(adapter, phase, seed):
+            return {
+                name: fixed_query_target(adapter, name)
+                for name in fixed_phase_schedules(phase, measurement=True)
+            }
+
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, "query plans"):
+                run_interference(
+                    adapter_factory, targets_factory, Path(directory),
+                    scope="diagnostic", phases=FIXED_PHASES[:1],
+                    phase_runner=short_phase_runner,
+                    resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
+                )
+        self.assertTrue(adapters[0].cleaned)
+
+    def test_missing_query_access_details_fails_manifest(self):
+        """捕获成功查询仅有 plan 和 QueryFinish 时仍发布完整证据。"""
+        def adapter_factory(namespace, phase, seed):
+            return FakeAdapter(namespace, omit_query_details=True)
+
+        def targets_factory(adapter, phase, seed):
+            return {
+                name: fixed_query_target(adapter, name)
+                for name in fixed_phase_schedules(phase, measurement=True)
+            }
+
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, "access details"):
+                run_interference(
+                    adapter_factory, targets_factory, Path(directory),
+                    scope="diagnostic", phases=FIXED_PHASES[:1],
+                    phase_runner=short_phase_runner,
+                    resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
+                )
+
     def test_continuous_ingest_success_requires_block_result_evidence(self):
         adapters = []
 
@@ -589,19 +787,52 @@ class InterferenceRunnerTest(unittest.TestCase):
             return {
                 "list": fixed_query_target(adapter, "list"),
                 "preview": fixed_query_target(adapter, "preview"),
-                "continuous_ingest": lambda: success_sample(),
+                "continuous_ingest": deadline_target(lambda: success_sample()),
             }
 
         with tempfile.TemporaryDirectory() as directory:
             with self.assertRaisesRegex(RuntimeError, "BlockResult"):
                 run_interference(
                     adapter_factory, targets_factory, Path(directory) / "interference",
+                    scope="diagnostic",
                     phases=FIXED_PHASES[-1:], phase_runner=short_phase_runner,
                     resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
                     namespace_factory=lambda phase: "jsons3_ingest_" + phase.name,
                 )
 
         self.assertTrue(adapters[0].cleaned)
+
+    def test_each_completed_segment_is_persisted_before_later_snapshot_failure(self):
+        """捕获后置物理快照失败时丢失已形成的逐请求分类。"""
+        def targets_factory(adapter, phase, seed):
+            return {
+                name: fixed_query_target(adapter, name)
+                for name in fixed_phase_schedules(phase, measurement=True)
+            }
+
+        for fail_call, expected_files in (
+            (2, ("warmup-samples.jsonl",)),
+            (3, ("warmup-samples.jsonl", "samples.jsonl")),
+        ):
+            with self.subTest(fail_call=fail_call), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory)
+                with self.assertRaisesRegex(RuntimeError, "snapshot failed"):
+                    run_interference(
+                        lambda namespace, *_: FakeAdapter(
+                            namespace, fail_storage_call=fail_call,
+                        ),
+                        targets_factory, output, scope="diagnostic",
+                        phases=FIXED_PHASES[:1], phase_runner=short_phase_runner,
+                        resource_collector=lambda: {
+                            "cpu": {}, "memory": {}, "io": {},
+                        },
+                    )
+                for name in expected_files:
+                    records = [json.loads(line) for line in (
+                        output / "quiet" / name
+                    ).read_text().splitlines()]
+                    self.assertEqual(len(records), 2)
+                    self.assertEqual({record["status"] for record in records}, {"success"})
 
 
 if __name__ == "__main__":

@@ -46,13 +46,16 @@ class FakeClickHouse:
     """用确定性物理观测替代数据库边界，保留 runner 的真实状态机。"""
 
     def __init__(self, layout="same_table", fragmented_parts=4,
-                 fail_query=False, omit_query_finish=False, fail_restore=False):
+                 fail_query=False, omit_query_finish=False, fail_restore=False,
+                 omit_asset_store=False, omit_query_details=False):
         self.layout = layout
         self.targets = build_layout_catalog(layout).write_tables
         self.fragmented_parts = fragmented_parts
         self.fail_query = fail_query
         self.omit_query_finish = omit_query_finish
         self.fail_restore = fail_restore
+        self.omit_asset_store = omit_asset_store
+        self.omit_query_details = omit_query_details
         self.events = []
         self.paused = set()
         self.merges_enabled = True
@@ -109,7 +112,8 @@ class FakeClickHouse:
             for table in self.targets
         }
         asset_store = (
-            AssetStorageEvidence(2, 300, 0, 0) if self.layout == "asset_ref" else None
+            AssetStorageEvidence(2, 300, 0, 0)
+            if self.layout == "asset_ref" and not self.omit_asset_store else None
         )
         return StorageEvidence(tables, merges, asset_store)
 
@@ -129,8 +133,17 @@ class FakeClickHouse:
         finish_ids = query_ids[:-1] if self.omit_query_finish else query_ids
         return AccessEvidence(
             {query_id: "ReadFromMergeTree" for query_id in query_ids},
-            query_finish={query_id: {"type": "QueryFinish", "exception_code": 0}
+            query_finish={query_id: {"type": "QueryFinish", "exception_code": 0,
+                                     "read_rows": 1, "read_bytes": 100}
                           for query_id in finish_ids},
+            query_details={} if self.omit_query_details else {
+                query_id: {
+                    "kind": "detail", "statement": "SELECT payload FROM events",
+                    "declared_source": "events", "scanned_rows": 1,
+                    "scanned_bytes": 100,
+                }
+                for query_id in query_ids
+            },
         )
 
     def cleanup(self):
@@ -272,6 +285,25 @@ class ClickHousePartStateTest(unittest.TestCase):
         self.assertEqual(set(state.tables), {"events_analytics", "assets"})
         self.assertIn("compressed_bytes", state.tables["assets"])
         self.assertEqual(state.asset_store.available_object_count, 2)
+
+    def test_asset_ref_rejects_missing_asset_store_evidence(self):
+        """捕获 asset_ref 仅有两张表状态却缺少对象存储证据。"""
+        adapter = FakeClickHouse(layout="asset_ref", omit_asset_store=True)
+        adapter.set_merges(False)
+
+        with self.assertRaisesRegex(RuntimeError, "Asset storage evidence"):
+            capture_part_state(adapter)
+
+    def test_successful_part_samples_require_access_details(self):
+        """捕获仅有 plan 和 QueryFinish 的成功样本被视为完整证据。"""
+        adapter = FakeClickHouse(omit_query_details=True)
+        clock = FakeClock()
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, "access details"):
+                run_part_states(
+                    adapter, blocks(), ((QUERY, TRUTH),), Path(directory),
+                    clock=clock, sleep=clock.sleep, poll_interval=0.1,
+                )
 
 
 if __name__ == "__main__":
