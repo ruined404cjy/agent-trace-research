@@ -251,6 +251,37 @@ class FailingIngestEvidenceAdapter(SmokeAdapter):
         return dict(self.failure_evidence)
 
 
+class FailingWriteGateAdapter(SmokeAdapter):
+    """第二个 block 提交成功后，在联合水位门禁抛出原始错误。"""
+
+    def __init__(self, events, input_root):
+        super().__init__(events, input_root)
+        self.ingest_calls = 0
+        self.wait_calls = 0
+        self.wait_error = RuntimeError("injected write gate failure")
+
+    def ingest_block(self, block):
+        self.ingest_calls += 1
+        self.ingested.extend(block)
+        watermark = block[-1]["ingest_seq"] + 1
+        request_body_bytes = 11 if self.ingest_calls == 1 else 13
+        return BlockResult(
+            len(block), watermark, {"events": watermark}, 0.5,
+            write_target_ms={"events": 0.4},
+            logical_target_row_bytes={"events": 17},
+            database_ingest_request_body_bytes={"events": request_body_bytes},
+        )
+
+    def ingest_failure_evidence(self):
+        return {}
+
+    def wait_write_complete(self, watermark):
+        self.wait_calls += 1
+        if self.wait_calls == 2:
+            raise self.wait_error
+        return MaintenanceResult(True, {"events": watermark})
+
+
 class FailingWarmupAdapter(SmokeAdapter):
     """在完整写入证据形成后注入查询失败。"""
 
@@ -591,6 +622,33 @@ class LayoutMatrixUnitTest(unittest.TestCase):
                 write.get("database_ingest_request_body_bytes"), {"events": 24},
             )
             self.assertEqual(write.get("database_ingest_request_body_bytes_total"), 24)
+
+    def test_write_gate_failure_preserves_current_submitted_block_without_completing_it(self):
+        """捕获成功提交后水位门禁失败时当前 block 的 request bytes 丢失。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            input_root, output = root / "input", root / "output"
+            build_smoke_input(input_root)
+            truth, events, identity = load_run_input(input_root)
+            adapter = FailingWriteGateAdapter(events, input_root)
+
+            with self.assertRaisesRegex(RuntimeError, "injected write gate failure") as caught:
+                run_layout(adapter, truth, RunConfig(
+                    input_root=input_root, output=output, engine="fake",
+                    layout="same_table", round_index=0,
+                    round_order=("same_table", "separate", "full_core", "asset_ref"),
+                    measurements=1, batch_measurements=1, input_identity=identity,
+                ))
+
+            manifest = json.loads((output / "run-manifest.json").read_text())
+            write = manifest["write"]
+            self.assertIs(caught.exception.__cause__, adapter.wait_error)
+            self.assertEqual(manifest["status"], "failed")
+            self.assertEqual(write["completed_block_count"], 1)
+            self.assertEqual(write["database_ingest_request_body_bytes"], {"events": 24})
+            self.assertEqual(write["database_ingest_request_body_bytes_total"], 24)
+            self.assertNotIn("block_count", write)
+            self.assertNotIn("blocks", write)
 
     def test_post_ingest_failure_does_not_replace_complete_write_evidence(self):
         """捕获查询失败分支用部分 transport 统计覆盖完整 write 证据。"""

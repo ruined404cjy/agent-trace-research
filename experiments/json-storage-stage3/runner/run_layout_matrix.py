@@ -1342,6 +1342,7 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
     cleanup = None
     asset_removed = config.asset_root is None
     block_evidence = []
+    submitted_block_result = None
     preflight_started = time.perf_counter()
     try:
         if config.verified_events:
@@ -1378,6 +1379,7 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
         for watermark in truth.watermarks:
             block = list(events[previous:watermark])
             block_result = adapter.ingest_block(block)
+            submitted_block_result = block_result
             if (
                 block_result.rows != len(block)
                 or block_result.watermark != watermark
@@ -1391,6 +1393,7 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
             block_evidence.append({
                 "ingest": _as_json(block_result), "visible": _as_json(visible),
             })
+            submitted_block_result = None
             previous = watermark
         write_wall_ms = (time.perf_counter() - ingestion_started) * 1000
         ready = adapter.wait_query_ready(config.query_ready_timeout)
@@ -1477,8 +1480,11 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
         error = exception
         evidence_reader = getattr(adapter, "ingest_failure_evidence", None)
         failure_evidence = evidence_reader() if callable(evidence_reader) else {}
+        submitted_evidence = list(block_evidence)
+        if submitted_block_result is not None:
+            submitted_evidence.append({"ingest": _as_json(submitted_block_result)})
         body_bytes, body_bytes_total = _ingest_request_body_summary(
-            config.layout, block_evidence, failure_evidence,
+            config.layout, submitted_evidence, failure_evidence,
         )
         if body_bytes and "write" not in manifest:
             manifest["write"] = {
