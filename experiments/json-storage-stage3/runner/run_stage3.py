@@ -103,6 +103,15 @@ def _truth_evidence(formal):
     }
 
 
+def _record_formal_evidence(envelope, formal):
+    """在正式 loader 返回后立即保留失败路径仍可发布的输入身份。"""
+    envelope.update({
+        "input": _json_value(formal.identity),
+        "truth": _truth_evidence(formal),
+        "query_catalog_sha256": _query_catalog_sha256(formal),
+    })
+
+
 def _load_json_object(content, label):
     """解析有限 JSON object，拒绝 NaN、Infinity 和非 object 文档。"""
     def reject_constant(value):
@@ -177,6 +186,19 @@ def _require_object(manifest, key):
     return value
 
 
+def _is_int(value, minimum=0):
+    """判断 JSON 值为排除 bool 的有界整数。"""
+    return isinstance(value, int) and not isinstance(value, bool) and value >= minimum
+
+
+def _is_sha256(value):
+    """判断值为小写 SHA-256 十六进制字符串。"""
+    return (
+        isinstance(value, str) and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
+
+
 def _gate_blocks(write, formal):
     """逐块核对 candidate 的行数、水位和联合可见证据。"""
     blocks = write.get("blocks")
@@ -192,16 +214,20 @@ def _gate_blocks(write, formal):
         rows = watermark - previous
         if not isinstance(ingest, dict) or (
             ingest.get("rows"), ingest.get("watermark")
-        ) != (rows, watermark):
+        ) != (rows, watermark) or not all(
+            _is_int(ingest.get(key)) for key in ("rows", "watermark")
+        ):
             raise RuntimeError("candidate ingest block evidence mismatch")
         if set(ingest.get("watermarks", {})) != WATERMARK_KEYS or any(
-            value != watermark for value in ingest["watermarks"].values()
+            not _is_int(value) or value != watermark
+            for value in ingest["watermarks"].values()
         ):
             raise RuntimeError("candidate ingest joint watermark mismatch")
         if not isinstance(visible, dict) or visible.get("completed") is not True:
             raise RuntimeError("candidate visible block evidence is incomplete")
         if set(visible.get("watermarks", {})) != WATERMARK_KEYS or any(
-            value != watermark for value in visible["watermarks"].values()
+            not _is_int(value) or value != watermark
+            for value in visible["watermarks"].values()
         ):
             raise RuntimeError("candidate visible joint watermark mismatch")
         previous = watermark
@@ -217,7 +243,10 @@ def _gate_candidate(child, formal, namespace):
         "measurements": 30, "batch_measurements": 5,
     }
     for key, expected in fixed.items():
-        if manifest.get(key) != expected:
+        value = manifest.get(key)
+        if value != expected or (
+            isinstance(expected, int) and not isinstance(expected, bool) and not _is_int(value)
+        ):
             raise RuntimeError(f"candidate {key} mismatch")
     if manifest.get("input") != _json_value(formal.identity):
         raise RuntimeError("candidate input identity mismatch")
@@ -231,13 +260,76 @@ def _gate_candidate(child, formal, namespace):
         "block_count": formal.truth.block_count,
         "final_watermark": formal.truth.record_count,
     }
-    if any(write.get(key) != value for key, value in expected_write.items()):
+    if any(
+        not _is_int(write.get(key)) or write.get(key) != value
+        for key, value in expected_write.items()
+    ):
         raise RuntimeError("candidate write evidence mismatch")
     _gate_blocks(write, formal)
-    _require_object(manifest, "dataset_audit")
+    dataset = _require_object(manifest, "dataset_audit")
+    dataset_counts = {
+        "row_count": formal.truth.record_count,
+        "duplicate_event_ids": 0,
+        "payload_count": 160,
+        "payload_bytes": 128_450_560,
+    }
+    if (
+        any(not _is_int(dataset.get(key)) or dataset.get(key) != value
+            for key, value in dataset_counts.items())
+        or dataset.get("identity_sha256") != formal.truth.identity_sha256
+        or not _is_int(dataset.get("logical_response_bytes"), 1)
+        or not _is_int(dataset.get("database_protocol_bytes"), 0)
+    ):
+        raise RuntimeError("candidate dataset audit evidence mismatch")
+    targets = dataset.get("physical_targets")
+    if not isinstance(targets, dict) or set(targets) != WATERMARK_KEYS:
+        raise RuntimeError("candidate dataset target evidence is incomplete")
+    for target, expected_rows in (("events_analytics", formal.truth.record_count), ("assets", 160)):
+        evidence = targets.get(target)
+        if (
+            not isinstance(evidence, dict) or not evidence
+            or not _is_int(evidence.get("row_count"))
+            or evidence["row_count"] != expected_rows
+            or not _is_int(evidence.get("duplicate_identities"))
+            or evidence["duplicate_identities"] != 0
+            or not _is_sha256(evidence.get("identity_metadata_sha256"))
+        ):
+            raise RuntimeError("candidate dataset target evidence mismatch")
+    asset_target = targets["assets"]
+    if (
+        not _is_int(asset_target.get("event_mapping_count"))
+        or asset_target["event_mapping_count"] != 160
+        or not _is_sha256(asset_target.get("event_mapping_sha256"))
+    ):
+        raise RuntimeError("candidate Asset mapping audit evidence mismatch")
+
     storage = _require_object(manifest, "storage")
-    if set(storage.get("tables", {})) != WATERMARK_KEYS or not isinstance(storage.get("asset_store"), dict):
+    tables = storage.get("tables")
+    if not isinstance(tables, dict) or set(tables) != WATERMARK_KEYS:
         raise RuntimeError("candidate storage evidence is incomplete")
+    for table, expected_rows in (("events_analytics", formal.truth.record_count), ("assets", 160)):
+        evidence = tables.get(table)
+        if not isinstance(evidence, dict) or not evidence:
+            raise RuntimeError("candidate storage table evidence is empty")
+        for key in ("part_count", "rows", "marks", "compressed_bytes", "uncompressed_bytes"):
+            if not _is_int(evidence.get(key)):
+                raise RuntimeError("candidate storage table evidence is invalid")
+        if evidence["part_count"] <= 0 or evidence["rows"] != expected_rows:
+            raise RuntimeError("candidate storage table row evidence mismatch")
+        if not isinstance(evidence.get("columns"), dict):
+            raise RuntimeError("candidate storage column evidence is missing")
+    if not isinstance(storage.get("merges"), list):
+        raise RuntimeError("candidate merge evidence is missing")
+    asset_store = storage.get("asset_store")
+    expected_asset_store = {
+        "available_object_count": 160, "available_bytes": 128_450_560,
+        "orphan_object_count": 0, "orphan_bytes": 0,
+    }
+    if not isinstance(asset_store, dict) or any(
+        not _is_int(asset_store.get(key)) or asset_store.get(key) != value
+        for key, value in expected_asset_store.items()
+    ):
+        raise RuntimeError("candidate Asset storage evidence mismatch")
 
     query_ids = _read_samples(child)
     access = _require_object(manifest, "access")
@@ -245,13 +337,43 @@ def _gate_candidate(child, formal, namespace):
         evidence = access.get(key)
         if not isinstance(evidence, dict) or set(evidence) != set(query_ids):
             raise RuntimeError(f"candidate {key} does not cover successful samples")
+    for query_id in query_ids:
+        plan = access["plans"][query_id]
+        finish = access["query_finish"][query_id]
+        detail = access["query_details"][query_id]
+        if not isinstance(plan, str) or not plan.strip():
+            raise RuntimeError("candidate query plan is empty")
+        if (
+            not isinstance(finish, dict) or finish.get("type") != "QueryFinish"
+            or not _is_int(finish.get("exception_code")) or finish["exception_code"] != 0
+            or not _is_int(finish.get("read_rows")) or not _is_int(finish.get("read_bytes"))
+        ):
+            raise RuntimeError("candidate QueryFinish evidence is invalid")
+        if (
+            not isinstance(detail, dict) or detail.get("kind") not in {
+                "list", "preview", "detail", "trace", "batch",
+            }
+            or not isinstance(detail.get("statement"), str) or not detail["statement"].strip()
+            or not isinstance(detail.get("payload_selected"), bool)
+            or not isinstance(detail.get("declared_source"), str)
+            or not detail["declared_source"]
+            or not _is_int(detail.get("scanned_rows"))
+            or not _is_int(detail.get("scanned_bytes"))
+            or detail.get("scanned_bytes_status") != "observed"
+            or detail["scanned_rows"] != finish["read_rows"]
+            or detail["scanned_bytes"] != finish["read_bytes"]
+        ):
+            raise RuntimeError("candidate query detail evidence is invalid")
     correctness = _require_object(manifest, "correctness")
     if correctness.get("truth_identity") != formal.truth.identity_sha256:
         raise RuntimeError("candidate truth identity mismatch")
     if (
-        correctness.get("failed_samples") != 0
-        or correctness.get("formal_samples") != len(query_ids)
-        or correctness.get("successful_samples") != len(query_ids)
+        not _is_int(correctness.get("failed_samples"))
+        or correctness["failed_samples"] != 0
+        or not _is_int(correctness.get("formal_samples"), 1)
+        or correctness["formal_samples"] != len(query_ids)
+        or not _is_int(correctness.get("successful_samples"), 1)
+        or correctness["successful_samples"] != len(query_ids)
         or not query_ids
         or correctness.get("response_bytes_validated") is not True
     ):
@@ -263,7 +385,10 @@ def _gate_candidate(child, formal, namespace):
         or maintenance.get("natural_stable_parts") is not True
         or maintenance.get("optimize_final") is not False
         or set(maintenance.get("watermarks", {})) != WATERMARK_KEYS
-        or any(value != formal.truth.record_count for value in maintenance["watermarks"].values())
+        or any(
+            not _is_int(value) or value != formal.truth.record_count
+            for value in maintenance["watermarks"].values()
+        )
     ):
         raise RuntimeError("candidate maintenance evidence mismatch")
     cleanup = _require_object(manifest, "cleanup")
@@ -273,12 +398,39 @@ def _gate_candidate(child, formal, namespace):
         or cleanup.get("asset_directory_removed") is not True
     ):
         raise RuntimeError("candidate cleanup evidence mismatch")
-    for key in ("code", "engine_runtime", "container", "host"):
-        _require_object(manifest, key)
-    if manifest["container"].get("container") != EngineEndpoints().clickhouse_container:
+    code = _require_object(manifest, "code")
+    if not {"runner", "common", "assets", "adapter"}.issubset(code):
+        raise RuntimeError("candidate code evidence roles are incomplete")
+    for evidence in code.values():
+        if (
+            not isinstance(evidence, dict) or not evidence
+            or not isinstance(evidence.get("path"), str) or not evidence["path"]
+            or not _is_int(evidence.get("bytes"), 1)
+            or not _is_sha256(evidence.get("sha256"))
+        ):
+            raise RuntimeError("candidate code evidence is invalid")
+    runtime = _require_object(manifest, "engine_runtime")
+    if (
+        not isinstance(runtime.get("version"), str) or not runtime["version"]
+        or runtime.get("source") != "database-query"
+    ):
+        raise RuntimeError("candidate engine runtime evidence is invalid")
+    container = _require_object(manifest, "container")
+    if container.get("container") != EngineEndpoints().clickhouse_container:
         raise RuntimeError("candidate container identity mismatch")
-    if not manifest["container"].get("image_id"):
+    if (
+        not isinstance(container.get("image"), str) or not container["image"]
+        or not isinstance(container.get("image_id"), str) or not container["image_id"]
+    ):
         raise RuntimeError("candidate container image identity is missing")
+    host = _require_object(manifest, "host")
+    if (
+        not isinstance(host.get("platform"), str) or not host["platform"]
+        or not isinstance(host.get("machine"), str) or not host["machine"]
+        or not _is_int(host.get("cpu_count"), 1)
+        or not _is_int(host.get("memory_total_kib"), 1)
+    ):
+        raise RuntimeError("candidate host evidence is invalid")
 
 
 def _move_new(source, destination):
@@ -292,6 +444,21 @@ def _move_new(source, destination):
     source.replace(destination)
 
 
+def _gate_generation_child(child, formal):
+    """核对最终 generation child 与正式 loader 已验证的同一 bytes 身份。"""
+    manifest = child["_manifest"]
+    if (
+        manifest.get("format") != "agent-trace-json-storage-stage3-generation"
+        or not _is_int(manifest.get("format_version"))
+        or manifest["format_version"] != 1
+        or manifest.get("status") != "complete"
+    ):
+        raise RuntimeError("generation child format or status mismatch")
+    expected = formal.identity.get("generation_manifest")
+    if not isinstance(expected, Mapping) or dict(expected) != child["_identity"]:
+        raise RuntimeError("generation child identity changed after formal validation")
+
+
 def _run_generate(arguments, envelope):
     """在 staging 生成冻结输入，最终复验后完成 envelope。"""
     output = arguments.output.resolve()
@@ -301,12 +468,11 @@ def _run_generate(arguments, envelope):
     for name in ("payloads", "events.jsonl", "truth.json", "generation-manifest.json"):
         _move_new(staging / name, output / name)
     formal = load_formal_input(output)
+    _record_formal_evidence(envelope, formal)
     staging.rmdir()
     child = _read_child(output, output / "generation-manifest.json")
+    _gate_generation_child(child, formal)
     envelope.update({
-        "input": _json_value(formal.identity),
-        "truth": _truth_evidence(formal),
-        "query_catalog_sha256": _query_catalog_sha256(formal),
         "runtime": {"operation": "generate-input", "source": str(source)},
         "child": _child_evidence(child),
         "cleanup": {"staging_removed": True, "staging_exists": False},
@@ -317,7 +483,12 @@ def _run_candidate(arguments, envelope):
     """执行固定 ClickHouse asset_ref candidate 并门禁 child 证据。"""
     output = arguments.output.resolve()
     formal = load_formal_input(arguments.input.resolve())
+    _record_formal_evidence(envelope, formal)
     namespace = f"jsons3_candidate_{uuid.uuid4().hex[:10]}"
+    envelope["namespace_policy"] = {
+        "strategy": "unique-random-suffix", "prefix": "jsons3_candidate_",
+        "namespace": namespace, "reuse": False,
+    }
     assets_root = output / "assets"
     child_root = output / "child"
     endpoints = EngineEndpoints()
@@ -331,13 +502,6 @@ def _run_candidate(arguments, envelope):
         raise RuntimeError("child manifest changed after gate")
     manifest = confirmed["_manifest"]
     envelope.update({
-        "namespace_policy": {
-            "strategy": "unique-random-suffix", "prefix": "jsons3_candidate_",
-            "namespace": namespace, "reuse": False,
-        },
-        "input": _json_value(formal.identity),
-        "truth": _truth_evidence(formal),
-        "query_catalog_sha256": _query_catalog_sha256(formal),
         "runtime": {
             "operation": "candidate", "engine": "clickhouse", "layout": "asset_ref",
             "endpoint": {"host": endpoints.clickhouse_host, "port": endpoints.clickhouse_port},
@@ -354,19 +518,22 @@ def _failed_child(output, operation):
     """失败时尽力记录已存在 child，不掩盖原始异常。"""
     relative = "generation-manifest.json" if operation == "generate-input" else "child/run-manifest.json"
     path = output / relative
-    if not path.is_file():
-        return None
-    content = path.read_bytes()
+    try:
+        if not path.is_file():
+            return None, None
+        content = path.read_bytes()
+    except (OSError, RuntimeError) as error:
+        return None, error
     evidence = {"path": relative, "bytes": len(content),
                 "sha256": hashlib.sha256(content).hexdigest()}
     try:
         manifest = _load_json_object(content, "child manifest")
-    except ValueError:
-        return evidence
+    except ValueError as error:
+        return evidence, error
     for key in ("format", "format_version", "status", "run_id"):
         if key in manifest:
             evidence[key] = manifest[key]
-    return evidence
+    return evidence, None
 
 
 def main(argv=None):
@@ -401,16 +568,26 @@ def main(argv=None):
     except Exception as error:
         envelope["status"] = "failed"
         envelope["error"] = {"type": type(error).__name__, "message": str(error)}
-        child = _failed_child(output, arguments.operation)
+        child, child_error = _failed_child(output, arguments.operation)
         if child is not None:
             envelope["child"] = child
+        if child_error is not None:
+            error.add_note(
+                f"child snapshot failed: {type(child_error).__name__}: {child_error}"
+            )
         if arguments.operation == "generate-input":
             staging = output / ".generating"
             envelope["cleanup"] = {
                 "staging_removed": False,
                 "staging_exists": staging.exists(),
             }
-        write_manifest_atomic(manifest_path, envelope)
+        try:
+            write_manifest_atomic(manifest_path, envelope)
+        except Exception as publication_error:
+            error.add_note(
+                "failed envelope publication failed: "
+                f"{type(publication_error).__name__}: {publication_error}"
+            )
         raise
     return 0
 
