@@ -1587,6 +1587,8 @@ class InterferenceCliTests(unittest.TestCase):
                 self.assertEqual(failed["status"], "failed")
                 self.assertEqual(failed["truth"]["record_count"], 48_534)
                 self.assertIn("query_catalog_sha256", failed)
+                if name == "block_count":
+                    self.assertEqual(failed["interference"]["eligible_block_count"], 44)
 
         for name, options in (
             ("runtime", {"runtime": {"version": "", "source": "database-query"}}),
@@ -1608,6 +1610,32 @@ class InterferenceCliTests(unittest.TestCase):
                 if name == "artifact":
                     self.assertTrue(failed["cleanup"]["asset_directory_removed"])
                     self.assertFalse((Path(directory) / "attempt-1" / "assets").exists())
+
+    def test_non_json_metadata_publishes_a_safe_snapshot_failure(self):
+        """捕获 NaN 或对象让 failed envelope 发布失败并掩盖 metadata 门禁异常。"""
+        mutations = {
+            "nan": lambda value: value.update(eligible_block_count=math.nan),
+            "object": lambda value: value.update(eligible_block_count=object()),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                with self.assertRaisesRegex(
+                    RuntimeError, "interference factory metadata is not JSON-safe",
+                ):
+                    self.run_interference_cli(Path(directory), factory_mutate=mutate)
+                failed = json.loads(
+                    (Path(directory) / "attempt-1" / "run-manifest.json").read_text()
+                )
+                self.assertEqual(failed["status"], "failed")
+                self.assertNotIn("interference", failed)
+                self.assertEqual(failed["interference_snapshot"], {
+                    "status": "failed",
+                    "error": {
+                        "type": "RuntimeError",
+                        "message": "interference factory metadata is not JSON-safe",
+                    },
+                })
+                self.assertEqual(failed["error"], failed["interference_snapshot"]["error"])
 
     def test_runner_failure_records_partial_namespaces_and_preserves_assets(self):
         """捕获 child 已发布后 runner 失败丢失 phase namespace 或提前删除 Asset 证据。"""

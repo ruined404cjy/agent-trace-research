@@ -76,6 +76,16 @@ def _json_value(value):
     return value
 
 
+def _strict_json_snapshot(value, label):
+    """形成拒绝非有限数值和非 JSON 对象的隔离副本。"""
+    try:
+        return json.loads(json.dumps(
+            _json_value(value), ensure_ascii=False, allow_nan=False,
+        ))
+    except (TypeError, ValueError) as error:
+        raise RuntimeError(f"{label} is not JSON-safe") from error
+
+
 def _file_identity(path):
     """读取一次文件并返回不可变 bytes 身份。"""
     path = Path(path).resolve()
@@ -1017,11 +1027,7 @@ def _remove_asset_directory(asset_root):
 
 def _gate_interference_metadata(metadata, formal):
     """复制并门禁固定 factory metadata，拒绝类型或冻结输入漂移。"""
-    snapshot = _json_value(metadata)
-    try:
-        snapshot = json.loads(json.dumps(snapshot, ensure_ascii=False, allow_nan=False))
-    except (TypeError, ValueError) as error:
-        raise RuntimeError("interference factory metadata is not JSON-safe") from error
+    snapshot = _strict_json_snapshot(metadata, "interference factory metadata")
     eligible = production._continuous_blocks(formal)
     expected = {
         "selection_rules": {
@@ -1102,8 +1108,16 @@ def _run_interference(arguments, envelope):
     adapter_factory, targets_factory, metadata = production.interference_factories(
         formal, layout, asset_root, endpoints,
     )
-    metadata = _gate_interference_metadata(metadata, formal)
+    try:
+        metadata = _strict_json_snapshot(metadata, "interference factory metadata")
+    except RuntimeError as error:
+        envelope["interference_snapshot"] = {
+            "status": "failed",
+            "error": {"type": type(error).__name__, "message": str(error)},
+        }
+        raise
     envelope["interference"] = metadata
+    _gate_interference_metadata(metadata, formal)
     child_root = output / "child"
     run_interference.run_interference(
         adapter_factory, targets_factory, child_root, scope="formal",
