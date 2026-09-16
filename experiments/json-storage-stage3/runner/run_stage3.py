@@ -219,6 +219,23 @@ def _finite_number(value, minimum=0):
     return (type(value) in {int, float} and math.isfinite(value) and value >= minimum)
 
 
+def _matches_fixed_json(value, expected):
+    """按 JSON 节点类型和值核对固定结构。"""
+    if type(value) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return set(value) == set(expected) and all(
+            _matches_fixed_json(value[key], item) for key, item in expected.items()
+        )
+    if isinstance(expected, list):
+        return len(value) == len(expected) and all(
+            _matches_fixed_json(item, wanted) for item, wanted in zip(value, expected)
+        )
+    if isinstance(expected, float) and not math.isfinite(value):
+        return False
+    return value == expected
+
+
 def _artifact_identity(output, child_root, path):
     """读取 child 内 artifact，并返回相对 production output 的 bytes 身份。"""
     output, child_root, path = map(lambda item: Path(item).resolve(), (output, child_root, path))
@@ -234,7 +251,8 @@ def _artifact_identity(output, child_root, path):
             "sha256": hashlib.sha256(content).hexdigest()}
 
 
-def _parse_interference_raw(path, schedules, query_scenarios=None, write_tables=None):
+def _parse_interference_raw(path, schedules, query_scenarios=None, write_tables=None, *,
+                            continuous_block_rows=None, continuous_watermarks=None):
     """从完整 raw JSONL 重算各 stream 计数和成功目标证据。"""
     path = Path(path)
     if not path.is_file():
@@ -259,7 +277,10 @@ def _parse_interference_raw(path, schedules, query_scenarios=None, write_tables=
         if not rows:
             raise RuntimeError("interference raw stream is missing")
         schedule = schedules[stream]
-        if [row.get("sequence") for row in rows] != list(range(len(rows))):
+        sequences = [row.get("sequence") for row in rows]
+        if any(type(value) is not int or value < 0 for value in sequences) or sequences != list(
+            range(len(rows))
+        ):
             raise RuntimeError("interference raw sequence is not contiguous")
         counts = {name: 0 for name in ("started", "completed", "success", "failed",
                                        "timed_out", "dropped", "late")}
@@ -301,8 +322,14 @@ def _parse_interference_raw(path, schedules, query_scenarios=None, write_tables=
                 continue
             sample = row.get("sample")
             if stream == "continuous_ingest":
-                if not isinstance(sample, dict) or not _is_int(sample.get("rows"), 1) or not _is_int(
-                    sample.get("watermark")
+                if (not isinstance(sample, dict)
+                        or not _is_int(continuous_block_rows, 1)
+                        or not isinstance(continuous_watermarks, (set, frozenset))
+                        or not continuous_watermarks
+                        or sample.get("rows") != continuous_block_rows
+                        or not _is_int(sample.get("rows"), 1)
+                        or not _is_int(sample.get("watermark"), 1)
+                        or sample["watermark"] not in continuous_watermarks
                 ) or not isinstance(sample.get("watermarks"), dict) or any(
                     not _is_int(value) for value in sample["watermarks"].values()
                 ) or write_tables is not None and (
@@ -370,7 +397,8 @@ def _gate_interference_summary(summary, parsed, schedules):
                 or not _finite_number(throughput)
                 or not math.isclose(throughput, success_count / wall, rel_tol=1e-9, abs_tol=1e-12)
                 or not isinstance(latency, dict)
-                or latency.get("p99_minimum_successes") != run_interference.P99_MINIMUM_SUCCESSES
+                or not _is_int(latency.get("p99_minimum_successes"))
+                or latency["p99_minimum_successes"] != run_interference.P99_MINIMUM_SUCCESSES
                 or latency.get("p99_status") != (
                     "publishable" if success_count >= run_interference.P99_MINIMUM_SUCCESSES
                     else "unavailable_insufficient_successes")
@@ -439,6 +467,11 @@ def _verify_interference_artifacts(output, artifacts):
 
 def _gate_interference(child, formal, layout):
     """从 child bytes 独立门禁五阶段 formal interference 证据。"""
+    root_path = Path(child["_path"]).resolve()
+    output = root_path.parents[1]
+    if (child.get("_relative") != "child/run-manifest.json"
+            or root_path != output / "child" / "run-manifest.json"):
+        raise RuntimeError("interference child manifest path is invalid")
     manifest = child["_manifest"]
     phases = tuple(run_interference.FIXED_PHASES)
     names = [phase.name for phase in phases]
@@ -464,11 +497,14 @@ def _gate_interference(child, formal, layout):
     embedded = manifest.get("phases")
     if not isinstance(embedded, list) or len(embedded) != len(phases):
         raise RuntimeError("interference root phases are incomplete")
-    output = Path(child["_path"]).resolve().parents[1]
-    child_root = Path(child["_path"]).resolve().parent
+    child_root = root_path.parent
     artifacts = [{"path": child["_relative"], **child["_identity"]}]
     phase_evidence, namespaces = [], []
     catalog = common.build_layout_catalog(layout)
+    continuous_blocks = production._continuous_blocks(formal)
+    continuous_watermarks = frozenset(
+        int(block[-1]["ingest_seq"]) + 1 for _, block in continuous_blocks
+    )
     for phase, root_phase in zip(phases, embedded):
         phase_path = child_root / phase.name / "run-manifest.json"
         identity = _artifact_identity(output, child_root, phase_path)
@@ -497,7 +533,7 @@ def _gate_interference(child, formal, layout):
         schedules = {segment: run_interference._json_value(
             run_interference.fixed_phase_schedules(phase, measurement=segment == "measurement"))
             for segment in ("warmup", "measurement")}
-        if phase_manifest.get("schedules") != schedules:
+        if not _matches_fixed_json(phase_manifest.get("schedules"), schedules):
             raise RuntimeError("interference schedules mismatch")
         coverage = phase_manifest.get("execution_coverage")
         if not isinstance(coverage, dict) or not _finite_number(
@@ -539,6 +575,8 @@ def _gate_interference(child, formal, layout):
             raw_evidence.append(_artifact_identity(output, child_root, raw_path))
             parsed = _parse_interference_raw(
                 raw_path, schedules[segment], query_scenarios, catalog.write_tables,
+                continuous_block_rows=formal.truth.block_size,
+                continuous_watermarks=continuous_watermarks,
             )
             _gate_interference_summary(phase_manifest.get(summary_key), parsed, schedules[segment])
             for stream, item in parsed.items():

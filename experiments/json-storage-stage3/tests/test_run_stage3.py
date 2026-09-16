@@ -984,8 +984,8 @@ def interference_raw_sample(stream, sequence, query_id=None):
     """构造一条可独立门禁的成功 raw 请求。"""
     nested = None
     if stream == "continuous_ingest":
-        nested = {"rows": 256, "watermark": 48_790,
-                  "watermarks": {"events_analytics": 48_790}, "wall_ms": 1.0,
+        nested = {"rows": 256, "watermark": 27_904,
+                  "watermarks": {"events_analytics": 27_904}, "wall_ms": 1.0,
                   "write_target_ms": {}, "asset_publish_ms": 0.0,
                   "logical_target_row_bytes": {}, "database_ingest_request_body_bytes": {},
                   "asset_raw_object_bytes": 0}
@@ -1001,6 +1001,37 @@ def interference_raw_sample(stream, sequence, query_id=None):
             "completed_offset_seconds": float(sequence) + 0.1, "duration_ms": 100.0,
             "application_ready_ms": 100.0, "status": "success", "late_by_ms": 0.0,
             "sample": nested, "error": None}
+
+
+def interference_formal_fixture():
+    """构造能通过真实 continuous block 选择器的最小正式输入。"""
+    blocks = []
+    for index in range(153):
+        row = {
+            "project_id": "outside-query-window",
+            "start_time": "2026-01-01T00:00:00.000Z",
+            "payload_path": "payload.bin" if index >= 108 else None,
+            "ingest_seq": (index + 1) * 256 - 1,
+        }
+        blocks.append((row,) * 256)
+    return SimpleNamespace(
+        truth=SimpleNamespace(
+            block_size=256,
+            query_window={
+                "project_id": "query-project",
+                "start_time": "2026-02-01T00:00:00.000Z",
+                "end_time": "2026-03-01T00:00:00.000Z",
+            },
+        ),
+        main_blocks=tuple(blocks),
+        main_queries=tuple(
+            (QuerySpec(kind, {"cohort": "main"} if kind == "batch" else {}),
+             SimpleNamespace(scenario=scenario))
+            for scenario, kind in (("list:first", "list"), ("preview:first", "preview"),
+                                   ("detail:text_2m", "detail"), ("trace:p95", "trace"),
+                                   ("batch:main", "batch"))
+        ),
+    )
 
 
 def valid_interference_tree(output, layout="same_table"):
@@ -1113,20 +1144,14 @@ class InterferenceProductionGateTests(unittest.TestCase):
         if mutate:
             mutate(output, child["_manifest"])
             child = run_stage3._read_child(output, output / "child" / "run-manifest.json")
-        parser = patch.object(run_stage3, "_parse_interference_raw", side_effect=lambda path, schedules, *_: (
+        parser = patch.object(run_stage3, "_parse_interference_raw", side_effect=lambda path, schedules, *_, **__: (
             parsed[Path(path).parent.name]["warmup" if Path(path).name.startswith("warmup")
                                             else "measurement"]
         ))
         parser.start()
         self.addCleanup(parser.stop)
         self.addCleanup(directory.cleanup)
-        self.formal = SimpleNamespace(main_queries=tuple(
-            (QuerySpec(kind, {"cohort": "main"} if kind == "batch" else {}),
-             SimpleNamespace(scenario=scenario))
-            for scenario, kind in (("list:first", "list"), ("preview:first", "preview"),
-                                   ("detail:text_2m", "detail"), ("trace:p95", "trace"),
-                                   ("batch:main", "batch"))
-        ))
+        self.formal = interference_formal_fixture()
         return output, child
 
     def test_gate_accepts_exact_five_phase_formal_evidence_and_rechecks_artifacts(self):
@@ -1188,6 +1213,22 @@ class InterferenceProductionGateTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "scheduled count"):
                 run_stage3._parse_interference_raw(path, one)
 
+    def test_raw_parser_requires_nonnegative_integer_sequences(self):
+        """捕获 bool、float 或负数 sequence 冒充从零连续的整数序列。"""
+        schedule = {"list": {"name": "list", "rate_per_second": 1.0,
+                             "duration_seconds": 1.0, "workers": 1,
+                             "timeout_seconds": 1.0, "late_tolerance_seconds": 0.05,
+                             "mode": "fixed"}}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "raw.jsonl"
+            for sequence in (False, 0.0, -1):
+                with self.subTest(sequence=sequence):
+                    path.write_text(json.dumps(interference_raw_sample(
+                        "list", sequence, "q1",
+                    )) + "\n")
+                    with self.assertRaisesRegex(RuntimeError, "sequence"):
+                        run_stage3._parse_interference_raw(path, schedule)
+
     def test_raw_parser_rejects_query_mapping_and_missing_continuous_block_result(self):
         fixed = {"list": {"name": "list", "rate_per_second": 1.0,
                            "duration_seconds": 1.0, "workers": 1,
@@ -1240,6 +1281,49 @@ class InterferenceProductionGateTests(unittest.TestCase):
                     path, continuous, {}, ("events",),
                 )
 
+    def test_raw_parser_binds_continuous_results_to_formal_blocks_and_layout_targets(self):
+        """捕获短块、未知水位或布局写目标漂移仍被认定为正式持续写入。"""
+        continuous = {"continuous_ingest": {"name": "continuous_ingest",
+                                              "rate_per_second": None,
+                                              "duration_seconds": 1.0, "workers": 1,
+                                              "timeout_seconds": 1.0,
+                                              "late_tolerance_seconds": 0.05,
+                                              "mode": "continuous"}}
+        eligible_watermarks = {27_904, 28_160}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "raw.jsonl"
+            for layout in ("same_table", "separate", "full_core", "asset_ref"):
+                with self.subTest(layout=layout):
+                    tables = build_layout_catalog(layout).write_tables
+                    row = interference_raw_sample("continuous_ingest", 0)
+                    row["sample"]["watermarks"] = {table: 27_904 for table in tables}
+                    path.write_text(json.dumps(row) + "\n")
+                    parsed = run_stage3._parse_interference_raw(
+                        path, continuous, {}, tables,
+                        continuous_block_rows=256,
+                        continuous_watermarks=eligible_watermarks,
+                    )
+                    self.assertEqual(
+                        parsed["continuous_ingest"]["counts"]["successful_requests"], 1,
+                    )
+            tables = build_layout_catalog("same_table").write_tables
+            for name, rows, watermark in (("short_rows", 1, 27_904),
+                                          ("zero_watermark", 256, 0),
+                                          ("unknown_watermark", 256, 99_999)):
+                with self.subTest(name=name):
+                    row = interference_raw_sample("continuous_ingest", 0)
+                    row["sample"].update(
+                        rows=rows, watermark=watermark,
+                        watermarks={table: watermark for table in tables},
+                    )
+                    path.write_text(json.dumps(row) + "\n")
+                    with self.assertRaisesRegex(RuntimeError, "BlockResult"):
+                        run_stage3._parse_interference_raw(
+                            path, continuous, {}, tables,
+                            continuous_block_rows=256,
+                            continuous_watermarks=eligible_watermarks,
+                        )
+
     def test_access_gate_rejects_query_ids_reused_between_segments(self):
         sample = interference_raw_sample("list", 0, "duplicate")["sample"]
         with self.assertRaisesRegex(RuntimeError, "duplicated across segments"):
@@ -1275,6 +1359,54 @@ class InterferenceProductionGateTests(unittest.TestCase):
                 output, child = self.run_gate(cases(name))
                 with self.assertRaises(RuntimeError):
                     run_stage3._gate_interference(child, self.formal, "same_table")
+
+    def test_gate_uses_formal_continuous_selection_as_single_source(self):
+        """捕获 gate 绕过 production 正式 block 选择器并复制选择算法。"""
+        _, child = self.run_gate()
+        with patch.object(
+            production, "_continuous_blocks",
+            side_effect=RuntimeError("formal continuous block selection failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "formal continuous block selection failed"):
+                run_stage3._gate_interference(child, self.formal, "same_table")
+
+    def test_gate_rejects_type_coerced_schedules_and_p99_minimum(self):
+        """捕获同步篡改 root/phase 后 bool、float 仍通过固定类型契约。"""
+        def mutate_schedule(output, root, field, value):
+            phase = root["phases"][1]
+            phase["schedules"]["warmup"]["detail_2m"][field] = value
+            run_stage3.write_manifest_atomic(
+                output / "child" / phase["phase"] / "run-manifest.json", phase,
+            )
+            run_stage3.write_manifest_atomic(output / "child" / "run-manifest.json", root)
+
+        for field, value in (("rate_per_second", True), ("workers", 1.0)):
+            with self.subTest(field=field):
+                output, child = self.run_gate(
+                    lambda output, root: mutate_schedule(output, root, field, value),
+                )
+                with self.assertRaisesRegex(RuntimeError, "schedules"):
+                    run_stage3._gate_interference(child, self.formal, "same_table")
+
+        def mutate_p99(output, root):
+            phase = root["phases"][0]
+            phase["warmup"]["list"]["latency_ms"]["p99_minimum_successes"] = 1000.0
+            run_stage3.write_manifest_atomic(
+                output / "child" / phase["phase"] / "run-manifest.json", phase,
+            )
+            run_stage3.write_manifest_atomic(output / "child" / "run-manifest.json", root)
+
+        output, child = self.run_gate(mutate_p99)
+        with self.assertRaisesRegex(RuntimeError, "publication evidence"):
+            run_stage3._gate_interference(child, self.formal, "same_table")
+
+    def test_gate_requires_fixed_child_manifest_path(self):
+        """捕获 rogue child 树通过 gate 后又被 artifact verifier 拒绝。"""
+        output, _ = self.run_gate()
+        (output / "child").rename(output / "rogue")
+        child = run_stage3._read_child(output, output / "rogue" / "run-manifest.json")
+        with self.assertRaisesRegex(RuntimeError, "child manifest path"):
+            run_stage3._gate_interference(child, self.formal, "same_table")
 
 
 if __name__ == "__main__":
