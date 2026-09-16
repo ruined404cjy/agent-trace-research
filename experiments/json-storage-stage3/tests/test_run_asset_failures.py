@@ -146,7 +146,8 @@ class FakeFaultInjector:
             "pending",
         )
 
-    def prepare(self, case, fixture, *, adapter, catalog, store):
+    def prepare(self, case, fixture, *, context):
+        catalog, store = context.catalog, context.store
         if case.name == "upload_then_db_failure":
             return
         if case.name == "publish_failure":
@@ -155,7 +156,8 @@ class FakeFaultInjector:
         stored = store.publish_bytes(fixture.record.sha256, fixture.payload)
         catalog.publish(fixture.reference, self.available(fixture, stored))
 
-    def inject(self, case, fixture, *, adapter, catalog, store):
+    def inject(self, case, fixture, *, context):
+        catalog, store = context.catalog, context.store
         asset_id = fixture.record.sha256
         if case.name == "missing":
             store.object_path(asset_id).unlink()
@@ -194,7 +196,8 @@ class FakeFaultInjector:
 
         return PublishFailure()
 
-    def recover(self, case, fixture, *, adapter, catalog, store):
+    def recover(self, case, fixture, *, context):
+        catalog, store = context.catalog, context.store
         asset_id = fixture.record.sha256
         if case.name == "missing":
             stored = store.publish_bytes(asset_id, fixture.payload)
@@ -220,37 +223,36 @@ class FakeFaultInjector:
 class MissingFaultEffectInjector(FakeFaultInjector):
     """省略 missing 的真实故障动作，验证 manifest 不接受空注入。"""
 
-    def inject(self, case, fixture, *, adapter, catalog, store):
+    def inject(self, case, fixture, *, context):
         if case.name == "missing":
             return
-        return super().inject(
-            case, fixture, adapter=adapter, catalog=catalog, store=store,
-        )
+        return super().inject(case, fixture, context=context)
 
 
 class ExplodingFaultInjector(FakeFaultInjector):
     """在对象已创建后抛出异常，验证 finally 路径仍清理资源。"""
 
-    def inject(self, case, fixture, *, adapter, catalog, store):
-        super().inject(case, fixture, adapter=adapter, catalog=catalog, store=store)
+    def inject(self, case, fixture, *, context):
+        super().inject(case, fixture, context=context)
         raise RuntimeError("injected fault injector failure")
 
 
 class IncorrectPublishRecoveryInjector(FakeFaultInjector):
     """将失败发布错误恢复为 available，验证 runner 读取真实最终状态。"""
 
-    def recover(self, case, fixture, *, adapter, catalog, store):
-        super().recover(case, fixture, adapter=adapter, catalog=catalog, store=store)
+    def recover(self, case, fixture, *, context):
+        super().recover(case, fixture, context=context)
         if case.name == "publish_failure":
-            catalog.record = replace(catalog.record, status="available")
+            context.catalog.record = replace(context.catalog.record, status="available")
 
 
 class ForgedOrphanInjector(FakeFaultInjector):
     """让 catalog 声明上传对象可达，同时保留 runner 不可读取的伪报。"""
 
-    def inject(self, case, fixture, *, adapter, catalog, store):
-        super().inject(case, fixture, adapter=adapter, catalog=catalog, store=store)
+    def inject(self, case, fixture, *, context):
+        super().inject(case, fixture, context=context)
         if case.name == "upload_then_db_failure":
+            catalog, store = context.catalog, context.store
             catalog.record = AssetRecord(
                 fixture.record.sha256,
                 fixture.record.sha256,
@@ -261,33 +263,59 @@ class ForgedOrphanInjector(FakeFaultInjector):
             )
             self.reported_orphans = (store.object_path(fixture.record.sha256),)
 
-    def reconcile(self, case, fixture, *, adapter, catalog, store):
+    def reconcile(self, case, fixture, *, context):
         return {"orphan_count": 1, "orphan_paths": self.reported_orphans}
 
 
 class ForgedLifecycleInjector(FakeFaultInjector):
     """伪造 missing 的转换和恢复字段，但不执行对应恢复。"""
 
-    def inject(self, case, fixture, *, adapter, catalog, store):
-        super().inject(case, fixture, adapter=adapter, catalog=catalog, store=store)
+    def inject(self, case, fixture, *, context):
+        super().inject(case, fixture, context=context)
         return {"before": "fabricated", "after": "fabricated"}
 
-    def recover(self, case, fixture, *, adapter, catalog, store):
+    def recover(self, case, fixture, *, context):
         if case.name == "missing":
             return "claimed_recovery_without_action"
-        return super().recover(
-            case, fixture, adapter=adapter, catalog=catalog, store=store,
-        )
+        return super().recover(case, fixture, context=context)
 
 
 class CatalogOnlyPublishFailureInjector(FakeFaultInjector):
     """只写入 failed catalog 行，不尝试对象发布。"""
 
-    def inject(self, case, fixture, *, adapter, catalog, store):
+    def inject(self, case, fixture, *, context):
         if case.name != "publish_failure":
-            return super().inject(
-                case, fixture, adapter=adapter, catalog=catalog, store=store,
-            )
+            return super().inject(case, fixture, context=context)
+        catalog = context.catalog
+        catalog.record = replace(catalog.record, status="failed", error_category="failed")
+
+
+class PrematureFaultInjector(FakeFaultInjector):
+    """在 prepare 阶段提前实施故障，inject 本身不执行动作。"""
+
+    def prepare(self, case, fixture, *, context):
+        super().prepare(case, fixture, context=context)
+        super().inject(case, fixture, context=context)
+
+    def inject(self, case, fixture, *, context):
+        return
+
+
+class ForgedPublishObservationInjector(FakeFaultInjector):
+    """不发布对象，只尝试向 store 写入伪造的 publish 记录。"""
+
+    saw_public_attempts = None
+
+    def inject(self, case, fixture, *, context):
+        if case.name != "publish_failure":
+            return super().inject(case, fixture, context=context)
+        catalog, store = context.catalog, context.store
+        self.saw_public_attempts = hasattr(store, "publish_attempts")
+        getattr(store, "publish_attempts", []).append({
+            "asset_id": fixture.record.sha256,
+            "error": "failed",
+            "final_object_exists": False,
+        })
         catalog.record = replace(catalog.record, status="failed", error_category="failed")
 
 
@@ -319,23 +347,49 @@ class AssetFailureRunnerTest(unittest.TestCase):
         self.assertFalse(results["publish_failure"].resolver["content_visible"])
 
     def test_catalog_records_runner_owned_labels_and_catalog_transitions(self):
-        """捕获 injector 自报标签或非受限 catalog 状态进入 complete manifest。"""
+        """捕获固定标签或 catalog 转换偏离六种故障契约。"""
+        expected = {
+            "missing": (
+                "remove_published_object", "restore_missing_object", "available",
+                {"available"}, {"available"},
+            ),
+            "corrupt": (
+                "modify_published_bytes", "replace_corrupt_object", "available",
+                {"available"}, {"available"},
+            ),
+            "metadata_mismatch": (
+                "replace_catalog_metadata", "restore_catalog_metadata", "available",
+                {"available"}, {"available"},
+            ),
+            "upload_then_db_failure": (
+                "fail_after_object_upload", "remove_orphan_object", "absent",
+                {"absent"}, {"absent"},
+            ),
+            "publish_failure": (
+                "fail_pending_publication", "confirm_failed_publication", "pending",
+                {"failed"}, {"failed"},
+            ),
+            "delete_failure": (
+                "fail_deleting_object_removal", "confirm_delete_failure_state", "available",
+                {"deleting", "failed"}, {"deleting", "failed"},
+            ),
+        }
         with tempfile.TemporaryDirectory() as directory:
             results = self.run_catalog(Path(directory), FakeHarness(), FakeFaultInjector())
 
         for case_name, result in results.items():
-            contract = runner.CASE_SPECS[case_name]
-            self.assertEqual(result.injection_point, contract.injection_point)
-            self.assertEqual(result.recovery_actions, (contract.recovery_action,))
+            label, recovery, prepared, injected, recovered = expected[case_name]
+            self.assertEqual(result.injection_point, label)
+            self.assertEqual(result.recovery_actions, (recovery,))
             self.assertEqual(result.asset_id, result.sha256)
             self.assertEqual(len(result.catalog_transitions), 2)
-            self.assertEqual(result.catalog_transitions[0]["phase"], "injection")
-            self.assertEqual(result.catalog_transitions[1]["phase"], "recovery")
-            self.assertTrue(all(
-                transition["before"] in runner.CATALOG_STATUSES
-                and transition["after"] in runner.CATALOG_STATUSES
-                for transition in result.catalog_transitions
-            ))
+            injection, recovery_transition = result.catalog_transitions
+            self.assertEqual(injection["phase"], "injection")
+            self.assertEqual(recovery_transition["phase"], "recovery")
+            self.assertEqual(injection["before"], prepared)
+            self.assertIn(injection["after"], injected)
+            self.assertIn(recovery_transition["before"], injected)
+            self.assertIn(recovery_transition["after"], recovered)
 
     def test_catalog_isolates_namespaces_and_object_directories_and_publishes_manifest(self):
         """捕获 case 复用资源、删除主矩阵目录或遗漏逐 case cleanup 证据。"""
@@ -513,6 +567,83 @@ class AssetFailureRunnerTest(unittest.TestCase):
         self.assertEqual(len(observation["publish_attempts"]), 1)
         self.assertEqual(observation["publish_attempts"][0]["error"], "failed")
         self.assertFalse(observation["publish_attempts"][0]["final_object_exists"])
+
+    def test_catalog_rejects_fault_moved_into_prepare(self):
+        """捕获任一 case 的 prepare 已破坏基线而 inject 为空操作。"""
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            with self.assertRaisesRegex(RuntimeError, "prepared"):
+                self.run_catalog(workspace, FakeHarness(), PrematureFaultInjector())
+
+            manifest = json.loads((workspace / "run-manifest.json").read_text("utf-8"))
+            self.assertEqual(manifest["status"], "failed")
+            self.assertEqual(len(manifest["results"]), len(runner.FAILURE_CASE_NAMES))
+            self.assertTrue(all(
+                item["injection_point"] is None for item in manifest["results"]
+            ))
+
+    def test_catalog_rejects_forged_publish_observation_without_real_call(self):
+        """捕获 injector 伪造 publish 记录掩盖底层发布调用数为零。"""
+        stores = {}
+
+        class CountingStore(assets.LocalAssetStore):
+            def __init__(self, root):
+                super().__init__(root)
+                self.publish_calls = 0
+
+            def publish_bytes(self, asset_id, payload):
+                self.publish_calls += 1
+                return super().publish_bytes(asset_id, payload)
+
+        def store_factory(root):
+            store = CountingStore(root)
+            stores[root.parent.name] = store
+            return store
+
+        injector = ForgedPublishObservationInjector()
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            with self.assertRaisesRegex(RuntimeError, "publish_failure"):
+                runner.run_failure_catalog(
+                    workspace,
+                    adapter_factory=FakeHarness().adapter_factory,
+                    catalog_factory=FakeHarness.catalog_factory,
+                    fault_injector=injector,
+                    namespace_factory=FakeHarness.namespace_factory,
+                    store_factory=store_factory,
+                )
+
+            manifest = json.loads((workspace / "run-manifest.json").read_text("utf-8"))
+            self.assertEqual(manifest["status"], "failed")
+            self.assertFalse(injector.saw_public_attempts)
+            self.assertEqual(stores["publish_failure"].publish_calls, 0)
+
+    def test_fixture_factory_failure_publishes_failed_manifest_with_cleanup(self):
+        """捕获 fixture 构造异常跳过 case 诊断和最终 failed manifest。"""
+        def fixture_factory(case):
+            if case.name == "missing":
+                raise RuntimeError("fixture construction failed")
+            return runner.build_failure_fixture(case)
+
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            with self.assertRaisesRegex(RuntimeError, "missing required evidence"):
+                runner.run_failure_catalog(
+                    workspace,
+                    adapter_factory=FakeHarness().adapter_factory,
+                    catalog_factory=FakeHarness.catalog_factory,
+                    fault_injector=FakeFaultInjector(),
+                    namespace_factory=FakeHarness.namespace_factory,
+                    fixture_factory=fixture_factory,
+                )
+
+            manifest = json.loads((workspace / "run-manifest.json").read_text("utf-8"))
+            missing = next(item for item in manifest["results"] if item["case"] == "missing")
+            self.assertEqual(manifest["status"], "failed")
+            self.assertEqual(len(manifest["results"]), 6)
+            self.assertIn("fixture construction failed", missing["execution_error"])
+            self.assertTrue(missing["cleanup"]["namespace_removed"])
+            self.assertTrue(missing["cleanup"]["object_directory_removed"])
 
 
 if __name__ == "__main__":

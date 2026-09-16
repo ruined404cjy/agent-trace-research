@@ -5,13 +5,13 @@ import shutil
 import uuid
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Callable, Protocol
+from typing import Protocol
 
 from assets import (
     AssetCatalogReader, AssetError, AssetReference, AssetResolver, LocalAssetStore,
     StoredObject,
 )
-from common import PayloadRecord
+from common import CleanupResult, PayloadRecord
 from run_layout_matrix import write_manifest_atomic
 
 
@@ -44,46 +44,40 @@ class CaseSpec:
     """保存 runner 生成的固定标签与前后置条件。"""
     injection_point: str
     recovery_action: str
-    prepared_status: str
+    prepared: ExpectedState
     injected: ExpectedState
     recovered: ExpectedState
 
 
 def _state(statuses, errors, orphans, exists, visible=None, publish_errors=None):
     """构造简洁的固定状态规则。"""
-    return ExpectedState(
-        frozenset(statuses),
-        frozenset(errors),
-        orphans,
-        exists,
-        visible,
-        None if publish_errors is None else frozenset(publish_errors),
-    )
+    return ExpectedState(frozenset(statuses), frozenset(errors), orphans, exists, visible,
+                         None if publish_errors is None else frozenset(publish_errors))
 
 
+AVAILABLE = _state({"available"}, {None}, 0, True, True)
+ABSENT = _state({"absent"}, {"missing"}, 0, False, False)
+PENDING = _state({"pending"}, {"pending"}, 0, False, True)
 CASE_SPECS = {
     "missing": CaseSpec(
-        "remove_published_object", "restore_missing_object", "available",
-        _state({"available"}, {"missing"}, 0, False, True),
-        _state({"available"}, {None}, 0, True)),
+        "remove_published_object", "restore_missing_object", AVAILABLE,
+        _state({"available"}, {"missing"}, 0, False, True), AVAILABLE),
     "corrupt": CaseSpec(
-        "modify_published_bytes", "replace_corrupt_object", "available",
-        _state({"available"}, {"corrupt"}, 0, True, True),
-        _state({"available"}, {None}, 0, True)),
+        "modify_published_bytes", "replace_corrupt_object", AVAILABLE,
+        _state({"available"}, {"corrupt"}, 0, True, True), AVAILABLE),
     "metadata_mismatch": CaseSpec(
-        "replace_catalog_metadata", "restore_catalog_metadata", "available",
-        _state({"available"}, {"metadata_mismatch"}, 0, True, True),
-        _state({"available"}, {None}, 0, True)),
+        "replace_catalog_metadata", "restore_catalog_metadata", AVAILABLE,
+        _state({"available"}, {"metadata_mismatch"}, 0, True, True), AVAILABLE),
     "upload_then_db_failure": CaseSpec(
-        "fail_after_object_upload", "remove_orphan_object", "absent",
+        "fail_after_object_upload", "remove_orphan_object", ABSENT,
         _state({"absent"}, {"missing"}, 1, True, False, {None}),
-        _state({"absent"}, {"missing"}, 0, False)),
+        ABSENT),
     "publish_failure": CaseSpec(
-        "fail_pending_publication", "confirm_failed_publication", "pending",
+        "fail_pending_publication", "confirm_failed_publication", PENDING,
         _state({"failed"}, {"failed"}, 0, False, None, {"failed"}),
         _state({"failed"}, {"failed"}, 0, False)),
     "delete_failure": CaseSpec(
-        "fail_deleting_object_removal", "confirm_delete_failure_state", "available",
+        "fail_deleting_object_removal", "confirm_delete_failure_state", AVAILABLE,
         _state({"deleting", "failed"}, {"deleting", "failed"}, 0, True, True),
         _state({"deleting", "failed"}, {"deleting", "failed"}, 0, True)),
 }
@@ -114,7 +108,6 @@ class FailureResult:
     recovery_actions: tuple[str, ...]
     recovery_resolver: dict[str, object] | None
     reconcile_after_recovery: dict[str, object] | None
-    recovery_store_observation: dict[str, object] | None
     final_status: str | None
     cleanup: dict[str, object]
     validation_errors: tuple[str, ...] = ()
@@ -139,40 +132,66 @@ class FailureCatalog(AssetCatalogReader, Protocol):
     def reachable_paths(self) -> set[Path]: ...
 
 
-class ObservedStore:
-    """代理真实 LocalAssetStore，只记录 publish_bytes 调用结果。"""
-    def __init__(self, store: LocalAssetStore) -> None:
-        self._store = store
-        self.publish_attempts: list[dict[str, object]] = []
+class FailureAdapter(Protocol):
+    """定义故障 namespace 的创建与物理清理边界。"""
+    def create(self) -> dict[str, object]: ...
+    def cleanup(self) -> CleanupResult: ...
+    def cleanup_targets(self) -> tuple[str, ...]: ...
 
-    def publish_bytes(self, asset_id: str, payload: bytes) -> StoredObject:
-        """调用真实发布边界并记录成功或稳定异常。"""
-        try:
-            stored = self._store.publish_bytes(asset_id, payload)
-        except AssetError as error:
-            self.publish_attempts.append({
-                "asset_id": asset_id,
-                "error": error.category,
-                "final_object_exists": self.object_path(asset_id).exists(),
-            })
-            raise
-        self.publish_attempts.append({
-            "asset_id": asset_id,
-            "error": None,
-            "final_object_exists": stored.path.exists(),
-        })
-        return stored
 
-    def __getattr__(self, name):
-        """将非发布操作透传到真实 store。"""
-        return getattr(self._store, name)
+class StoreOperations(Protocol):
+    """定义 injector 可执行的对象操作，不暴露观测记录。"""
+    def publish_bytes(self, asset_id: str, payload: bytes) -> StoredObject: ...
+    def object_path(self, asset_id: str) -> Path: ...
+
+
+class _OperationStore:
+    """向 injector 提供受观测的最小 store 操作面。"""
+    def __init__(self, store: LocalAssetStore, publish) -> None:
+        self.publish_bytes = publish
+        self.object_path = store.object_path
+
+
+@dataclass(frozen=True)
+class FaultContext:
+    """保存 injector 执行动作所需的显式依赖。"""
+    adapter: FailureAdapter
+    catalog: FailureCatalog
+    store: StoreOperations
 
 
 class FaultInjector(Protocol):
     """只实施准备、故障和恢复动作，不产生可发布证据。"""
-    def prepare(self, case: FailureCase, fixture: FailureFixture, **context) -> None: ...
-    def inject(self, case: FailureCase, fixture: FailureFixture, **context) -> None: ...
-    def recover(self, case: FailureCase, fixture: FailureFixture, **context) -> None: ...
+    def prepare(self, case: FailureCase, fixture: FailureFixture,
+                *, context: FaultContext) -> None: ...
+    def inject(self, case: FailureCase, fixture: FailureFixture,
+               *, context: FaultContext) -> None: ...
+    def recover(self, case: FailureCase, fixture: FailureFixture,
+                *, context: FaultContext) -> None: ...
+
+
+class AdapterFactory(Protocol):
+    def __call__(self, namespace: str, object_directory: Path) -> FailureAdapter: ...
+
+
+class CatalogFactory(Protocol):
+    def __call__(self, adapter: FailureAdapter) -> FailureCatalog: ...
+
+
+class FixtureFactory(Protocol):
+    def __call__(self, case: FailureCase) -> FailureFixture: ...
+
+
+class StoreFactory(Protocol):
+    def __call__(self, directory: Path) -> LocalAssetStore: ...
+
+
+class NamespaceFactory(Protocol):
+    def __call__(self, case: FailureCase) -> str: ...
+
+
+class ManifestWriter(Protocol):
+    def __call__(self, output: Path, manifest: dict[str, object]) -> None: ...
 
 
 def _case_spec(case: FailureCase) -> CaseSpec:
@@ -210,7 +229,27 @@ def _default_namespace(case: FailureCase) -> str:
     return "jsons3_asset_failure_" + case.name + "_" + uuid.uuid4().hex[:10]
 
 
-def _resolver_evidence(catalog, store, reference):
+def _store_operations(store: LocalAssetStore):
+    """创建操作面，并将 publish 观测状态保留在 runner 闭包中。"""
+    attempts = []
+
+    def publish(asset_id: str, payload: bytes) -> StoredObject:
+        try:
+            stored = store.publish_bytes(asset_id, payload)
+        except AssetError as error:
+            attempts.append({"asset_id": asset_id, "error": error.category,
+                             "final_object_exists": store.object_path(asset_id).exists()})
+            raise
+        attempts.append({"asset_id": asset_id, "error": None,
+                         "final_object_exists": stored.path.exists()})
+        return stored
+
+    return (_OperationStore(store, publish), lambda: len(attempts),
+            lambda start: tuple(attempts[start:]))
+
+
+def _resolver_evidence(catalog: FailureCatalog, store: LocalAssetStore,
+                       reference: AssetReference) -> dict[str, object]:
     """运行真实 resolver，仅记录完整校验后的成功内容。"""
     try:
         resolved = AssetResolver(catalog, store).resolve(reference)
@@ -218,13 +257,14 @@ def _resolver_evidence(catalog, store, reference):
         return {"error": error.category, "content_visible": False,
                 "content_length": None, "sha256": None, "preview": None}
     payload = resolved.payload
+    digest = hashlib.sha256(payload).hexdigest()
     preview = payload.decode(reference.encoding)[:200]
     if (len(payload) != reference.content_length
-            or hashlib.sha256(payload).hexdigest() != reference.asset_id
+            or digest != reference.asset_id
             or preview != reference.preview):
         raise RuntimeError("resolver returned content without complete verification")
     return {"error": None, "content_visible": True, "content_length": len(payload),
-            "sha256": hashlib.sha256(payload).hexdigest(), "preview": preview}
+            "sha256": digest, "preview": preview}
 
 
 def _catalog_status(catalog: FailureCatalog, asset_id: str) -> str:
@@ -239,7 +279,12 @@ def _catalog_status(catalog: FailureCatalog, asset_id: str) -> str:
     return record.status
 
 
-def _observe(fixture, catalog, store, publish_start=0):
+def _observe(
+    fixture: FailureFixture,
+    catalog: FailureCatalog,
+    store: LocalAssetStore,
+    publish_attempts: tuple[dict[str, object], ...] = (),
+) -> dict[str, object]:
     """从 catalog、resolver 和真实 store 收集单个阶段快照。"""
     asset_id = fixture.reference.asset_id
     object_path = store.object_path(asset_id)
@@ -255,7 +300,7 @@ def _observe(fixture, catalog, store, publish_start=0):
         "store": {
             "object_path": str(object_path),
             "object_exists": object_path.exists(),
-            "publish_attempts": tuple(store.publish_attempts[publish_start:]),
+            "publish_attempts": publish_attempts,
         },
     }
 
@@ -339,22 +384,22 @@ def run_failure_case(
     case: FailureCase,
     workspace: Path,
     *,
-    adapter_factory: Callable,
-    catalog_factory: Callable,
+    adapter_factory: AdapterFactory,
+    catalog_factory: CatalogFactory,
     fault_injector: FaultInjector,
     namespace: str | None = None,
-    fixture_factory: Callable = build_failure_fixture,
-    store_factory: Callable = LocalAssetStore,
+    fixture_factory: FixtureFactory = build_failure_fixture,
+    store_factory: StoreFactory = LocalAssetStore,
 ) -> FailureResult:
     """按准备、注入、真实观测、恢复、后置观测运行场景。"""
     spec = _case_spec(case)
     namespace = _default_namespace(case) if namespace is None else namespace
     case_directory = Path(workspace) / "asset-failure-cases" / case.name
     object_directory = case_directory / "objects"
-    fixture = fixture_factory(case)
+    fixture = None
     adapter = None
-    injected = recovered = None
-    prepared_status = execution_error = None
+    prepared = injected = recovered = None
+    execution_error = None
     injection_point = None
     recovery_actions = ()
     transitions = ()
@@ -365,32 +410,33 @@ def run_failure_case(
             raise RuntimeError("asset failure case directory already exists")
         case_directory.mkdir(parents=True)
         owns_directory = True
-        store = ObservedStore(store_factory(object_directory))
+        store = store_factory(object_directory)
         adapter = adapter_factory(namespace, object_directory)
         adapter.create()
         catalog = catalog_factory(adapter)
-        context = {"adapter": adapter, "catalog": catalog, "store": store}
+        fixture = fixture_factory(case)
+        operations, publish_count, publishes_since = _store_operations(store)
+        context = FaultContext(adapter, catalog, operations)
 
-        fault_injector.prepare(case, fixture, **context)
-        prepared_status = _catalog_status(catalog, fixture.reference.asset_id)
-        publish_start = len(store.publish_attempts)
-        fault_injector.inject(case, fixture, **context)
-        injected = _observe(fixture, catalog, store, publish_start)
+        fault_injector.prepare(case, fixture, context=context)
+        prepared = _observe(fixture, catalog, store)
+        prepared_errors = _observation_errors("prepared", fixture, spec.prepared, prepared)
+        publish_start = publish_count()
+        fault_injector.inject(case, fixture, context=context)
+        injected = _observe(fixture, catalog, store, publishes_since(publish_start))
         injection_errors = _observation_errors("injected", fixture, spec.injected, injected)
-        if prepared_status != spec.prepared_status:
-            injection_errors.append("prepared catalog status")
-        if not injection_errors:
+        if not prepared_errors and not injection_errors:
             injection_point = spec.injection_point
 
-        fault_injector.recover(case, fixture, **context)
-        recovered = _observe(fixture, catalog, store, len(store.publish_attempts))
+        fault_injector.recover(case, fixture, context=context)
+        recovered = _observe(fixture, catalog, store)
         recovery_errors = _observation_errors("recovered", fixture, spec.recovered, recovered)
         if not recovery_errors:
             recovery_actions = (spec.recovery_action,)
-        validation_errors = tuple(injection_errors + recovery_errors)
+        validation_errors = tuple(prepared_errors + injection_errors + recovery_errors)
         transitions = (
             _transition("injection", fixture.reference.asset_id,
-                        prepared_status, injected["status"]),
+                        prepared["status"], injected["status"]),
             _transition("recovery", fixture.reference.asset_id,
                         injected["status"], recovered["status"]),
         )
@@ -401,9 +447,11 @@ def run_failure_case(
             adapter, namespace, case_directory, object_directory, owns_directory,
         )
 
+    asset_id = None if fixture is None else fixture.reference.asset_id
     return FailureResult(
-        case=case.name, namespace=namespace, asset_id=fixture.reference.asset_id,
-        sha256=fixture.record.sha256, injection_point=injection_point,
+        case=case.name, namespace=namespace, asset_id=asset_id,
+        sha256=None if fixture is None else fixture.record.sha256,
+        injection_point=injection_point,
         catalog_transitions=transitions,
         resolver=None if injected is None else injected["resolver"],
         event_visible=None if injected is None else injected["event_visible"],
@@ -412,7 +460,6 @@ def run_failure_case(
         recovery_actions=recovery_actions,
         recovery_resolver=None if recovered is None else recovered["resolver"],
         reconcile_after_recovery=None if recovered is None else recovered["reconcile"],
-        recovery_store_observation=None if recovered is None else recovered["store"],
         final_status=None if recovered is None else recovered["status"],
         cleanup=cleanup, validation_errors=validation_errors,
         execution_error=execution_error,
@@ -447,13 +494,13 @@ def _validate_result(case: FailureCase, result: FailureResult) -> list[str]:
 def run_failure_catalog(
     workspace: Path,
     *,
-    adapter_factory: Callable,
-    catalog_factory: Callable,
+    adapter_factory: AdapterFactory,
+    catalog_factory: CatalogFactory,
     fault_injector: FaultInjector,
-    namespace_factory: Callable = _default_namespace,
-    fixture_factory: Callable = build_failure_fixture,
-    store_factory: Callable = LocalAssetStore,
-    manifest_writer: Callable = write_manifest_atomic,
+    namespace_factory: NamespaceFactory = _default_namespace,
+    fixture_factory: FixtureFactory = build_failure_fixture,
+    store_factory: StoreFactory = LocalAssetStore,
+    manifest_writer: ManifestWriter = write_manifest_atomic,
 ) -> dict[str, FailureResult]:
     """运行六种固定故障，仅在全部证据成立时发布 complete。"""
     workspace = Path(workspace)
