@@ -589,6 +589,15 @@ def summarize(runs: list[Path]) -> dict[str, object]:
     }
 
 
+def _fsync_directory(directory: Path) -> None:
+    """持久化目录项的创建和删除。"""
+    directory_fd = os.open(directory, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+    try:
+        os.fsync(directory_fd)
+    finally:
+        os.close(directory_fd)
+
+
 def write_summary_atomic(output: Path, summary: dict[str, object]) -> None:
     """以同目录临时文件原子发布新汇总，绝不覆盖既有结果。"""
     output = Path(output)
@@ -601,10 +610,10 @@ def write_summary_atomic(output: Path, summary: dict[str, object]) -> None:
         pass
     else:
         if existing == content:
+            _fsync_directory(output.parent)
             return
         raise FileExistsError(f"summary output already exists: {output}")
     temporary = None
-    published_identity = None
     try:
         with tempfile.NamedTemporaryFile(
             mode="wb", dir=output.parent, prefix=f".{output.name}.", suffix=".tmp", delete=False,
@@ -616,26 +625,16 @@ def write_summary_atomic(output: Path, summary: dict[str, object]) -> None:
         try:
             os.link(temporary, output)
         except FileExistsError:
-            if output.read_bytes() == content:
+            existing = output.read_bytes()
+            temporary.unlink()
+            temporary = None
+            if existing == content:
+                _fsync_directory(output.parent)
                 return
             raise FileExistsError(f"summary output already exists: {output}") from None
-        published = os.stat(temporary, follow_symlinks=False)
-        published_identity = (published.st_dev, published.st_ino)
-        directory_fd = os.open(output.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
-        try:
-            os.fsync(directory_fd)
-        finally:
-            os.close(directory_fd)
-    except Exception:
-        if published_identity is not None:
-            try:
-                current = os.stat(output, follow_symlinks=False)
-            except FileNotFoundError:
-                pass
-            else:
-                if (current.st_dev, current.st_ino) == published_identity:
-                    output.unlink()
-        raise
+        temporary.unlink()
+        temporary = None
+        _fsync_directory(output.parent)
     finally:
         if temporary is not None:
             try:

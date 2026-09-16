@@ -534,25 +534,34 @@ class StageThreeSummaryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "summary.json"
             fsync_targets = []
+            publication_order = []
             link_paths = []
             original_link = os.link
+            original_unlink = Path.unlink
 
             def observe_link(source, destination):
                 link_paths.append((Path(source), Path(destination)))
                 original_link(source, destination)
 
+            def observe_unlink(path, *args, **kwargs):
+                if path.name.endswith(".tmp"):
+                    publication_order.append("temp unlink")
+                return original_unlink(path, *args, **kwargs)
+
+            def observe_fsync(fd):
+                target = "directory" if stat.S_ISDIR(os.fstat(fd).st_mode) else "file"
+                fsync_targets.append(target)
+                publication_order.append(f"{target} fsync")
+
             with (
-                patch.object(
-                    report.os, "fsync",
-                    side_effect=lambda fd: fsync_targets.append(
-                        "directory" if stat.S_ISDIR(os.fstat(fd).st_mode) else "file"
-                    ),
-                ),
+                patch.object(report.os, "fsync", side_effect=observe_fsync),
                 patch.object(report.os, "link", side_effect=observe_link),
+                patch.object(Path, "unlink", autospec=True, side_effect=observe_unlink),
             ):
                 report.write_summary_atomic(output, {"status": "complete", "value": 1})
             self.assertEqual(json.loads(output.read_text()), {"status": "complete", "value": 1})
             self.assertEqual(fsync_targets, ["file", "directory"])
+            self.assertEqual(publication_order, ["file fsync", "temp unlink", "directory fsync"])
             self.assertEqual(link_paths[0][0].parent, output.parent)
             self.assertEqual(link_paths[0][1], output)
             self.assertEqual(list(output.parent.glob(".*.tmp")), [])
@@ -563,10 +572,11 @@ class StageThreeSummaryTest(unittest.TestCase):
             self.assertFalse(output.exists())
             self.assertEqual(list(output.parent.glob(".*.tmp")), [])
 
-    def test_directory_fsync_failure_removes_published_target(self):
-        """防止发布后目录持久化失败却留下看似完整的结果。"""
+    def test_directory_fsync_failure_preserves_complete_target_and_retry_fsyncs(self):
+        """发布后持久化失败保留完整内容，相同内容 retry 收敛目录持久化。"""
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "summary.json"
+            expected = b'{"status":"complete"}\n'
             calls = 0
 
             def fail_directory_fsync(_):
@@ -578,8 +588,19 @@ class StageThreeSummaryTest(unittest.TestCase):
             with patch.object(report.os, "fsync", side_effect=fail_directory_fsync):
                 with self.assertRaisesRegex(OSError, "directory fsync failed"):
                     report.write_summary_atomic(output, {"status": "complete"})
-            self.assertFalse(output.exists())
+            self.assertEqual(output.read_bytes(), expected)
             self.assertEqual(list(output.parent.glob(".*.tmp")), [])
+
+            retry_fsyncs = []
+            with patch.object(
+                report.os, "fsync",
+                side_effect=lambda fd: retry_fsyncs.append(
+                    "directory" if stat.S_ISDIR(os.fstat(fd).st_mode) else "file"
+                ),
+            ):
+                report.write_summary_atomic(output, {"status": "complete"})
+            self.assertEqual(retry_fsyncs, ["directory"])
+            self.assertEqual(output.read_bytes(), expected)
 
     def test_existing_summary_is_idempotent_and_never_clobbered(self):
         """既有有效结果只允许相同内容重放，不允许覆盖或失败后丢失。"""
@@ -639,27 +660,42 @@ class StageThreeSummaryTest(unittest.TestCase):
             self.assertEqual(output.read_bytes(), winner)
             self.assertEqual(list(output.parent.glob(".*.tmp")), [])
 
-    def test_fsync_failure_never_removes_a_later_winner(self):
-        """目录 fsync 失败时，只清理本次发布且仍持有的对象。"""
+    def test_fsync_failure_does_not_unlink_at_the_stat_race_boundary(self):
+        """目录 fsync 失败后不执行无法原子确认所有权的 output unlink。"""
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "summary.json"
             competitor = Path(directory) / "competitor.json"
+            published = b'{"status":"complete","value":1}\n'
             winner = b'{"status":"complete","value":2}\n'
             calls = 0
+            output_unlinks = 0
             original_replace = os.replace
+            original_unlink = Path.unlink
 
-            def replace_before_directory_failure(_):
+            def fail_directory_fsync(_):
                 nonlocal calls
                 calls += 1
                 if calls == 2:
-                    competitor.write_bytes(winner)
-                    original_replace(competitor, output)
                     raise OSError("directory fsync failed")
 
-            with patch.object(report.os, "fsync", side_effect=replace_before_directory_failure):
+            def replace_between_stat_and_unlink(path, *args, **kwargs):
+                nonlocal output_unlinks
+                if path == output:
+                    output_unlinks += 1
+                    competitor.write_bytes(winner)
+                    original_replace(competitor, output)
+                return original_unlink(path, *args, **kwargs)
+
+            with (
+                patch.object(report.os, "fsync", side_effect=fail_directory_fsync),
+                patch.object(
+                    Path, "unlink", autospec=True, side_effect=replace_between_stat_and_unlink,
+                ),
+            ):
                 with self.assertRaisesRegex(OSError, "directory fsync failed"):
                     report.write_summary_atomic(output, {"status": "complete", "value": 1})
-            self.assertEqual(output.read_bytes(), winner)
+            self.assertEqual(output_unlinks, 0)
+            self.assertEqual(output.read_bytes(), published)
             self.assertEqual(list(output.parent.glob(".*.tmp")), [])
 
 
