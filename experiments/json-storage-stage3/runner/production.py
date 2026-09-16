@@ -10,6 +10,7 @@ from pathlib import Path
 from types import MappingProxyType
 
 from assets import AssetError, AssetRecord, AssetReference, LocalAssetStore
+from clickhouse import ClickHouseAdapter, clickhouse_timestamp
 from common import BlockResult, LAYOUTS, MaintenanceResult, QuerySpec, TruthCatalog, canonical_digest
 from opengauss import OpenGaussAdapter
 from run_asset_failures import FailureFixture
@@ -594,6 +595,189 @@ class OpenGaussAssetFaultControl:
             connection.close()
 
 
+class ClickHouseAssetFaultControl:
+    """封装真实 ClickHouse asset_ref adapter 的故障控制与只读观测面。"""
+
+    def __init__(self, adapter: ClickHouseAdapter):
+        if (
+            not isinstance(adapter, ClickHouseAdapter)
+            or adapter.layout != "asset_ref"
+            or not isinstance(adapter.asset_store, LocalAssetStore)
+        ):
+            raise ValueError("control requires a ClickHouse asset_ref adapter")
+        self.adapter = adapter
+        self.store = adapter.asset_store
+
+    def create(self) -> dict[str, object]:
+        """创建 control 持有的物理 database。"""
+        return self.adapter.create()
+
+    def cleanup(self):
+        """清理 control 持有的物理 database。"""
+        return self.adapter.cleanup()
+
+    def cleanup_targets(self) -> tuple[str, ...]:
+        """返回 runner 可核对的物理 database cleanup identity。"""
+        return (self.adapter.database,)
+
+    def get_available(self, asset_id: str) -> AssetRecord | None:
+        """读取指定 asset 的真实 catalog 状态。"""
+        return self.adapter.get_available(asset_id)
+
+    def event_visible(self, reference: AssetReference) -> bool:
+        """从事件表精确核对完整 Asset 引用是否唯一可见。"""
+        if not isinstance(reference, AssetReference):
+            raise ValueError("reference must be AssetReference")
+        connection = self.adapter.connect_worker()
+        try:
+            body = self.adapter._request(
+                connection,
+                f"SELECT count() AS count FROM {self.adapter.database}.events_analytics "
+                "WHERE asset_id={asset_id:String} AND content_type={content_type:String} "
+                "AND encoding={encoding:String} AND content_length={content_length:UInt64} "
+                "AND preview={preview:String} AND sha256={sha256:String} FORMAT JSONEachRow",
+                parameters={
+                    "asset_id": reference.asset_id, "content_type": reference.content_type,
+                    "encoding": reference.encoding,
+                    "content_length": reference.content_length,
+                    "preview": reference.preview, "sha256": reference.asset_id,
+                },
+            )
+            rows = self.adapter._json_rows(body)
+        finally:
+            connection.close()
+        if (
+            len(rows) != 1 or not isinstance(rows[0], dict)
+            or set(rows[0]) != {"count"} or not isinstance(rows[0]["count"], int)
+            or isinstance(rows[0]["count"], bool) or rows[0]["count"] not in (0, 1)
+        ):
+            raise RuntimeError("invalid ClickHouse event visibility response")
+        return rows[0]["count"] == 1
+
+    def reachable_paths(self) -> set[Path]:
+        """通过 event 与 catalog 的真实 JOIN 返回可达对象路径。"""
+        connection = self.adapter.connect_worker()
+        try:
+            body = self.adapter._request(
+                connection,
+                f"SELECT DISTINCT a.storage_path AS storage_path "
+                f"FROM {self.adapter.database}.events_analytics e "
+                f"INNER JOIN {self.adapter.database}.assets a ON a.asset_id=e.asset_id "
+                "FORMAT JSONEachRow",
+            )
+            rows = self.adapter._json_rows(body)
+        finally:
+            connection.close()
+        paths = []
+        for row in rows:
+            if (
+                not isinstance(row, dict) or set(row) != {"storage_path"}
+                or not isinstance(row["storage_path"], str) or not row["storage_path"]
+            ):
+                raise RuntimeError("invalid ClickHouse reachable-path response")
+            paths.append(Path(row["storage_path"]))
+        if len(paths) != len(set(paths)):
+            raise RuntimeError("duplicate ClickHouse reachable-path response")
+        return set(paths)
+
+    @staticmethod
+    def _event_row(fixture: FailureFixture) -> dict[str, object]:
+        """将故障 fixture 转为 ClickHouse DDL 对应的完整 event row。"""
+        record = fixture.record
+        return {
+            "ingest_seq": 0, "event_id": record.event_id, "trace_id": record.trace_id,
+            "span_id": record.event_id + ":span", "parent_span_id": None,
+            "project_id": record.project_id, "start_time": clickhouse_timestamp(record.start_time),
+            "end_time": "2030-01-01 00:00:00.001", "duration_ms": 1,
+            "span_type": "llm", "framework": "asset_failure", "level": "ERROR",
+            "cohort": record.cohort, "profile": record.profile,
+            "content_type": record.content_type, "encoding": record.encoding,
+            "content_length": record.content_length, "preview": record.preview,
+            "sha256": record.sha256, "asset_id": fixture.reference.asset_id,
+        }
+
+    def _insert_fixture(self, fixture: FailureFixture, status: str) -> None:
+        """依次写入 catalog 与 event；任一 ClickHouse 写失败均向上传播。"""
+        asset_id = fixture.reference.asset_id
+        rows = (
+            ("assets", {
+                "asset_id": asset_id, "sha256": asset_id,
+                "content_type": fixture.record.content_type,
+                "encoding": fixture.record.encoding,
+                "content_length": fixture.record.content_length,
+                "storage_path": str(self.store.object_path(asset_id)),
+                "status": status, "error_category": None,
+            }),
+            ("events_analytics", self._event_row(fixture)),
+        )
+        connection = self.adapter.connect_worker()
+        try:
+            for table, row in rows:
+                body = json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n"
+                self.adapter._request(
+                    connection,
+                    f"INSERT INTO {self.adapter.database}.{table} FORMAT JSONEachRow",
+                    body,
+                )
+        finally:
+            connection.close()
+
+    def prepare_available(self, fixture: FailureFixture) -> None:
+        """先发布 fixture bytes，再插入 available catalog 与 event。"""
+        stored = self.store.publish_bytes(fixture.reference.asset_id, fixture.payload)
+        if stored.path != self.store.object_path(fixture.reference.asset_id):
+            raise RuntimeError("published object path mismatch")
+        self._insert_fixture(fixture, "available")
+
+    def prepare_pending(self, fixture: FailureFixture) -> None:
+        """插入 pending catalog 与 event，不创建最终对象。"""
+        path = self.store.object_path(fixture.reference.asset_id)
+        if path.exists():
+            raise RuntimeError("pending fixture final object already exists")
+        self._insert_fixture(fixture, "pending")
+
+    def set_status(self, asset_id: str, status: str,
+                   error_category: str | None = None) -> None:
+        """复用 adapter 的同步 catalog 状态转换。"""
+        self.adapter.set_asset_status(asset_id, status, error_category)
+
+    def replace_metadata(self, fixture: FailureFixture, *, mismatched: bool) -> None:
+        """同步更新 content_length，并立即核对目标 identity 与精确值。"""
+        content_length = len(fixture.payload) + 1 if mismatched else len(fixture.payload)
+        asset_id = fixture.reference.asset_id
+        connection = self.adapter.connect_worker()
+        try:
+            self.adapter._request(
+                connection,
+                f"ALTER TABLE {self.adapter.database}.assets "
+                "UPDATE content_length={content_length:UInt64} "
+                "WHERE asset_id={asset_id:String} SETTINGS mutations_sync=2",
+                parameters={"content_length": content_length, "asset_id": asset_id},
+            )
+        finally:
+            connection.close()
+        connection = self.adapter.connect_worker()
+        try:
+            body = self.adapter._request(
+                connection,
+                f"SELECT asset_id,content_length FROM {self.adapter.database}.assets "
+                "WHERE asset_id={asset_id:String} FORMAT JSONEachRow",
+                parameters={"asset_id": asset_id},
+            )
+            rows = self.adapter._json_rows(body)
+        finally:
+            connection.close()
+        if (
+            len(rows) != 1 or not isinstance(rows[0], dict)
+            or set(rows[0]) != {"asset_id", "content_length"}
+            or rows[0]["asset_id"] != asset_id
+            or not isinstance(rows[0]["content_length"], int)
+            or isinstance(rows[0]["content_length"], bool)
+            or rows[0]["content_length"] != content_length
+        ):
+            raise RuntimeError("ClickHouse metadata mutation readback mismatch")
+
+
 class DatabaseFaultInjector:
     """通过 control 与受观测 store 操作面实施六种固定数据库 Asset 故障。"""
 
@@ -603,7 +787,7 @@ class DatabaseFaultInjector:
     })
 
     @staticmethod
-    def _control(case, fixture, context) -> OpenGaussAssetFaultControl:
+    def _control(case, fixture, context):
         """验证 case、fixture、control identity 与 canonical object path。"""
         if case.name not in DatabaseFaultInjector._CASES:
             raise ValueError("unsupported asset failure case: " + str(case.name))
@@ -752,3 +936,45 @@ def opengauss_asset_failure_factories(
         return control
 
     return adapter_factory, catalog_factory, DatabaseFaultInjector()
+
+
+def clickhouse_asset_failure_factories(
+    endpoints: EngineEndpoints,
+) -> tuple[Callable, Callable, DatabaseFaultInjector]:
+    """构造可直接交给六故障 runner 的 ClickHouse factories 与 injector。"""
+    if not isinstance(endpoints, EngineEndpoints):
+        raise ValueError("endpoints must be EngineEndpoints")
+    controls = set()
+
+    def adapter_factory(namespace, object_directory):
+        """构造独立 asset_ref control，不连接数据库或创建 database。"""
+        store = LocalAssetStore(Path(object_directory).resolve())
+        adapter = ClickHouseAdapter(
+            endpoints.clickhouse_host, endpoints.clickhouse_port,
+            endpoints.clickhouse_container, namespace, "asset_ref", Path.cwd(), store,
+        )
+        control = ClickHouseAssetFaultControl(adapter)
+        controls.add(control)
+        return control
+
+    def catalog_factory(control):
+        """仅向对应 factory 创建的同一 control 返回只读观测面。"""
+        if not isinstance(control, ClickHouseAssetFaultControl) or control not in controls:
+            raise ValueError("catalog factory requires its corresponding fault control")
+        return control
+
+    return adapter_factory, catalog_factory, DatabaseFaultInjector()
+
+
+def asset_failure_factories(
+    engine: str,
+    endpoints: EngineEndpoints,
+) -> tuple[Callable, Callable, DatabaseFaultInjector]:
+    """按固定 engine 名选择 Asset 六故障生产 factories。"""
+    if not isinstance(endpoints, EngineEndpoints):
+        raise ValueError("endpoints must be EngineEndpoints")
+    if engine == "opengauss":
+        return opengauss_asset_failure_factories(endpoints)
+    if engine == "clickhouse":
+        return clickhouse_asset_failure_factories(endpoints)
+    raise ValueError(f"unsupported engine: {engine}")

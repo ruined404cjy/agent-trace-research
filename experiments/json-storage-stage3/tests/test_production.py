@@ -6,6 +6,7 @@ import sys
 import tempfile
 import threading
 import unittest
+import urllib.parse
 from copy import deepcopy
 from dataclasses import replace
 from datetime import datetime, timezone
@@ -16,7 +17,8 @@ from unittest.mock import patch
 STAGE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(STAGE_DIR / "runner"))
 
-from assets import AssetError, AssetRecord, LocalAssetStore
+from assets import AssetError, AssetRecord, AssetReference, LocalAssetStore
+from clickhouse import ClickHouseAdapter
 from common import BlockResult, CleanupResult, MaintenanceResult, PayloadRecord, QuerySpec, TruthCatalog
 from run_layout_matrix import (
     FORMAL_GENERATION_FORMAT,
@@ -361,6 +363,180 @@ def stateful_asset_factories(root):
     def factory(namespace, object_directory):
         control = adapter_factory(namespace, object_directory)
         state = StatefulOpenGauss()
+        states[namespace] = state
+        control.adapter.connect_worker = state.connect
+        return control
+
+    return factory, catalog_factory, injector, states
+
+
+class StatefulClickHouse:
+    """模拟 ClickHouse HTTP SQL、JSONEachRow 和同步 mutation 边界。"""
+
+    def __init__(self, database):
+        self.database = database
+        self.database_exists = False
+        self.assets = {}
+        self.events = {}
+        self.connections = []
+        self.inserts = []
+        self.fail_insert = None
+        self.ignore_metadata_mutation = False
+        self.metadata_target = None
+        self.select_override = {}
+        self.requests = []
+        self.dropped_assets = {}
+        self.dropped_events = {}
+
+    def connect(self):
+        connection = StatefulClickHouseConnection(self)
+        self.connections.append(connection)
+        return connection
+
+    @staticmethod
+    def _response(rows):
+        return "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows)
+
+    def handle(self, path, request_body):
+        self.requests.append(request_body)
+        parameters = {
+            key.removeprefix("param_"): values[0]
+            for key, values in urllib.parse.parse_qs(
+                urllib.parse.urlsplit(path).query, keep_blank_values=True,
+            ).items()
+            if key.startswith("param_")
+        }
+        if " FORMAT JSONEachRow\n" in request_body and request_body.startswith("INSERT INTO"):
+            statement, body = request_body.split(" FORMAT JSONEachRow\n", 1)
+            statement += " FORMAT JSONEachRow"
+        else:
+            statement, body = request_body, None
+        sql = " ".join(statement.split())
+
+        if sql.startswith("SELECT count() AS count FROM system.databases"):
+            return 200, self._response([{"count": 1 if self.database_exists else 0}])
+        if sql.startswith("CREATE DATABASE"):
+            self.database_exists = True
+            return 200, ""
+        if sql.startswith("CREATE TABLE"):
+            return 200, ""
+        if sql.startswith("DROP DATABASE"):
+            self.dropped_assets = deepcopy(self.assets)
+            self.dropped_events = deepcopy(self.events)
+            self.database_exists = False
+            self.assets.clear()
+            self.events.clear()
+            return 200, ""
+        if sql.startswith("INSERT INTO"):
+            table = "assets" if f"{self.database}.assets" in sql else "events_analytics"
+            if self.fail_insert == table:
+                return 500, table + " insert failed"
+            rows = [json.loads(line) for line in body.splitlines() if line]
+            self.inserts.append((table, tuple(rows), body))
+            target = self.assets if table == "assets" else self.events
+            identity = "asset_id" if table == "assets" else "event_id"
+            for row in rows:
+                row = dict(row)
+                if table == "assets":
+                    row.setdefault("updated_at", "2030-01-01 00:00:00.000")
+                target[row[identity]] = row
+            return 200, ""
+        if sql.startswith("ALTER TABLE") and "UPDATE status=" in sql:
+            if "SETTINGS mutations_sync=2" not in sql:
+                return 500, "status mutation was asynchronous"
+            row = self.assets.get(parameters["asset_id"])
+            if row is not None:
+                row.update(status=parameters["status"],
+                           error_category=parameters.get("error"))
+            return 200, ""
+        if sql.startswith("ALTER TABLE") and "UPDATE content_length=" in sql:
+            if "SETTINGS mutations_sync=2" not in sql:
+                return 500, "metadata mutation was asynchronous"
+            if not self.ignore_metadata_mutation:
+                asset_id = self.metadata_target or parameters["asset_id"]
+                if asset_id in self.assets:
+                    self.assets[asset_id]["content_length"] = int(parameters["content_length"])
+            return 200, ""
+        if sql.startswith("SELECT asset_id,sha256"):
+            override = self.select_override.get("asset")
+            if override is not None:
+                return 200, override
+            row = self.assets.get(parameters["asset_id"])
+            return 200, self._response([] if row is None else [row])
+        if sql.startswith("SELECT asset_id,content_length"):
+            override = self.select_override.get("asset")
+            if override is not None:
+                return 200, override
+            row = self.assets.get(parameters["asset_id"])
+            projected = [] if row is None else [{
+                "asset_id": row["asset_id"], "content_length": row["content_length"],
+            }]
+            return 200, self._response(projected)
+        if sql.startswith("SELECT count() AS count") and ".events_analytics" in sql:
+            override = self.select_override.get("event")
+            if override is not None:
+                return 200, override
+            count = sum(
+                row["asset_id"] == parameters["asset_id"]
+                and row["content_type"] == parameters["content_type"]
+                and row["encoding"] == parameters["encoding"]
+                and row["content_length"] == int(parameters["content_length"])
+                and row["preview"] == parameters["preview"]
+                and row["sha256"] == parameters["sha256"]
+                for row in self.events.values()
+            )
+            return 200, self._response([{"count": count}])
+        if sql.startswith("SELECT DISTINCT") and "INNER JOIN" in sql:
+            override = self.select_override.get("paths")
+            if override is not None:
+                return 200, override
+            paths = sorted({
+                self.assets[event["asset_id"]]["storage_path"]
+                for event in self.events.values() if event["asset_id"] in self.assets
+            })
+            return 200, self._response([{"storage_path": value} for value in paths])
+        raise AssertionError("unexpected ClickHouse SQL: " + sql)
+
+
+class StatefulClickHouseConnection:
+    """将真实 ClickHouseAdapter HTTP 请求交给 stateful transport。"""
+
+    def __init__(self, state):
+        self.state = state
+        self.closed = False
+        self.status = None
+        self.response_body = None
+
+    def request(self, method, path, body, headers):
+        self.status, self.response_body = self.state.handle(path, body.decode("utf-8"))
+
+    def getresponse(self):
+        status, body = self.status, self.response_body
+
+        class Response:
+            def __init__(self, response_status, response_body):
+                self.status = response_status
+                self.response_body = response_body
+
+            def read(self):
+                return self.response_body.encode("utf-8")
+
+        return Response(status, body)
+
+    def close(self):
+        self.closed = True
+
+
+def stateful_clickhouse_asset_factories(root):
+    """返回真实 ClickHouse adapter/control 及逐 database HTTP 状态。"""
+    adapter_factory, catalog_factory, injector = production.clickhouse_asset_failure_factories(
+        production.EngineEndpoints(),
+    )
+    states = {}
+
+    def factory(namespace, object_directory):
+        control = adapter_factory(namespace, object_directory)
+        state = StatefulClickHouse(control.adapter.database)
         states[namespace] = state
         control.adapter.connect_worker = state.connect
         return control
@@ -1102,6 +1278,285 @@ class OpenGaussAssetFailureProductionTest(unittest.TestCase):
             self.assertTrue(result.cleanup["object_directory_removed"])
             self.assertEqual(case_states["asset_failure_failed_case"].assets, {})
             self.assertEqual(case_states["asset_failure_failed_case"].events, {})
+
+
+class ClickHouseAssetFailureProductionTest(unittest.TestCase):
+    """验证 ClickHouse Asset wrapper 的传输、观测和故障清理边界。"""
+
+    @staticmethod
+    def _unicode_fixture():
+        payload = '{"内容":"故障"}'.encode("utf-8")
+        digest = hashlib.sha256(payload).hexdigest()
+        record = PayloadRecord(
+            event_id="asset-failure:unicode", trace_id="asset-failure-trace:unicode",
+            project_id="项目/追踪", start_time="2030-01-01T00:00:00.000Z",
+            cohort="asset_failure", profile="asset_failure",
+            content_type="application/json", encoding="utf-8",
+            content_length=len(payload), preview=payload.decode("utf-8"), sha256=digest,
+            payload_path="asset-failures/unicode.json",
+        )
+        return failure_runner.FailureFixture(record, AssetReference.from_record(record), payload)
+
+    def test_factories_construct_isolated_real_controls_without_connecting(self):
+        """捕获 factory 提前连接、跨 factory 接受 control 或统一分派漂移。"""
+        endpoints = production.EngineEndpoints()
+        with self.assertRaisesRegex(ValueError, "endpoints"):
+            production.clickhouse_asset_failure_factories(object())
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "clickhouse.ClickHouseAdapter.connect_worker",
+            side_effect=AssertionError("factory connected to database"),
+        ):
+            root = Path(directory)
+            factory, catalog_factory, injector = production.clickhouse_asset_failure_factories(
+                endpoints,
+            )
+            first = factory("asset_clickhouse_one", root / "one")
+            second = factory("asset_clickhouse_two", root / "two")
+            self.assertIsInstance(first, production.ClickHouseAssetFaultControl)
+            self.assertIsInstance(first.adapter, ClickHouseAdapter)
+            self.assertEqual(first.adapter.layout, "asset_ref")
+            self.assertNotEqual(first.adapter.database, second.adapter.database)
+            self.assertEqual(first.store.root, (root / "one").resolve())
+            self.assertEqual(second.store.root, (root / "two").resolve())
+            self.assertIs(catalog_factory(first), first)
+            with self.assertRaisesRegex(ValueError, "control"):
+                catalog_factory(object())
+            _, foreign_catalog, _ = production.clickhouse_asset_failure_factories(endpoints)
+            with self.assertRaisesRegex(ValueError, "control"):
+                foreign_catalog(first)
+            self.assertIsInstance(injector, production.DatabaseFaultInjector)
+
+        for engine, expected in (
+            ("opengauss", production.opengauss_asset_failure_factories),
+            ("clickhouse", production.clickhouse_asset_failure_factories),
+        ):
+            token = (object(), object(), object())
+            with patch.object(production, expected.__name__, return_value=token) as selected:
+                self.assertIs(production.asset_failure_factories(engine, endpoints), token)
+                selected.assert_called_once_with(endpoints)
+        for engine, invalid_endpoints in (("sqlite", endpoints), ("clickhouse", object())):
+            with self.subTest(engine=engine):
+                with self.assertRaises(ValueError):
+                    production.asset_failure_factories(engine, invalid_endpoints)
+
+    def test_control_uses_json_each_row_join_and_closes_every_connection(self):
+        """捕获 INSERT 字段/Unicode 丢失、文本真值化、catalog 扫描冒充 JOIN 或连接泄漏。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            factory, _, _, states = stateful_clickhouse_asset_factories(root)
+            control = factory("asset_clickhouse_control", root / "objects")
+            state = states["asset_clickhouse_control"]
+            control.create()
+            fixture = self._unicode_fixture()
+            control.prepare_available(fixture)
+            asset_id = fixture.reference.asset_id
+            orphan_path = control.store.object_path("0" * 64)
+            state.assets["0" * 64] = {
+                "asset_id": "0" * 64, "sha256": "0" * 64,
+                "content_type": "application/json", "encoding": "utf-8",
+                "content_length": 1, "storage_path": str(orphan_path),
+                "status": "available", "updated_at": "2030-01-01 00:00:00.000",
+                "error_category": None,
+            }
+
+            self.assertTrue(control.event_visible(fixture.reference))
+            self.assertFalse(control.event_visible(replace(fixture.reference, preview="错误")))
+            self.assertEqual(control.reachable_paths(), {control.store.object_path(asset_id)})
+            self.assertNotIn(orphan_path, control.reachable_paths())
+            self.assertEqual(control.cleanup_targets(), (control.adapter.database,))
+
+            asset_insert = next(rows for table, rows, _ in state.inserts if table == "assets")
+            event_insert = next(rows for table, rows, _ in state.inserts if table == "events_analytics")
+            self.assertEqual(asset_insert, ({
+                "asset_id": asset_id, "sha256": asset_id,
+                "content_type": "application/json", "encoding": "utf-8",
+                "content_length": len(fixture.payload),
+                "storage_path": str(control.store.object_path(asset_id)),
+                "status": "available", "error_category": None,
+            },))
+            self.assertEqual(event_insert, ({
+                "ingest_seq": 0, "event_id": "asset-failure:unicode",
+                "trace_id": "asset-failure-trace:unicode",
+                "span_id": "asset-failure:unicode:span", "parent_span_id": None,
+                "project_id": "项目/追踪", "start_time": "2030-01-01 00:00:00.000",
+                "end_time": "2030-01-01 00:00:00.001", "duration_ms": 1,
+                "span_type": "llm", "framework": "asset_failure", "level": "ERROR",
+                "cohort": "asset_failure", "profile": "asset_failure",
+                "content_type": "application/json", "encoding": "utf-8",
+                "content_length": len(fixture.payload), "preview": '{"内容":"故障"}',
+                "sha256": asset_id, "asset_id": asset_id,
+            },))
+            self.assertIn("项目/追踪", state.inserts[1][2])
+
+            for response in ("", '{"count":1}\n{"count":1}\n', '{invalid}\n'):
+                state.select_override["event"] = response
+                with self.subTest(response=response):
+                    with self.assertRaises(RuntimeError):
+                        control.event_visible(fixture.reference)
+            state.select_override.clear()
+            for response in (
+                '{"storage_path":"/duplicate"}\n{"storage_path":"/duplicate"}\n',
+                '{"wrong":"/invalid"}\n',
+            ):
+                state.select_override["paths"] = response
+                with self.subTest(paths_response=response):
+                    with self.assertRaises(RuntimeError):
+                        control.reachable_paths()
+            state.select_override.clear()
+            self.assertEqual(control.cleanup(), CleanupResult(control.adapter.database, True))
+            self.assertTrue(all(connection.closed for connection in state.connections))
+            self.assertTrue(all(
+                "FORMAT JSONEachRow" in request
+                for request in state.requests if request.startswith("SELECT")
+            ))
+
+    def test_run_failure_catalog_observes_six_cases_with_same_injector(self):
+        """捕获 ClickHouse engine 特判绕过六故障、恢复、权限操作或 runner 清理。"""
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            factory, catalog_factory, injector, states = stateful_clickhouse_asset_factories(
+                workspace,
+            )
+            results = failure_runner.run_failure_catalog(
+                workspace, adapter_factory=factory, catalog_factory=catalog_factory,
+                fault_injector=injector,
+                namespace_factory=lambda case: "asset_clickhouse_" + case.name,
+            )
+            self.assertEqual(results["missing"].error, "missing")
+            self.assertEqual(results["corrupt"].error, "corrupt")
+            self.assertEqual(results["metadata_mismatch"].error, "metadata_mismatch")
+            self.assertEqual(results["upload_then_db_failure"].orphan_count, 1)
+            self.assertFalse(results["upload_then_db_failure"].event_visible)
+            self.assertEqual(results["publish_failure"].final_status, "failed")
+            self.assertEqual(results["delete_failure"].final_status, "deleting")
+            for case in ("missing", "corrupt", "metadata_mismatch"):
+                self.assertTrue(results[case].recovery_resolver["content_visible"])
+            self.assertEqual(
+                results["upload_then_db_failure"].reconcile_after_recovery["orphan_count"], 0,
+            )
+            self.assertTrue(all(not state.database_exists for state in states.values()))
+            self.assertTrue(all(
+                connection.closed for state in states.values() for connection in state.connections
+            ))
+
+            publish = factory("asset_clickhouse_publish_mode", workspace / "publish-mode")
+            publish.create()
+            publish_fixture = failure_runner.build_failure_fixture(
+                failure_runner.FailureCase("publish_failure")
+            )
+            publish.prepare_pending(publish_fixture)
+            publish_shard = publish.store.object_path(publish_fixture.reference.asset_id).parent
+            publish_shard.mkdir(parents=True)
+            publish_shard.chmod(0o750)
+            injector.inject(
+                failure_runner.FailureCase("publish_failure"), publish_fixture,
+                context=failure_runner.FaultContext(publish, publish, publish.store),
+            )
+            self.assertEqual(stat.S_IMODE(publish_shard.stat().st_mode), 0o750)
+            self.assertEqual(publish.get_available(publish_fixture.reference.asset_id).status,
+                             "failed")
+
+            deleting = factory("asset_clickhouse_delete_mode", workspace / "delete-mode")
+            deleting.create()
+            delete_fixture = failure_runner.build_failure_fixture(
+                failure_runner.FailureCase("delete_failure")
+            )
+            deleting.prepare_available(delete_fixture)
+            delete_shard = deleting.store.object_path(delete_fixture.reference.asset_id).parent
+            delete_shard.chmod(0o710)
+            injector.inject(
+                failure_runner.FailureCase("delete_failure"), delete_fixture,
+                context=failure_runner.FaultContext(deleting, deleting, deleting.store),
+            )
+            self.assertEqual(stat.S_IMODE(delete_shard.stat().st_mode), 0o710)
+            self.assertTrue(deleting.store.object_path(delete_fixture.reference.asset_id).is_file())
+            self.assertEqual(deleting.get_available(delete_fixture.reference.asset_id).status,
+                             "deleting")
+
+            control = factory("asset_clickhouse_no_fault", workspace / "no-fault")
+            control.create()
+            fixture = failure_runner.build_failure_fixture(
+                failure_runner.FailureCase("publish_failure")
+            )
+            control.prepare_pending(fixture)
+            with patch.object(Path, "chmod", return_value=None):
+                with self.assertRaisesRegex(RuntimeError, "did not fail"):
+                    injector.inject(
+                        failure_runner.FailureCase("publish_failure"), fixture,
+                        context=failure_runner.FaultContext(control, control, control.store),
+                    )
+            self.assertEqual(control.get_available(fixture.reference.asset_id).status, "pending")
+
+    def test_metadata_mutation_is_synchronous_and_requires_exact_readback(self):
+        """捕获异步 mutation、更新错误 asset 或重复/不一致 readback 被当作成功。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            factory, _, _, states = stateful_clickhouse_asset_factories(root)
+            control = factory("asset_clickhouse_mutation", root / "objects")
+            state = states["asset_clickhouse_mutation"]
+            control.create()
+            fixture = failure_runner.build_failure_fixture(
+                failure_runner.FailureCase("metadata_mismatch")
+            )
+            control.prepare_available(fixture)
+            control.replace_metadata(fixture, mismatched=True)
+            self.assertEqual(
+                control.get_available(fixture.reference.asset_id).content_length,
+                len(fixture.payload) + 1,
+            )
+            self.assertTrue(any(
+                "UPDATE content_length=" in request and "SETTINGS mutations_sync=2" in request
+                for request in state.requests
+            ))
+            control.replace_metadata(fixture, mismatched=False)
+
+            state.ignore_metadata_mutation = True
+            with self.assertRaisesRegex(RuntimeError, "readback"):
+                control.replace_metadata(fixture, mismatched=True)
+            state.ignore_metadata_mutation = False
+            wrong_id = "0" * 64
+            state.assets[wrong_id] = {**state.assets[fixture.reference.asset_id],
+                                      "asset_id": wrong_id, "sha256": wrong_id}
+            state.metadata_target = wrong_id
+            with self.assertRaisesRegex(RuntimeError, "readback"):
+                control.replace_metadata(fixture, mismatched=True)
+            state.metadata_target = None
+            state.select_override["asset"] = ""
+            with self.assertRaisesRegex(RuntimeError, "readback"):
+                control.replace_metadata(fixture, mismatched=False)
+            row = {"asset_id": fixture.reference.asset_id,
+                   "content_length": len(fixture.payload)}
+            state.select_override["asset"] = StatefulClickHouse._response([row, row])
+            with self.assertRaisesRegex(RuntimeError, "readback"):
+                control.replace_metadata(fixture, mismatched=False)
+
+    def test_partial_insert_failure_marks_case_failed_and_cleans_owned_resources(self):
+        """捕获跨表任一 INSERT 失败后伪造完成证据或遗漏 database/object 清理。"""
+        for target in ("assets", "events_analytics"):
+            with self.subTest(target=target), tempfile.TemporaryDirectory() as directory:
+                root = Path(directory)
+                factory, catalog_factory, injector, states = stateful_clickhouse_asset_factories(root)
+
+                def failing_factory(namespace, object_directory):
+                    control = factory(namespace, object_directory)
+                    states[namespace].fail_insert = target
+                    return control
+
+                result = failure_runner.run_failure_case(
+                    failure_runner.FailureCase("publish_failure"), root,
+                    adapter_factory=failing_factory, catalog_factory=catalog_factory,
+                    fault_injector=injector, namespace="asset_clickhouse_partial",
+                )
+                state = states["asset_clickhouse_partial"]
+                self.assertIn(target + " insert failed", result.execution_error)
+                self.assertIsNone(result.injection_point)
+                self.assertEqual(result.catalog_transitions, ())
+                self.assertTrue(result.cleanup["namespace_removed"])
+                self.assertTrue(result.cleanup["object_directory_removed"])
+                self.assertFalse(state.database_exists)
+                self.assertEqual(state.dropped_events, {})
+                self.assertEqual(len(state.dropped_assets), 1 if target == "events_analytics" else 0)
+                self.assertTrue(all(connection.closed for connection in state.connections))
 
 
 if __name__ == "__main__":
