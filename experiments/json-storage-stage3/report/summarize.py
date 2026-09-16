@@ -590,7 +590,7 @@ def summarize(runs: list[Path]) -> dict[str, object]:
 
 
 def write_summary_atomic(output: Path, summary: dict[str, object]) -> None:
-    """以同目录临时文件发布新汇总，相同既有内容按幂等成功处理。"""
+    """以同目录临时文件原子发布新汇总，绝不覆盖既有结果。"""
     output = Path(output)
     content = json.dumps(
         summary, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":"),
@@ -604,7 +604,7 @@ def write_summary_atomic(output: Path, summary: dict[str, object]) -> None:
             return
         raise FileExistsError(f"summary output already exists: {output}")
     temporary = None
-    published = False
+    published_identity = None
     try:
         with tempfile.NamedTemporaryFile(
             mode="wb", dir=output.parent, prefix=f".{output.name}.", suffix=".tmp", delete=False,
@@ -613,20 +613,28 @@ def write_summary_atomic(output: Path, summary: dict[str, object]) -> None:
             handle.write(content)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temporary, output)
-        published = True
+        try:
+            os.link(temporary, output)
+        except FileExistsError:
+            if output.read_bytes() == content:
+                return
+            raise FileExistsError(f"summary output already exists: {output}") from None
+        published = os.stat(temporary, follow_symlinks=False)
+        published_identity = (published.st_dev, published.st_ino)
         directory_fd = os.open(output.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
         try:
             os.fsync(directory_fd)
         finally:
             os.close(directory_fd)
-        temporary = None
     except Exception:
-        if published:
+        if published_identity is not None:
             try:
-                output.unlink()
+                current = os.stat(output, follow_symlinks=False)
             except FileNotFoundError:
                 pass
+            else:
+                if (current.st_dev, current.st_ino) == published_identity:
+                    output.unlink()
         raise
     finally:
         if temporary is not None:

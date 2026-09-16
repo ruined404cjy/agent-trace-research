@@ -534,12 +534,12 @@ class StageThreeSummaryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "summary.json"
             fsync_targets = []
-            replace_paths = []
-            original_replace = os.replace
+            link_paths = []
+            original_link = os.link
 
-            def observe_replace(source, destination):
-                replace_paths.append((Path(source), Path(destination)))
-                original_replace(source, destination)
+            def observe_link(source, destination):
+                link_paths.append((Path(source), Path(destination)))
+                original_link(source, destination)
 
             with (
                 patch.object(
@@ -548,23 +548,23 @@ class StageThreeSummaryTest(unittest.TestCase):
                         "directory" if stat.S_ISDIR(os.fstat(fd).st_mode) else "file"
                     ),
                 ),
-                patch.object(report.os, "replace", side_effect=observe_replace),
+                patch.object(report.os, "link", side_effect=observe_link),
             ):
                 report.write_summary_atomic(output, {"status": "complete", "value": 1})
             self.assertEqual(json.loads(output.read_text()), {"status": "complete", "value": 1})
             self.assertEqual(fsync_targets, ["file", "directory"])
-            self.assertEqual(replace_paths[0][0].parent, output.parent)
-            self.assertEqual(replace_paths[0][1], output)
+            self.assertEqual(link_paths[0][0].parent, output.parent)
+            self.assertEqual(link_paths[0][1], output)
             self.assertEqual(list(output.parent.glob(".*.tmp")), [])
             output.unlink()
-            with patch.object(report.os, "replace", side_effect=OSError("replace failed")):
-                with self.assertRaisesRegex(OSError, "replace failed"):
+            with patch.object(report.os, "link", side_effect=OSError("link failed")):
+                with self.assertRaisesRegex(OSError, "link failed"):
                     report.write_summary_atomic(output, {"status": "complete"})
             self.assertFalse(output.exists())
             self.assertEqual(list(output.parent.glob(".*.tmp")), [])
 
     def test_directory_fsync_failure_removes_published_target(self):
-        """防止 replace 后目录持久化失败却留下看似完整的结果。"""
+        """防止发布后目录持久化失败却留下看似完整的结果。"""
         with tempfile.TemporaryDirectory() as directory:
             output = Path(directory) / "summary.json"
             calls = 0
@@ -588,14 +588,78 @@ class StageThreeSummaryTest(unittest.TestCase):
             original = b'{"status":"complete","value":1}\n'
             output.write_bytes(original)
 
-            with patch.object(report.os, "replace") as replace:
+            with patch.object(report.os, "link") as link:
                 report.write_summary_atomic(output, {"status": "complete", "value": 1})
-            replace.assert_not_called()
+            link.assert_not_called()
             self.assertEqual(output.read_bytes(), original)
 
             with self.assertRaisesRegex(FileExistsError, "already exists"):
                 report.write_summary_atomic(output, {"status": "complete", "value": 2})
             self.assertEqual(output.read_bytes(), original)
+            self.assertEqual(list(output.parent.glob(".*.tmp")), [])
+
+    def test_publish_race_preserves_different_winner_and_cleans_temp(self):
+        """发布边界出现不同内容时，必须以竞态胜出者为准。"""
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "summary.json"
+            winner = b'{"status":"complete","value":2}\n'
+            original_link = os.link
+            calls = 0
+
+            def publish_after_winner(source, destination):
+                nonlocal calls
+                calls += 1
+                Path(destination).write_bytes(winner)
+                original_link(source, destination)
+
+            with patch.object(report.os, "link", side_effect=publish_after_winner):
+                with self.assertRaisesRegex(FileExistsError, "already exists"):
+                    report.write_summary_atomic(output, {"status": "complete", "value": 1})
+            self.assertEqual(calls, 1)
+            self.assertEqual(output.read_bytes(), winner)
+            self.assertEqual(list(output.parent.glob(".*.tmp")), [])
+
+    def test_publish_race_accepts_identical_winner_and_cleans_temp(self):
+        """发布边界出现相同内容时，按幂等成功处理。"""
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "summary.json"
+            winner = b'{"status":"complete","value":1}\n'
+            original_link = os.link
+            calls = 0
+
+            def publish_after_winner(source, destination):
+                nonlocal calls
+                calls += 1
+                Path(destination).write_bytes(winner)
+                original_link(source, destination)
+
+            with patch.object(report.os, "link", side_effect=publish_after_winner):
+                report.write_summary_atomic(output, {"status": "complete", "value": 1})
+            self.assertEqual(calls, 1)
+            self.assertEqual(output.read_bytes(), winner)
+            self.assertEqual(list(output.parent.glob(".*.tmp")), [])
+
+    def test_fsync_failure_never_removes_a_later_winner(self):
+        """目录 fsync 失败时，只清理本次发布且仍持有的对象。"""
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "summary.json"
+            competitor = Path(directory) / "competitor.json"
+            winner = b'{"status":"complete","value":2}\n'
+            calls = 0
+            original_replace = os.replace
+
+            def replace_before_directory_failure(_):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    competitor.write_bytes(winner)
+                    original_replace(competitor, output)
+                    raise OSError("directory fsync failed")
+
+            with patch.object(report.os, "fsync", side_effect=replace_before_directory_failure):
+                with self.assertRaisesRegex(OSError, "directory fsync failed"):
+                    report.write_summary_atomic(output, {"status": "complete", "value": 1})
+            self.assertEqual(output.read_bytes(), winner)
             self.assertEqual(list(output.parent.glob(".*.tmp")), [])
 
 
