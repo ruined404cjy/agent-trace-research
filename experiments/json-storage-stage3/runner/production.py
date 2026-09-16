@@ -1,7 +1,7 @@
 """组装阶段三正式输入及后续运行可复用的基础工厂。"""
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from assets import LocalAssetStore
@@ -16,6 +16,62 @@ from run_layout_matrix import (
     validate_workload_contract,
     workload_query_cases,
 )
+
+
+_FORMAL_INPUT_SEAL = object()
+
+
+class _FrozenDict(dict):
+    """保留 dict 消费接口的递归只读映射。"""
+
+    @staticmethod
+    def _immutable(*_args, **_kwargs):
+        raise TypeError("formal input is read-only")
+
+    __setitem__ = _immutable
+    __delitem__ = _immutable
+    __ior__ = _immutable
+    clear = _immutable
+    pop = _immutable
+    popitem = _immutable
+    setdefault = _immutable
+    update = _immutable
+
+
+def _freeze(value):
+    """递归复制可变容器，保留现有 dict 和 tuple 读取接口。"""
+    if isinstance(value, _FrozenDict):
+        return value
+    if isinstance(value, dict):
+        return _FrozenDict({key: _freeze(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return tuple(_freeze(item) for item in value)
+    if isinstance(value, tuple):
+        return tuple(_freeze(item) for item in value)
+    return value
+
+
+def _freeze_truth(truth: TruthCatalog) -> TruthCatalog:
+    """复制 TruthCatalog 内全部可变映射，保持公共 dataclass 类型。"""
+    return TruthCatalog(
+        seed=truth.seed, source=_freeze(truth.source), record_count=truth.record_count,
+        block_size=truth.block_size, block_count=truth.block_count,
+        watermarks=_freeze(truth.watermarks), identity_sha256=truth.identity_sha256,
+        query_window=_freeze(truth.query_window), payloads=_freeze(truth.payloads),
+        cohorts=_freeze(truth.cohorts), representative_traces=_freeze(truth.representative_traces),
+        detail_samples=_freeze(truth.detail_samples),
+    )
+
+
+def _freeze_queries(query_cases):
+    """冻结现有 query helper 返回的参数与独立 truth 行集。"""
+    return tuple(
+        (
+            QuerySpec(query.kind, _freeze(query.parameters)),
+            QueryTruth(query_truth.scenario, _freeze(query_truth.rows)),
+        )
+        for query, query_truth in query_cases
+    )
 
 
 @dataclass(frozen=True)
@@ -35,11 +91,18 @@ class EngineEndpoints:
             "opengauss_host", "opengauss_container",
             "clickhouse_host", "clickhouse_container",
         ):
-            if not isinstance(getattr(self, name), str) or not getattr(self, name):
+            value = getattr(self, name)
+            if (
+                not isinstance(value, str)
+                or not value
+                or value.strip() != value
+                or any(character.isspace() or ord(character) < 32 or ord(character) == 127
+                       for character in value)
+            ):
                 raise ValueError(f"{name} must be a non-empty string")
         for name in ("opengauss_port", "clickhouse_port"):
             value = getattr(self, name)
-            if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 65_535:
                 raise ValueError(f"{name} must be a positive integer")
 
 
@@ -56,6 +119,7 @@ class FormalInput:
     main_blocks: tuple[tuple[dict[str, object], ...], ...]
     main_queries: tuple[tuple[QuerySpec, QueryTruth], ...]
     main_contract: dict[str, object]
+    _validation_seal: object | None = field(default=None, init=False, repr=False, compare=False)
 
 
 def _load_generation(root: Path) -> dict[str, object]:
@@ -101,21 +165,25 @@ def load_formal_input(root: Path) -> FormalInput:
     if identity.get("kind") != "formal":
         raise ValueError("formal input identity is required")
     validate_formal_contract(generation, truth, 30, 5)
-    events = tuple(events)
+    truth = _freeze_truth(truth)
+    events = _freeze(tuple(events))
     main_events = build_workload_events(events, "main")
     main_contract = validate_workload_contract(main_events, "main", "formal")
+    main_events = _freeze(main_events)
     main_blocks = _main_blocks(main_events, truth.watermarks)
-    main_queries = workload_query_cases(main_events, truth, root, "main")
-    return FormalInput(
-        root, truth, events, dict(identity), dict(generation), main_events, main_blocks,
-        main_queries, main_contract,
+    main_queries = _freeze_queries(workload_query_cases(main_events, truth, root, "main"))
+    formal = FormalInput(
+        root, truth, events, _freeze(identity), _freeze(generation), main_events, main_blocks,
+        main_queries, _freeze(main_contract),
     )
+    object.__setattr__(formal, "_validation_seal", _FORMAL_INPUT_SEAL)
+    return formal
 
 
 def _require_formal_input(formal: FormalInput) -> FormalInput:
     """确保工厂只接受正式 loader 产出的聚合输入对象。"""
-    if not isinstance(formal, FormalInput):
-        raise ValueError("formal must be a FormalInput")
+    if not isinstance(formal, FormalInput) or formal._validation_seal is not _FORMAL_INPUT_SEAL:
+        raise ValueError("formal must be a validated FormalInput")
     return formal
 
 
@@ -161,7 +229,7 @@ def candidate_config(formal: FormalInput, output: Path, asset_root: Path,
     return RunConfig(
         input_root=formal.root, output=Path(output), engine="clickhouse", layout="asset_ref",
         round_index=0, round_order=latin_square()[0], measurements=30,
-        batch_measurements=5, input_identity=dict(formal.identity), command=tuple(command),
+        batch_measurements=5, input_identity=formal.identity, command=tuple(command),
         asset_root=Path(asset_root).resolve(), verified_events=formal.main_events, workload="main",
     )
 

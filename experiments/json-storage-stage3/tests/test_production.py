@@ -91,7 +91,18 @@ def formal_fixture(root):
         },
         detail_samples=tuple(payloads[index] for index in (0, 40, 80, 120)),
     )
-    return truth, tuple(events), {"kind": "formal", "identity_sha256": "0" * 64}
+    return truth, tuple(events), {
+        "kind": "formal", "identity_sha256": "0" * 64,
+        "provenance": {"source": "fixture"},
+    }
+
+
+def load_fixture_formal(root):
+    """经正式 loader 返回测试所需的已验证输入快照。"""
+    truth, events, identity = formal_fixture(root)
+    (root / "generation-manifest.json").write_text(json.dumps(formal_generation()))
+    with patch.object(production, "load_run_input", return_value=(truth, events, identity)):
+        return production.load_formal_input(root)
 
 
 class ProductionFactoryTest(unittest.TestCase):
@@ -183,10 +194,10 @@ class ProductionFactoryTest(unittest.TestCase):
 
     def test_adapter_factory_uses_real_constructors_and_isolated_asset_store(self):
         """捕获 adapter 构造连接数据库、误用 Asset 目录或接受非法选择。"""
-        formal = production.FormalInput(Path("/tmp/formal"), None, (), {}, {}, (), (), (), {})
         endpoints = production.EngineEndpoints()
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
+            formal = load_fixture_formal(root / "formal")
             for engine in ("opengauss", "clickhouse"):
                 for layout in ("same_table", "separate", "full_core", "asset_ref"):
                     asset_root = root / f"{engine}-{layout}"
@@ -195,7 +206,7 @@ class ProductionFactoryTest(unittest.TestCase):
                         asset_root if layout == "asset_ref" else root / "ignored", endpoints,
                     )
                     self.assertEqual(adapter.layout, layout)
-                    self.assertEqual(adapter.input_root, Path("/tmp/formal").resolve())
+                    self.assertEqual(adapter.input_root, formal.root)
                     self.assertIsNone(adapter.asset_store) if layout != "asset_ref" else self.assertEqual(
                         adapter.asset_store.root, asset_root.resolve(),
                     )
@@ -212,17 +223,94 @@ class ProductionFactoryTest(unittest.TestCase):
 
     def test_candidate_and_part_state_inputs_are_fixed_main_contract(self):
         """捕获候选配置暴露缩短测量或替换 main workload 的入口。"""
-        formal = production.FormalInput(
-            Path("/tmp/formal"), None, ({"ingest_seq": 0},), {"kind": "formal"}, {},
-            ({"ingest_seq": 0},), (({"ingest_seq": 0},),), (("query", "truth"),), {"payload_count": 160},
-        )
-        config = production.candidate_config(formal, Path("/tmp/out"), Path("/tmp/assets"), ("runner",))
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            formal = load_fixture_formal(root / "formal")
+            config = production.candidate_config(
+                formal, root / "out", root / "assets", ("runner",),
+            )
 
         self.assertEqual((config.engine, config.layout, config.workload), ("clickhouse", "asset_ref", "main"))
         self.assertEqual((config.round_index, config.round_order), (0, ("same_table", "separate", "full_core", "asset_ref")))
         self.assertEqual((config.measurements, config.batch_measurements), (30, 5))
         self.assertEqual(config.verified_events, formal.main_events)
         self.assertEqual(production.part_state_inputs(formal), (formal.main_blocks, formal.main_queries))
+
+    def test_factories_reject_handmade_formal_input_without_loader_validation(self):
+        """捕获调用方以同类型对象绕过正式 input loader。"""
+        forged = production.FormalInput(Path("/tmp/formal"), None, (), {}, {}, (), (), (), {})
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with self.assertRaisesRegex(ValueError, "validated"):
+                production.create_adapter(
+                    "clickhouse", "same_table", "jsons3factory", forged, None,
+                    production.EngineEndpoints(),
+                )
+            with self.assertRaisesRegex(ValueError, "validated"):
+                production.candidate_config(forged, root / "out", root / "assets", ("runner",))
+            with self.assertRaisesRegex(ValueError, "validated"):
+                production.part_state_inputs(forged)
+
+    def test_loader_returns_deep_readonly_snapshot_for_factory_consumers(self):
+        """捕获正式门禁后仍可篡改 identity、事件或 query truth。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "formal"
+            truth, events, identity = formal_fixture(root)
+            (root / "generation-manifest.json").write_text(json.dumps(formal_generation()))
+            with patch.object(production, "load_run_input", return_value=(truth, events, identity)):
+                formal = production.load_formal_input(root)
+            config = production.candidate_config(formal, root / "out", root / "assets", ("runner",))
+            blocks, queries = production.part_state_inputs(formal)
+
+        self.assertEqual(formal.events[0]["event_id"], "event-00000")
+        self.assertEqual(formal.identity["provenance"]["source"], "fixture")
+        self.assertEqual(formal.truth.query_window["page_size"], 256)
+        source_event = events[0]
+        source_event["event_id"] = "changed-outside-loader"
+        identity["provenance"]["source"] = "changed-outside-loader"
+        truth.query_window["page_size"] = 1
+        self.assertEqual(formal.events[0]["event_id"], "event-00000")
+        self.assertEqual(formal.identity["provenance"]["source"], "fixture")
+        self.assertEqual(formal.truth.query_window["page_size"], 256)
+        query, query_truth = queries[0]
+        mutation_attempts = (
+            lambda: formal.identity.__setitem__("kind", "smoke"),
+            lambda: formal.identity["provenance"].__setitem__("source", "changed"),
+            lambda: formal.generation.__setitem__("status", "failed"),
+            lambda: formal.events[0].__setitem__("event_id", "changed"),
+            lambda: blocks[0][0].__setitem__("event_id", "changed"),
+            lambda: formal.main_contract.__setitem__("payload_count", 0),
+            lambda: query.parameters.__setitem__("page_size", 1),
+            lambda: query_truth.rows[0].__setitem__("event_id", "changed"),
+            lambda: formal.truth.query_window.__setitem__("page_size", 1),
+            lambda: config.input_identity.__setitem__("kind", "smoke"),
+        )
+        for attempt in mutation_attempts:
+            with self.assertRaises(TypeError):
+                attempt()
+
+    def test_endpoints_reject_whitespace_and_out_of_range_ports(self):
+        """捕获不可用的连接身份或端口仍进入 adapter 工厂。"""
+        invalid = (
+            {"opengauss_host": " host"},
+            {"opengauss_host": "host name"},
+            {"clickhouse_host": "host\nname"},
+            {"opengauss_container": "container\tname"},
+            {"clickhouse_container": " container"},
+            {"opengauss_port": 65_536},
+            {"clickhouse_port": 65_536},
+            {"clickhouse_port": True},
+        )
+        for values in invalid:
+            with self.subTest(values=values):
+                with self.assertRaises(ValueError):
+                    production.EngineEndpoints(**values)
+        endpoints = production.EngineEndpoints(
+            opengauss_host="db.example", clickhouse_host="::1",
+            opengauss_container="gauss-v6", clickhouse_container="clickhouse-25",
+            opengauss_port=1, clickhouse_port=65_535,
+        )
+        self.assertEqual((endpoints.opengauss_host, endpoints.clickhouse_host), ("db.example", "::1"))
 
 
 if __name__ == "__main__":
