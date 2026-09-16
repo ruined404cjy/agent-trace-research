@@ -14,6 +14,7 @@ sys.path.insert(0, str(STAGE_DIR / "runner"))
 
 from common import QuerySpec, TruthCatalog, build_layout_catalog, canonical_digest
 import production
+import run_interference
 import run_stage3
 
 
@@ -977,6 +978,303 @@ class PartStateProductionTests(unittest.TestCase):
                 self.run_part_states_cli(Path(directory), runner_error=RuntimeError("runner failed"))
             failed = json.loads((Path(directory) / "attempt-1" / "run-manifest.json").read_text())
             self.assertEqual(failed["child"]["path"], "child/run-manifest.json")
+
+
+def interference_raw_sample(stream, sequence, query_id=None):
+    """构造一条可独立门禁的成功 raw 请求。"""
+    nested = None
+    if stream == "continuous_ingest":
+        nested = {"rows": 256, "watermark": 48_790,
+                  "watermarks": {"events_analytics": 48_790}, "wall_ms": 1.0,
+                  "write_target_ms": {}, "asset_publish_ms": 0.0,
+                  "logical_target_row_bytes": {}, "database_ingest_request_body_bytes": {},
+                  "asset_raw_object_bytes": 0}
+    else:
+        kind, scenario = run_interference.QUERY_STREAMS[stream]
+        nested = {"scenario": scenario or f"{stream}:first", "kind": kind,
+                  "status": "success", "query_id": query_id,
+                  "response_bytes": 1, "validation": {
+                      "row_count": 1, "validated_payload_bytes": 0,
+                  }}
+    return {"stream": stream, "sequence": sequence,
+            "scheduled_offset_seconds": float(sequence), "started_offset_seconds": float(sequence),
+            "completed_offset_seconds": float(sequence) + 0.1, "duration_ms": 100.0,
+            "application_ready_ms": 100.0, "status": "success", "late_by_ms": 0.0,
+            "sample": nested, "error": None}
+
+
+def valid_interference_tree(output, layout="same_table"):
+    """写入小型 raw fixture；高层测试单独替换完整 raw parser。"""
+    child_root = output / "child"
+    child_root.mkdir(parents=True)
+    root = {"format": "agent-trace-json-storage-stage3-interference-run",
+            "format_version": 1, "status": "complete", "seed": 20260907,
+            "execution_scope": "formal", "classification": "formal_complete",
+            "phase_order": [phase.name for phase in run_interference.FIXED_PHASES], "phases": []}
+    parsed = {}
+    query_counter = 0
+    for phase in run_interference.FIXED_PHASES:
+        schedules = {
+            segment: run_interference._json_value(run_interference.fixed_phase_schedules(
+                phase, measurement=segment == "measurement"))
+            for segment in ("warmup", "measurement")
+        }
+        records = {}
+        all_queries = []
+        summaries = {}
+        for segment, filename in (("warmup", "warmup-samples.jsonl"),
+                                  ("measurement", "samples.jsonl")):
+            segment_records = []
+            streams = {}
+            for stream, schedule in schedules[segment].items():
+                query_counter += 1
+                row = interference_raw_sample(stream, 0, f"query-{query_counter}")
+                segment_records.append(row)
+                scheduled = (math.ceil(schedule["duration_seconds"] * schedule["rate_per_second"])
+                             if schedule["mode"] == "fixed" else 1)
+                counts = {"scheduled_requests": scheduled, "started_requests": scheduled,
+                          "completed_requests": scheduled, "successful_requests": scheduled,
+                          "failed_requests": 0, "timed_out_requests": 0,
+                          "dropped_requests": 0, "late_requests": 0}
+                streams[stream] = {"counts": counts, "successful_queries": (
+                    [] if stream == "continuous_ingest" else [row["sample"]]
+                )}
+                if stream != "continuous_ingest":
+                    all_queries.append(row["sample"])
+            records[filename] = segment_records
+            summaries[segment] = streams
+        query_ids = [sample["query_id"] for sample in all_queries]
+        catalog = build_layout_catalog(layout)
+        snapshot = {"captured_offset_seconds": 0.0,
+                    "resources": {"cpu": {"status": "available", "ticks": [1]},
+                                    "memory": {"status": "available", "total_kib": 2,
+                                               "available_kib": 1},
+                                    "io": {"status": "available", "devices": 1,
+                                           "read_sectors": 0, "written_sectors": 0}},
+                    "storage": {"tables": {name: {"part_count": 1, "marks": 0,
+                                                     "compressed_bytes": 0,
+                                                     "uncompressed_bytes": 0}
+                                           for name in catalog.write_tables}, "merges": []},
+                    "active_part_backlog": 0, "active_merge_count": 0}
+        manifest = {"format": "agent-trace-json-storage-stage3-interference-phase",
+                    "format_version": 1, "status": "complete", "phase": phase.name,
+                    "seed": 20260907, "execution_scope": "formal",
+                    "classification": "formal_complete", "layout": layout,
+                    "namespace": f"jsons3_if_{phase.name}", "warmup_seconds": 30.0,
+                    "measurement_seconds": 300.0, "schedules": schedules,
+                    "execution_coverage": {"warmup_actual_seconds": 30.0,
+                                           "measurement_actual_seconds": 300.0},
+                    "snapshots": [dict(snapshot, name=name) for name in (
+                        "before_warmup", "before_measurement", "after_measurement")],
+                    "warmup": {}, "statistics": {},
+                    "query_evidence": {
+                        "plans": {qid: "plan" for qid in query_ids},
+                        "query_details": {sample["query_id"]: {
+                            "kind": sample["kind"], "statement": "SELECT 1",
+                            "declared_source": catalog.list_source,
+                            "scanned_rows": 1, "scanned_bytes": 1,
+                        } for sample in all_queries},
+                        "query_finish": {qid: {"type": "QueryFinish", "exception_code": 0,
+                                               "read_rows": 1, "read_bytes": 1}
+                                         for qid in query_ids}},
+                    "cleanup": {"namespace": f"jsons3_if_{phase.name}_{layout}",
+                                "removed": True}}
+        for segment, streams in summaries.items():
+            target = manifest["warmup" if segment == "warmup" else "statistics"]
+            for stream, info in streams.items():
+                successful = info["counts"]["successful_requests"]
+                target[stream] = {"offered_rate_requests_s": schedules[segment][stream]["rate_per_second"],
+                                  "phase_wall_seconds": 30.0 if segment == "warmup" else 300.0,
+                                  **info["counts"], "completed_throughput_requests_s": (
+                                      successful / (30.0 if segment == "warmup" else 300.0)),
+                                  "latency_ms": {"p99_status": (
+                                      "publishable" if successful >= 1000
+                                      else "unavailable_insufficient_successes"),
+                                                 "p99_minimum_successes": 1000,
+                                                 "p99": 100.0 if successful >= 1000 else None,
+                                                 "minimum": 100.0, "p50": 100.0,
+                                                 "p95": 100.0, "maximum": 100.0}}
+        phase_root = child_root / phase.name
+        phase_root.mkdir()
+        run_stage3.write_manifest_atomic(phase_root / "run-manifest.json", manifest)
+        for filename, rows in records.items():
+            (phase_root / filename).write_text("".join(json.dumps(row) + "\n" for row in rows))
+        root["phases"].append(manifest)
+        parsed[phase.name] = summaries
+    run_stage3.write_manifest_atomic(child_root / "run-manifest.json", root)
+    return run_stage3._read_child(output, child_root / "run-manifest.json"), parsed
+
+
+class InterferenceProductionGateTests(unittest.TestCase):
+    def run_gate(self, mutate=None):
+        directory = tempfile.TemporaryDirectory()
+        output = Path(directory.name)
+        child, parsed = valid_interference_tree(output)
+        if mutate:
+            mutate(output, child["_manifest"])
+            child = run_stage3._read_child(output, output / "child" / "run-manifest.json")
+        parser = patch.object(run_stage3, "_parse_interference_raw", side_effect=lambda path, schedules, *_: (
+            parsed[Path(path).parent.name]["warmup" if Path(path).name.startswith("warmup")
+                                            else "measurement"]
+        ))
+        parser.start()
+        self.addCleanup(parser.stop)
+        self.addCleanup(directory.cleanup)
+        self.formal = SimpleNamespace(main_queries=tuple(
+            (QuerySpec(kind, {"cohort": "main"} if kind == "batch" else {}),
+             SimpleNamespace(scenario=scenario))
+            for scenario, kind in (("list:first", "list"), ("preview:first", "preview"),
+                                   ("detail:text_2m", "detail"), ("trace:p95", "trace"),
+                                   ("batch:main", "batch"))
+        ))
+        return output, child
+
+    def test_gate_accepts_exact_five_phase_formal_evidence_and_rechecks_artifacts(self):
+        output, child = self.run_gate()
+        evidence = run_stage3._gate_interference(child, self.formal, "same_table")
+        self.assertEqual(len(evidence["namespaces"]), 5)
+        self.assertEqual(len(evidence["phases"]), 5)
+        self.assertEqual(len(evidence["artifacts"]), 16)
+        run_stage3._verify_interference_artifacts(output, evidence["artifacts"])
+        (output / evidence["artifacts"][-1]["path"]).write_text("replaced")
+        with self.assertRaisesRegex(RuntimeError, "artifact.*changed"):
+            run_stage3._verify_interference_artifacts(output, evidence["artifacts"])
+
+    def test_gate_rejects_root_phase_namespace_coverage_and_storage_mutations(self):
+        def cases(name):
+            def mutate(output, root):
+                phase = root["phases"][0]
+                if name == "non_formal": root["execution_scope"] = "diagnostic"
+                elif name == "bool_version": root["format_version"] = True
+                elif name == "missing_phase": root["phases"].pop()
+                elif name == "embedded_mismatch": phase["status"] = "failed"
+                elif name == "duplicate_namespace": root["phases"][1]["namespace"] = phase["namespace"]
+                elif name == "bool_phase_version": phase["format_version"] = True
+                elif name == "short_coverage": phase["execution_coverage"]["warmup_actual_seconds"] = 29.9
+                elif name == "missing_storage": phase["snapshots"][0]["storage"]["tables"] = {}
+                elif name == "bool_snapshot_total": phase["snapshots"][0]["active_merge_count"] = False
+                if name not in {"non_formal", "bool_version", "missing_phase", "embedded_mismatch"}:
+                    changed = root["phases"][1] if name == "duplicate_namespace" else phase
+                    run_stage3.write_manifest_atomic(
+                        output / "child" / changed["phase"] / "run-manifest.json", changed,
+                    )
+                run_stage3.write_manifest_atomic(output / "child" / "run-manifest.json", root)
+            return mutate
+        for name in ("non_formal", "bool_version", "missing_phase", "embedded_mismatch",
+                     "duplicate_namespace", "bool_phase_version", "short_coverage",
+                     "missing_storage", "bool_snapshot_total"):
+            with self.subTest(name=name):
+                output, child = self.run_gate(cases(name))
+                with self.assertRaises(RuntimeError):
+                    run_stage3._gate_interference(child, self.formal, "same_table")
+
+    def test_raw_parser_rejects_missing_empty_invalid_sequence_and_summary_count(self):
+        schedule = run_interference._json_value(run_interference.fixed_phase_schedules(
+            run_interference.FIXED_PHASES[0], measurement=False))
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "raw.jsonl"
+            with self.assertRaises(RuntimeError): run_stage3._parse_interference_raw(path, schedule)
+            path.write_bytes(b"")
+            with self.assertRaises(RuntimeError): run_stage3._parse_interference_raw(path, schedule)
+            path.write_bytes(b"{\n")
+            with self.assertRaises(ValueError): run_stage3._parse_interference_raw(path, schedule)
+            rows = [interference_raw_sample("list", 1, "q1"),
+                    interference_raw_sample("preview", 0, "q2")]
+            path.write_text("".join(json.dumps(row) + "\n" for row in rows))
+            with self.assertRaises(RuntimeError): run_stage3._parse_interference_raw(path, schedule)
+            one = {"list": dict(schedule["list"], rate_per_second=2.0,
+                                duration_seconds=1.0)}
+            path.write_text(json.dumps(interference_raw_sample("list", 0, "q1")) + "\n")
+            with self.assertRaisesRegex(RuntimeError, "scheduled count"):
+                run_stage3._parse_interference_raw(path, one)
+
+    def test_raw_parser_rejects_query_mapping_and_missing_continuous_block_result(self):
+        fixed = {"list": {"name": "list", "rate_per_second": 1.0,
+                           "duration_seconds": 1.0, "workers": 1,
+                           "timeout_seconds": 1.0, "late_tolerance_seconds": 0.05,
+                           "mode": "fixed"}}
+        continuous = {"continuous_ingest": {"name": "continuous_ingest",
+                                              "rate_per_second": None,
+                                              "duration_seconds": 1.0, "workers": 1,
+                                              "timeout_seconds": 1.0,
+                                              "late_tolerance_seconds": 0.05,
+                                              "mode": "continuous"}}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "raw.jsonl"
+            wrong = interference_raw_sample("list", 0, "q1")
+            wrong["sample"].update(kind="trace", scenario="trace:p95")
+            path.write_text(json.dumps(wrong) + "\n")
+            with self.assertRaisesRegex(RuntimeError, "query evidence"):
+                run_stage3._parse_interference_raw(path, fixed)
+            missing = interference_raw_sample("continuous_ingest", 0)
+            missing["sample"] = None
+            path.write_text(json.dumps(missing) + "\n")
+            with self.assertRaisesRegex(RuntimeError, "BlockResult"):
+                run_stage3._parse_interference_raw(path, continuous)
+
+    def test_raw_parser_accepts_unfinished_timeout_and_checks_ingest_watermarks(self):
+        fixed = {"list": {"name": "list", "rate_per_second": 1.0,
+                           "duration_seconds": 1.0, "workers": 1,
+                           "timeout_seconds": 1.0, "late_tolerance_seconds": 0.05,
+                           "mode": "fixed"}}
+        continuous = {"continuous_ingest": {"name": "continuous_ingest",
+                                              "rate_per_second": None,
+                                              "duration_seconds": 1.0, "workers": 1,
+                                              "timeout_seconds": 1.0,
+                                              "late_tolerance_seconds": 0.05,
+                                              "mode": "continuous"}}
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "raw.jsonl"
+            timeout = interference_raw_sample("list", 0, "unused")
+            timeout.update(status="timed_out", completed_offset_seconds=None,
+                           duration_ms=None, application_ready_ms=None, sample=None,
+                           error="request timed out")
+            path.write_text(json.dumps(timeout) + "\n")
+            parsed = run_stage3._parse_interference_raw(path, fixed)
+            self.assertEqual(parsed["list"]["counts"]["timed_out_requests"], 1)
+            block = interference_raw_sample("continuous_ingest", 0)
+            block["sample"]["watermarks"] = {"wrong_table": block["sample"]["watermark"]}
+            path.write_text(json.dumps(block) + "\n")
+            with self.assertRaisesRegex(RuntimeError, "BlockResult"):
+                run_stage3._parse_interference_raw(
+                    path, continuous, {}, ("events",),
+                )
+
+    def test_access_gate_rejects_query_ids_reused_between_segments(self):
+        sample = interference_raw_sample("list", 0, "duplicate")["sample"]
+        with self.assertRaisesRegex(RuntimeError, "duplicated across segments"):
+            run_stage3._gate_interference_access({}, {"list": [sample, dict(sample)]})
+
+    def test_gate_rejects_summary_query_access_and_ingest_conflicts(self):
+        def cases(name):
+            def mutate(output, root):
+                phase = root["phases"][4 if name == "missing_block" else 0]
+                if name == "summary": phase["warmup"]["list"]["scheduled_requests"] = 2
+                elif name == "bool_count": phase["warmup"]["list"]["failed_requests"] = False
+                elif name == "throughput": phase["warmup"]["list"]["completed_throughput_requests_s"] = 1.0
+                elif name == "p99": phase["statistics"]["list"]["latency_ms"].update(
+                    p99_status="unavailable_insufficient_successes", p99=None,
+                )
+                elif name == "latency": phase["warmup"]["list"]["latency_ms"]["p50"] = "100"
+                elif name == "bool_rate":
+                    phase = root["phases"][1]
+                    phase["warmup"]["detail_2m"]["offered_rate_requests_s"] = True
+                elif name == "missing_query_id": phase["query_evidence"]["plans"].pop(next(iter(phase["query_evidence"]["plans"])))
+                elif name == "finish_conflict": next(iter(phase["query_evidence"]["query_finish"].values()))["read_bytes"] = 2
+                elif name == "bool_exception": next(iter(
+                    phase["query_evidence"]["query_finish"].values()
+                ))["exception_code"] = False
+                run_stage3.write_manifest_atomic(
+                    output / "child" / phase["phase"] / "run-manifest.json", phase,
+                )
+                run_stage3.write_manifest_atomic(output / "child" / "run-manifest.json", root)
+            return mutate
+        for name in ("summary", "bool_count", "throughput", "p99", "latency", "bool_rate",
+                     "missing_query_id", "finish_conflict", "bool_exception"):
+            with self.subTest(name=name):
+                output, child = self.run_gate(cases(name))
+                with self.assertRaises(RuntimeError):
+                    run_stage3._gate_interference(child, self.formal, "same_table")
 
 
 if __name__ == "__main__":
