@@ -1,14 +1,18 @@
 """组装阶段三正式输入及后续运行可复用的基础工厂。"""
 
+import hashlib
 import json
+import stat
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 
-from assets import LocalAssetStore
+from assets import AssetError, AssetRecord, AssetReference, LocalAssetStore
 from common import BlockResult, LAYOUTS, MaintenanceResult, QuerySpec, TruthCatalog, canonical_digest
+from opengauss import OpenGaussAdapter
+from run_asset_failures import FailureFixture
 from run_layout_matrix import (
     QueryTruth,
     RunConfig,
@@ -443,3 +447,308 @@ def interference_factories(
         return targets
 
     return adapter_factory, targets_factory, metadata
+
+
+class OpenGaussAssetFaultControl:
+    """封装真实 openGauss asset_ref adapter 的故障控制与只读观测面。"""
+
+    def __init__(self, adapter: OpenGaussAdapter):
+        if (
+            not isinstance(adapter, OpenGaussAdapter)
+            or adapter.layout != "asset_ref"
+            or not isinstance(adapter.asset_store, LocalAssetStore)
+        ):
+            raise ValueError("control requires an openGauss asset_ref adapter")
+        self.adapter = adapter
+        self.store = adapter.asset_store
+
+    def create(self) -> dict[str, object]:
+        """创建 control 持有的物理 schema。"""
+        return self.adapter.create()
+
+    def cleanup(self):
+        """清理 control 持有的物理 schema。"""
+        return self.adapter.cleanup()
+
+    def cleanup_targets(self) -> tuple[str, ...]:
+        """返回 runner 可核对的物理 schema cleanup identity。"""
+        return (self.adapter.schema,)
+
+    def get_available(self, asset_id: str) -> AssetRecord | None:
+        """读取指定 asset 的真实 catalog 状态。"""
+        return self.adapter.get_available(asset_id)
+
+    def event_visible(self, reference: AssetReference) -> bool:
+        """从事件表核对完整 Asset 引用是否可见。"""
+        if not isinstance(reference, AssetReference):
+            raise ValueError("reference must be AssetReference")
+        connection = self.adapter.connect_worker()
+        try:
+            row = connection.execute(
+                f"SELECT EXISTS(SELECT 1 FROM {self.adapter.schema}.events_analytics "
+                "WHERE asset_id=%s AND content_type=%s AND encoding=%s "
+                "AND content_length=%s AND preview=%s AND sha256=%s)",
+                (
+                    reference.asset_id, reference.content_type, reference.encoding,
+                    reference.content_length, reference.preview, reference.asset_id,
+                ),
+            ).fetchone()
+            return bool(row[0])
+        finally:
+            connection.close()
+
+    def reachable_paths(self) -> set[Path]:
+        """通过 event 与 catalog 的真实 JOIN 返回可达对象路径。"""
+        connection = self.adapter.connect_worker()
+        try:
+            rows = connection.execute(
+                f"SELECT DISTINCT a.storage_path FROM {self.adapter.schema}.events_analytics e "
+                f"JOIN {self.adapter.schema}.assets a ON a.asset_id=e.asset_id"
+            ).fetchall()
+            return {Path(row[0]) for row in rows}
+        finally:
+            connection.close()
+
+    @staticmethod
+    def _event_values(fixture: FailureFixture) -> tuple[object, ...]:
+        """将故障 fixture 转为固定且完整的 event row。"""
+        record = fixture.record
+        return (
+            0, record.event_id, record.trace_id, record.event_id + ":span", None,
+            record.project_id, record.start_time, "2030-01-01T00:00:00.001Z", 1,
+            "llm", "asset_failure", "ERROR", record.cohort, record.profile,
+            record.content_type, record.encoding, record.content_length,
+            record.preview, record.sha256, fixture.reference.asset_id,
+        )
+
+    def _insert_fixture(self, fixture: FailureFixture, status: str) -> None:
+        """在单个事务中插入 catalog 行和对应 event 引用。"""
+        asset_id = fixture.reference.asset_id
+        path = self.store.object_path(asset_id)
+        connection = self.adapter.connect_worker()
+        try:
+            try:
+                with connection.transaction():
+                    asset_cursor = connection.execute(
+                        f"INSERT INTO {self.adapter.schema}.assets("
+                        "asset_id,sha256,content_type,encoding,content_length,storage_path,"
+                        "status,error_category) VALUES (%s,%s,%s,%s,%s,%s,%s,NULL)",
+                        (
+                            asset_id, asset_id, fixture.record.content_type,
+                            fixture.record.encoding, fixture.record.content_length, str(path), status,
+                        ),
+                    )
+                    event_cursor = connection.execute(
+                        f"INSERT INTO {self.adapter.schema}.events_analytics("
+                        "ingest_seq,event_id,trace_id,span_id,parent_span_id,project_id,"
+                        "start_time,end_time,duration_ms,span_type,framework,level,cohort,profile,"
+                        "content_type,encoding,content_length,preview,sha256,asset_id) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                        self._event_values(fixture),
+                    )
+                    if asset_cursor.rowcount != 1 or event_cursor.rowcount != 1:
+                        raise RuntimeError("fixture insert did not affect exactly one row")
+            except Exception:
+                connection.rollback()
+                raise
+        finally:
+            connection.close()
+
+    def prepare_available(self, fixture: FailureFixture) -> None:
+        """先发布 fixture bytes，再原子插入 available catalog 与 event。"""
+        stored = self.store.publish_bytes(fixture.reference.asset_id, fixture.payload)
+        if stored.path != self.store.object_path(fixture.reference.asset_id):
+            raise RuntimeError("published object path mismatch")
+        self._insert_fixture(fixture, "available")
+
+    def prepare_pending(self, fixture: FailureFixture) -> None:
+        """原子插入 pending catalog 与 event，不创建最终对象。"""
+        path = self.store.object_path(fixture.reference.asset_id)
+        if path.exists():
+            raise RuntimeError("pending fixture final object already exists")
+        self._insert_fixture(fixture, "pending")
+
+    def set_status(self, asset_id: str, status: str,
+                   error_category: str | None = None) -> None:
+        """复用 adapter 的显式 catalog 状态转换。"""
+        self.adapter.set_asset_status(asset_id, status, error_category)
+
+    def replace_metadata(self, fixture: FailureFixture, *, mismatched: bool) -> None:
+        """精确更新 catalog content_length，以注入或恢复 metadata。"""
+        content_length = len(fixture.payload) + 1 if mismatched else len(fixture.payload)
+        connection = self.adapter.connect_worker()
+        try:
+            try:
+                with connection.transaction():
+                    cursor = connection.execute(
+                        f"UPDATE {self.adapter.schema}.assets SET content_length=%s,"
+                        "updated_at=CURRENT_TIMESTAMP WHERE asset_id=%s",
+                        (content_length, fixture.reference.asset_id),
+                    )
+                    if cursor.rowcount != 1:
+                        raise ValueError("metadata update did not affect exactly one asset")
+            except Exception:
+                connection.rollback()
+                raise
+        finally:
+            connection.close()
+
+
+class DatabaseFaultInjector:
+    """通过 control 与受观测 store 操作面实施六种固定数据库 Asset 故障。"""
+
+    _CASES = frozenset({
+        "missing", "corrupt", "metadata_mismatch", "upload_then_db_failure",
+        "publish_failure", "delete_failure",
+    })
+
+    @staticmethod
+    def _control(case, fixture, context) -> OpenGaussAssetFaultControl:
+        """验证 case、fixture、control identity 与 canonical object path。"""
+        if case.name not in DatabaseFaultInjector._CASES:
+            raise ValueError("unsupported asset failure case: " + str(case.name))
+        if context.adapter is not context.catalog:
+            raise ValueError("adapter and catalog must be the same fault control")
+        control = context.adapter
+        required = (
+            "prepare_available", "prepare_pending", "set_status", "replace_metadata",
+        )
+        if not all(callable(getattr(control, name, None)) for name in required):
+            raise ValueError("fault control is missing required capabilities")
+        asset_id = fixture.reference.asset_id
+        if (
+            fixture.record.sha256 != asset_id
+            or fixture.record.content_length != len(fixture.payload)
+            or hashlib.sha256(fixture.payload).hexdigest() != asset_id
+            or context.store.object_path(asset_id) != control.store.object_path(asset_id)
+        ):
+            raise ValueError("fixture or object path mismatch")
+        return control
+
+    def prepare(self, case, fixture, *, context) -> None:
+        """建立各 case 的固定注入前状态。"""
+        control = self._control(case, fixture, context)
+        if case.name == "upload_then_db_failure":
+            return
+        if case.name == "publish_failure":
+            control.prepare_pending(fixture)
+            return
+        control.prepare_available(fixture)
+
+    @staticmethod
+    def _restore_mode(path: Path, original_mode: int) -> None:
+        """恢复并核对故障前目录 mode。"""
+        path.chmod(original_mode)
+        if stat.S_IMODE(path.stat().st_mode) != original_mode:
+            raise RuntimeError("asset shard mode was not restored")
+
+    def _inject_publish_failure(self, fixture, context, control) -> None:
+        """用 shard 写权限制造一次受 runner 观测的发布失败。"""
+        asset_id = fixture.reference.asset_id
+        final_path = context.store.object_path(asset_id)
+        shard = final_path.parent
+        shard.mkdir(parents=True, exist_ok=True)
+        original_mode = stat.S_IMODE(shard.stat().st_mode)
+        failed = False
+        try:
+            shard.chmod(original_mode & ~0o222)
+            try:
+                context.store.publish_bytes(asset_id, fixture.payload)
+            except AssetError as error:
+                if error.category != "failed":
+                    raise RuntimeError("publish failure had an unexpected category") from error
+                failed = True
+        finally:
+            self._restore_mode(shard, original_mode)
+        if not failed:
+            raise RuntimeError("asset publish did not fail")
+        if final_path.exists():
+            raise RuntimeError("failed asset publish left a final object")
+        control.set_status(asset_id, "failed", "failed")
+
+    def _inject_delete_failure(self, fixture, context, control) -> None:
+        """用 shard 写权限制造一次真实最终对象删除失败。"""
+        asset_id = fixture.reference.asset_id
+        final_path = context.store.object_path(asset_id)
+        if not final_path.is_file():
+            raise RuntimeError("delete failure requires a final object")
+        control.set_status(asset_id, "deleting")
+        shard = final_path.parent
+        original_mode = stat.S_IMODE(shard.stat().st_mode)
+        failed = False
+        try:
+            shard.chmod(original_mode & ~0o222)
+            try:
+                final_path.unlink()
+            except OSError:
+                failed = True
+        finally:
+            self._restore_mode(shard, original_mode)
+        if not failed:
+            raise RuntimeError("asset deletion did not fail")
+        if not final_path.is_file():
+            raise RuntimeError("failed asset deletion removed the final object")
+
+    def inject(self, case, fixture, *, context) -> None:
+        """执行单个固定故障动作，不返回或生成 evidence。"""
+        control = self._control(case, fixture, context)
+        asset_id = fixture.reference.asset_id
+        path = context.store.object_path(asset_id)
+        if case.name == "missing":
+            path.unlink()
+        elif case.name == "corrupt":
+            corrupt = bytes([fixture.payload[0] ^ 1]) + fixture.payload[1:]
+            if len(corrupt) != len(fixture.payload) or hashlib.sha256(corrupt).hexdigest() == asset_id:
+                raise RuntimeError("unable to construct corrupt payload")
+            path.write_bytes(corrupt)
+        elif case.name == "metadata_mismatch":
+            control.replace_metadata(fixture, mismatched=True)
+        elif case.name == "upload_then_db_failure":
+            context.store.publish_bytes(asset_id, fixture.payload)
+        elif case.name == "publish_failure":
+            self._inject_publish_failure(fixture, context, control)
+        elif case.name == "delete_failure":
+            self._inject_delete_failure(fixture, context, control)
+
+    def recover(self, case, fixture, *, context) -> None:
+        """恢复可恢复故障，并保留 publish/delete 的失败后置状态。"""
+        control = self._control(case, fixture, context)
+        asset_id = fixture.reference.asset_id
+        path = context.store.object_path(asset_id)
+        if case.name == "missing":
+            context.store.publish_bytes(asset_id, fixture.payload)
+        elif case.name == "corrupt":
+            path.unlink()
+            context.store.publish_bytes(asset_id, fixture.payload)
+        elif case.name == "metadata_mismatch":
+            control.replace_metadata(fixture, mismatched=False)
+        elif case.name == "upload_then_db_failure":
+            path.unlink()
+
+
+def opengauss_asset_failure_factories(
+    endpoints: EngineEndpoints,
+) -> tuple[Callable, Callable, DatabaseFaultInjector]:
+    """构造可直接交给六故障 runner 的 openGauss factories 与 injector。"""
+    if not isinstance(endpoints, EngineEndpoints):
+        raise ValueError("endpoints must be EngineEndpoints")
+    controls = set()
+
+    def adapter_factory(namespace, object_directory):
+        """构造独立 asset_ref control，不连接数据库或创建 schema。"""
+        store = LocalAssetStore(Path(object_directory).resolve())
+        adapter = OpenGaussAdapter(
+            endpoints.opengauss_host, endpoints.opengauss_port,
+            endpoints.opengauss_container, namespace, "asset_ref", Path.cwd(), store,
+        )
+        control = OpenGaussAssetFaultControl(adapter)
+        controls.add(control)
+        return control
+
+    def catalog_factory(control):
+        """仅向对应 factory 创建的同一 control 返回只读观测面。"""
+        if not isinstance(control, OpenGaussAssetFaultControl) or control not in controls:
+            raise ValueError("catalog factory requires its corresponding fault control")
+        return control
+
+    return adapter_factory, catalog_factory, DatabaseFaultInjector()

@@ -1,11 +1,14 @@
 import hashlib
 import json
 import operator
+import stat
 import sys
 import tempfile
 import threading
 import unittest
+from copy import deepcopy
 from dataclasses import replace
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
@@ -13,7 +16,8 @@ from unittest.mock import patch
 STAGE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(STAGE_DIR / "runner"))
 
-from common import BlockResult, MaintenanceResult, PayloadRecord, QuerySpec, TruthCatalog
+from assets import AssetError, AssetRecord, LocalAssetStore
+from common import BlockResult, CleanupResult, MaintenanceResult, PayloadRecord, QuerySpec, TruthCatalog
 from run_layout_matrix import (
     FORMAL_GENERATION_FORMAT,
     FORMAL_QUERY_WINDOW,
@@ -22,6 +26,7 @@ from run_layout_matrix import (
 )
 import production
 from run_interference import DeadlineTarget, FIXED_PHASES, fixed_phase_schedules
+import run_asset_failures as failure_runner
 
 
 LAYOUT_WATERMARK_KEYS = {
@@ -189,6 +194,178 @@ class InterferenceAdapter:
             self.failure != "ready_incomplete",
             {key: ready_watermark for key in LAYOUT_WATERMARK_KEYS[self.layout]},
         )
+
+
+class StatefulOpenGauss:
+    """模拟事务、参数绑定和 JOIN 可见性的 openGauss 连接边界。"""
+
+    def __init__(self):
+        self.schema_exists = False
+        self.assets = {}
+        self.events = {}
+        self.connections = []
+        self.fail_event_insert = False
+
+    def connect(self):
+        connection = StatefulConnection(self)
+        self.connections.append(connection)
+        return connection
+
+
+class StatefulCursor:
+    """保存 rowcount 和查询结果，供 production control 读取。"""
+
+    def __init__(self, rows=(), rowcount=-1):
+        self.rows = tuple(rows)
+        self.rowcount = rowcount
+
+    def fetchone(self):
+        return self.rows[0] if self.rows else None
+
+    def fetchall(self):
+        return self.rows
+
+
+class StatefulTransaction:
+    """在异常时恢复 catalog 与 event 快照，模拟数据库回滚。"""
+
+    def __init__(self, connection):
+        self.connection = connection
+
+    def __enter__(self):
+        state = self.connection.state
+        self.connection.snapshot = (
+            state.schema_exists, deepcopy(state.assets), deepcopy(state.events),
+        )
+        return self
+
+    def __exit__(self, error_type, error, traceback):
+        if error_type is not None:
+            self.connection.rollback()
+        else:
+            self.connection.snapshot = None
+        return False
+
+
+class StatefulConnection:
+    """执行 wrapper 使用的受限 SQL，并记录参数化语句。"""
+
+    def __init__(self, state):
+        self.state = state
+        self.closed = False
+        self.snapshot = None
+        self.statements = []
+
+    def transaction(self):
+        return StatefulTransaction(self)
+
+    def rollback(self):
+        if self.snapshot is not None:
+            self.state.schema_exists, self.state.assets, self.state.events = self.snapshot
+            self.snapshot = None
+
+    def close(self):
+        self.closed = True
+
+    def execute(self, statement, parameters=None):
+        parameters = () if parameters is None else tuple(parameters)
+        self.statements.append((statement, parameters))
+        sql = " ".join(statement.split())
+        if sql.startswith("SELECT EXISTS(SELECT 1 FROM pg_namespace"):
+            return StatefulCursor(((self.state.schema_exists,),))
+        if sql.startswith("CREATE SCHEMA"):
+            self.state.schema_exists = True
+            return StatefulCursor()
+        if sql.startswith("CREATE TABLE") or sql.startswith("CREATE INDEX"):
+            return StatefulCursor()
+        if sql.startswith("DROP SCHEMA"):
+            self.state.schema_exists = False
+            self.state.assets.clear()
+            self.state.events.clear()
+            return StatefulCursor()
+        if "INSERT INTO" in sql and ".assets(" in sql:
+            asset_id, sha256, content_type, encoding, length, path, status = parameters
+            self.state.assets[asset_id] = {
+                "asset_id": asset_id, "sha256": sha256, "content_type": content_type,
+                "encoding": encoding, "content_length": int(length),
+                "storage_path": str(path), "status": status,
+                "updated_at": datetime(2030, 1, 1, tzinfo=timezone.utc),
+                "error_category": None,
+            }
+            return StatefulCursor(rowcount=1)
+        if "INSERT INTO" in sql and ".events_analytics(" in sql:
+            if self.state.fail_event_insert:
+                raise RuntimeError("event insert failed")
+            event_id, asset_id, content_type, encoding, length, preview, sha256 = (
+                parameters[1], parameters[-1], parameters[-6], parameters[-5],
+                parameters[-4], parameters[-3], parameters[-2],
+            )
+            self.state.events[event_id] = {
+                "event_id": event_id, "asset_id": asset_id, "content_type": content_type,
+                "encoding": encoding, "content_length": int(length),
+                "preview": preview, "sha256": sha256,
+            }
+            return StatefulCursor(rowcount=1)
+        if sql.startswith("UPDATE") and "SET status=" in sql:
+            status, error_category, asset_id = parameters
+            if asset_id not in self.state.assets:
+                return StatefulCursor(rowcount=0)
+            self.state.assets[asset_id].update(
+                status=status, error_category=error_category,
+            )
+            return StatefulCursor(rowcount=1)
+        if sql.startswith("UPDATE") and "SET content_length=" in sql:
+            length, asset_id = parameters
+            if asset_id not in self.state.assets:
+                return StatefulCursor(rowcount=0)
+            self.state.assets[asset_id]["content_length"] = int(length)
+            return StatefulCursor(rowcount=1)
+        if sql.startswith("SELECT asset_id,sha256"):
+            row = self.state.assets.get(parameters[0])
+            if row is None:
+                return StatefulCursor()
+            fields = (
+                "asset_id", "sha256", "content_type", "encoding", "content_length",
+                "storage_path", "status", "updated_at", "error_category",
+            )
+            return StatefulCursor((tuple(row[field] for field in fields),))
+        if sql.startswith("SELECT EXISTS(") and ".events_analytics" in sql:
+            asset_id, content_type, encoding, length, preview, sha256 = parameters
+            visible = any(
+                event["asset_id"] == asset_id
+                and event["content_type"] == content_type
+                and event["encoding"] == encoding
+                and event["content_length"] == length
+                and event["preview"] == preview
+                and event["sha256"] == sha256
+                for event in self.state.events.values()
+            )
+            return StatefulCursor(((visible,),))
+        if sql.startswith("SELECT DISTINCT") and " JOIN " in sql:
+            paths = {
+                self.state.assets[event["asset_id"]]["storage_path"]
+                for event in self.state.events.values()
+                if event["asset_id"] in self.state.assets
+            }
+            return StatefulCursor(tuple((path,) for path in sorted(paths)))
+        raise AssertionError("unexpected SQL: " + sql)
+
+
+def stateful_asset_factories(root):
+    """返回真实 adapter/control factory，并为每个 namespace 接入独立事务替身。"""
+    adapter_factory, catalog_factory, injector = production.opengauss_asset_failure_factories(
+        production.EngineEndpoints(),
+    )
+    states = {}
+
+    def factory(namespace, object_directory):
+        control = adapter_factory(namespace, object_directory)
+        state = StatefulOpenGauss()
+        states[namespace] = state
+        control.adapter.connect_worker = state.connect
+        return control
+
+    return factory, catalog_factory, injector, states
 
 
 class ProductionFactoryTest(unittest.TestCase):
@@ -690,6 +867,241 @@ class ProductionFactoryTest(unittest.TestCase):
             opengauss_port=1, clickhouse_port=65_535,
         )
         self.assertEqual((endpoints.opengauss_host, endpoints.clickhouse_host), ("db.example", "::1"))
+
+
+class OpenGaussAssetFailureProductionTest(unittest.TestCase):
+    """验证 openGauss Asset 故障 wrapper 的真实对象和事务观测边界。"""
+
+    def test_factory_rejects_invalid_identity_without_connecting_and_isolates_controls(self):
+        """捕获非法端点、外来 control 或构造期数据库连接进入故障运行。"""
+        with self.assertRaisesRegex(ValueError, "endpoints"):
+            production.opengauss_asset_failure_factories(object())
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "opengauss.OpenGaussAdapter.connect_worker",
+            side_effect=AssertionError("factory connected to database"),
+        ):
+            root = Path(directory)
+            factory, catalog_factory, _ = production.opengauss_asset_failure_factories(
+                production.EngineEndpoints(),
+            )
+            first = factory("asset_failure_one", root / "one")
+            second = factory("asset_failure_two", root / "two")
+            self.assertIs(catalog_factory(first), first)
+            self.assertIsNot(first, second)
+            self.assertEqual(first.adapter.layout, "asset_ref")
+            self.assertEqual(first.store.root, (root / "one").resolve())
+            self.assertEqual(second.store.root, (root / "two").resolve())
+            with self.assertRaisesRegex(ValueError, "control"):
+                catalog_factory(object())
+            _, foreign_catalog_factory, _ = production.opengauss_asset_failure_factories(
+                production.EngineEndpoints(),
+            )
+            with self.assertRaisesRegex(ValueError, "control"):
+                foreign_catalog_factory(first)
+
+    def test_control_transactions_make_only_event_joined_assets_reachable(self):
+        """捕获 catalog 单表扫描冒充事件 JOIN 可达性或 metadata/status 写入失真。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            factory, _, _, states = stateful_asset_factories(root)
+            control = factory("asset_failure_control", root / "objects")
+            state = states["asset_failure_control"]
+            control.create()
+            available = failure_runner.build_failure_fixture(
+                failure_runner.FailureCase("missing")
+            )
+            pending = failure_runner.build_failure_fixture(
+                failure_runner.FailureCase("publish_failure")
+            )
+            control.prepare_available(available)
+            orphan_path = control.store.object_path("0" * 64)
+            state.assets["0" * 64] = {
+                "asset_id": "0" * 64, "sha256": "0" * 64,
+                "content_type": "application/json", "encoding": "utf-8",
+                "content_length": 1, "storage_path": str(orphan_path),
+                "status": "available", "updated_at": None, "error_category": None,
+            }
+            self.assertTrue(control.event_visible(available.reference))
+            self.assertEqual(control.reachable_paths(), {
+                control.store.object_path(available.reference.asset_id),
+            })
+            self.assertNotIn(orphan_path, control.reachable_paths())
+            control.replace_metadata(available, mismatched=True)
+            self.assertEqual(
+                control.get_available(available.reference.asset_id).content_length,
+                len(available.payload) + 1,
+            )
+            control.replace_metadata(available, mismatched=False)
+            control.set_status(available.reference.asset_id, "deleting")
+            self.assertEqual(
+                control.get_available(available.reference.asset_id).status, "deleting",
+            )
+            control.prepare_pending(pending)
+            self.assertTrue(control.event_visible(pending.reference))
+            self.assertFalse(control.store.object_path(pending.reference.asset_id).exists())
+            self.assertEqual(control.cleanup_targets(), (control.adapter.schema,))
+            self.assertEqual(control.cleanup(), CleanupResult(control.adapter.schema, True))
+            self.assertTrue(all(connection.closed for connection in state.connections))
+            self.assertTrue(all(
+                bool(parameters)
+                for connection in state.connections
+                for statement, parameters in connection.statements
+                if "%s" in statement
+            ))
+
+    def test_run_failure_catalog_observes_all_six_real_object_and_database_outcomes(self):
+        """捕获 production injector 绕过 runner 观测或省略任一故障/恢复动作。"""
+        with tempfile.TemporaryDirectory() as directory:
+            workspace = Path(directory)
+            factory, catalog_factory, injector, states = stateful_asset_factories(workspace)
+            results = failure_runner.run_failure_catalog(
+                workspace,
+                adapter_factory=factory,
+                catalog_factory=catalog_factory,
+                fault_injector=injector,
+                namespace_factory=lambda case: "asset_failure_" + case.name,
+            )
+
+            self.assertEqual(results["missing"].error, "missing")
+            self.assertEqual(results["corrupt"].error, "corrupt")
+            self.assertEqual(results["metadata_mismatch"].error, "metadata_mismatch")
+            self.assertEqual(results["upload_then_db_failure"].orphan_count, 1)
+            self.assertFalse(results["upload_then_db_failure"].event_visible)
+            self.assertEqual(results["publish_failure"].final_status, "failed")
+            self.assertEqual(results["delete_failure"].final_status, "deleting")
+            self.assertEqual(
+                results["publish_failure"].store_observation["publish_attempts"][0]["error"],
+                "failed",
+            )
+            for case in ("missing", "corrupt", "metadata_mismatch"):
+                self.assertTrue(results[case].recovery_resolver["content_visible"])
+            self.assertEqual(
+                results["upload_then_db_failure"].reconcile_after_recovery["orphan_count"], 0,
+            )
+            self.assertTrue(all(not state.schema_exists for state in states.values()))
+
+    def test_permission_faults_restore_nondefault_mode_on_success_and_exceptions(self):
+        """捕获 publish/delete 权限故障未执行、硬编码恢复 mode 或异常泄漏权限。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            factory, _, injector, _ = stateful_asset_factories(root)
+
+            publish = factory("asset_failure_publish_mode", root / "publish")
+            publish.create()
+            publish_fixture = failure_runner.build_failure_fixture(
+                failure_runner.FailureCase("publish_failure")
+            )
+            publish.prepare_pending(publish_fixture)
+            publish_shard = publish.store.object_path(publish_fixture.reference.asset_id).parent
+            publish_shard.mkdir(parents=True)
+            publish_shard.chmod(0o750)
+            publish_context = failure_runner.FaultContext(publish, publish, publish.store)
+            injector.inject(
+                failure_runner.FailureCase("publish_failure"), publish_fixture,
+                context=publish_context,
+            )
+            self.assertEqual(stat.S_IMODE(publish_shard.stat().st_mode), 0o750)
+            self.assertFalse(publish.store.object_path(publish_fixture.reference.asset_id).exists())
+            self.assertEqual(
+                publish.get_available(publish_fixture.reference.asset_id).status, "failed",
+            )
+
+            deleting = factory("asset_failure_delete_mode", root / "delete")
+            deleting.create()
+            delete_fixture = failure_runner.build_failure_fixture(
+                failure_runner.FailureCase("delete_failure")
+            )
+            deleting.prepare_available(delete_fixture)
+            delete_shard = deleting.store.object_path(delete_fixture.reference.asset_id).parent
+            delete_shard.chmod(0o750)
+            injector.inject(
+                failure_runner.FailureCase("delete_failure"), delete_fixture,
+                context=failure_runner.FaultContext(deleting, deleting, deleting.store),
+            )
+            self.assertEqual(stat.S_IMODE(delete_shard.stat().st_mode), 0o750)
+            self.assertTrue(deleting.store.object_path(delete_fixture.reference.asset_id).exists())
+            self.assertEqual(
+                deleting.get_available(delete_fixture.reference.asset_id).status, "deleting",
+            )
+
+            exceptional = factory("asset_failure_publish_exception", root / "exception")
+            exceptional.create()
+            exceptional.prepare_pending(publish_fixture)
+            exceptional_shard = exceptional.store.object_path(
+                publish_fixture.reference.asset_id
+            ).parent
+            exceptional_shard.mkdir(parents=True)
+            exceptional_shard.chmod(0o710)
+            with patch.object(
+                exceptional, "set_status", side_effect=RuntimeError("status update failed"),
+            ):
+                with self.assertRaisesRegex(RuntimeError, "status update failed"):
+                    injector.inject(
+                        failure_runner.FailureCase("publish_failure"), publish_fixture,
+                        context=failure_runner.FaultContext(
+                            exceptional, exceptional, exceptional.store,
+                        ),
+                    )
+            self.assertEqual(stat.S_IMODE(exceptional_shard.stat().st_mode), 0o710)
+
+    def test_permission_injection_fails_closed_when_the_filesystem_operation_succeeds(self):
+        """捕获未产生真实 publish 失败时仍伪造 failed catalog 状态。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            factory, _, injector, _ = stateful_asset_factories(root)
+            control = factory("asset_failure_no_fault", root / "objects")
+            control.create()
+            fixture = failure_runner.build_failure_fixture(
+                failure_runner.FailureCase("publish_failure")
+            )
+            control.prepare_pending(fixture)
+            with patch.object(Path, "chmod", return_value=None):
+                with self.assertRaisesRegex(RuntimeError, "did not fail"):
+                    injector.inject(
+                        failure_runner.FailureCase("publish_failure"), fixture,
+                        context=failure_runner.FaultContext(control, control, control.store),
+                    )
+            self.assertEqual(control.get_available(fixture.reference.asset_id).status, "pending")
+
+    def test_prepare_write_failure_rolls_back_both_rows_and_closes_connection(self):
+        """捕获事件写失败后提交孤立 catalog 半行或泄漏连接。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            factory, _, _, states = stateful_asset_factories(root)
+            control = factory("asset_failure_rollback", root / "objects")
+            control.create()
+            state = states["asset_failure_rollback"]
+            state.fail_event_insert = True
+            fixture = failure_runner.build_failure_fixture(
+                failure_runner.FailureCase("publish_failure")
+            )
+            with self.assertRaisesRegex(RuntimeError, "event insert failed"):
+                control.prepare_pending(fixture)
+            self.assertEqual(state.assets, {})
+            self.assertEqual(state.events, {})
+            self.assertTrue(all(connection.closed for connection in state.connections))
+
+            case_factory, catalog_factory, injector, case_states = stateful_asset_factories(
+                root / "case"
+            )
+
+            def failing_factory(namespace, object_directory):
+                case_control = case_factory(namespace, object_directory)
+                case_states[namespace].fail_event_insert = True
+                return case_control
+
+            result = failure_runner.run_failure_case(
+                failure_runner.FailureCase("publish_failure"), root / "case",
+                adapter_factory=failing_factory,
+                catalog_factory=catalog_factory,
+                fault_injector=injector,
+                namespace="asset_failure_failed_case",
+            )
+            self.assertIn("event insert failed", result.execution_error)
+            self.assertTrue(result.cleanup["namespace_removed"])
+            self.assertTrue(result.cleanup["object_directory_removed"])
+            self.assertEqual(case_states["asset_failure_failed_case"].assets, {})
+            self.assertEqual(case_states["asset_failure_failed_case"].events, {})
 
 
 if __name__ == "__main__":
