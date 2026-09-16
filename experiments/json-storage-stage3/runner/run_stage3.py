@@ -5,6 +5,7 @@ import argparse
 import hashlib
 import json
 import math
+import re
 import shutil
 import sys
 import uuid
@@ -16,6 +17,7 @@ import assets
 import common
 import production
 import clickhouse
+import run_asset_failures
 import run_interference
 import run_layout_matrix
 from common import canonical_digest
@@ -251,6 +253,152 @@ def _matches_fixed_json(value, expected):
     if isinstance(expected, float) and not math.isfinite(value):
         return False
     return value == expected
+
+
+ASSET_FAILURE_CASES = tuple(run_asset_failures.FAILURE_CASE_NAMES)
+ASSET_FAILURE_RULES = {
+    "missing": ("remove_published_object", "missing", False,
+                "restore_missing_object", "available", "available", True),
+    "corrupt": ("modify_published_bytes", "corrupt", True,
+                "replace_corrupt_object", "available", "available", True),
+    "metadata_mismatch": ("replace_catalog_metadata", "metadata_mismatch", True,
+                          "restore_catalog_metadata", "available", "available", True),
+    "upload_then_db_failure": ("fail_after_object_upload", "missing", True,
+                               "remove_orphan_object", "absent", "absent", False),
+    "publish_failure": ("fail_pending_publication", "failed", False,
+                        "confirm_failed_publication", "failed", "failed", False),
+}
+
+
+def _asset_failure_resolver(error, payload, digest, visible):
+    """构造固定 resolver 结果，用于严格 JSON 结构比较。"""
+    if visible:
+        return {
+            "error": None, "content_visible": True, "content_length": len(payload),
+            "sha256": digest, "preview": payload.decode("utf-8"),
+        }
+    return {
+        "error": error, "content_visible": False, "content_length": None,
+        "sha256": None, "preview": None,
+    }
+
+
+def _expected_asset_failure_result(case, namespace, output, delete_status=None):
+    """按固定六故障语义生成单项只读比较契约。"""
+    if case == "delete_failure":
+        if delete_status not in {"deleting", "failed"}:
+            raise RuntimeError("asset failure delete status is invalid")
+        rule = (
+            "fail_deleting_object_removal", delete_status, True,
+            "confirm_delete_failure_state", delete_status, delete_status, False,
+        )
+    else:
+        rule = ASSET_FAILURE_RULES[case]
+    injection, error, object_exists, recovery, injected_status, final_status, recovered = rule
+    payload = ('{"content":"asset failure ' + case + '"}').encode("utf-8")
+    digest = hashlib.sha256(payload).hexdigest()
+    object_directory = (
+        Path(output).resolve() / "child" / "asset-failure-cases" / case / "objects"
+    )
+    object_path = object_directory / digest[:2] / digest
+    prepared_status = "pending" if case == "publish_failure" else (
+        "absent" if case == "upload_then_db_failure" else "available"
+    )
+    attempts = []
+    if case == "upload_then_db_failure":
+        attempts = [{"asset_id": digest, "error": None, "final_object_exists": True}]
+    elif case == "publish_failure":
+        attempts = [{"asset_id": digest, "error": "failed", "final_object_exists": False}]
+    return {
+        "case": case, "namespace": namespace, "asset_id": digest, "sha256": digest,
+        "injection_point": injection,
+        "catalog_transitions": [
+            {"phase": "injection", "asset_id": digest, "sha256": digest,
+             "before": prepared_status, "after": injected_status},
+            {"phase": "recovery", "asset_id": digest, "sha256": digest,
+             "before": injected_status, "after": final_status},
+        ],
+        "resolver": _asset_failure_resolver(error, payload, digest, False),
+        "event_visible": case != "upload_then_db_failure",
+        "reconcile": {
+            "orphan_count": 1 if case == "upload_then_db_failure" else 0,
+            "orphan_paths": [str(object_path)] if case == "upload_then_db_failure" else [],
+        },
+        "store_observation": {
+            "object_path": str(object_path), "object_exists": object_exists,
+            "publish_attempts": attempts,
+        },
+        "recovery_actions": [recovery],
+        "recovery_resolver": _asset_failure_resolver(error, payload, digest, recovered),
+        "reconcile_after_recovery": {"orphan_count": 0, "orphan_paths": []},
+        "final_status": final_status,
+        "cleanup": {
+            "namespace": namespace, "adapter_cleanup_target": namespace + "_asset_ref",
+            "namespace_removed": True, "object_directory": str(object_directory),
+            "object_directory_removed": True, "errors": [],
+        },
+        "validation_errors": [], "execution_error": None,
+    }
+
+
+def _gate_asset_failures(child, output, engine):
+    """从 child JSON bytes 独立门禁两引擎固定六故障证据。"""
+    if not isinstance(engine, str) or engine not in {"opengauss", "clickhouse"}:
+        raise ValueError("unsupported asset failure engine")
+    output = Path(output).resolve()
+    expected_path = (output / "child" / "run-manifest.json").resolve()
+    if (
+        not isinstance(child, dict)
+        or child.get("_relative") != "child/run-manifest.json"
+        or not isinstance(child.get("_path"), str)
+        or Path(child["_path"]).resolve() != expected_path
+    ):
+        raise RuntimeError("asset failure child manifest path is invalid")
+    content = child.get("_bytes")
+    identity = child.get("_identity")
+    if (
+        not isinstance(content, bytes) or not isinstance(identity, dict)
+        or set(identity) != {"bytes", "sha256"}
+        or not _is_int(identity.get("bytes")) or identity["bytes"] != len(content)
+        or not _is_sha256(identity.get("sha256"))
+        or identity["sha256"] != hashlib.sha256(content).hexdigest()
+    ):
+        raise RuntimeError("asset failure child bytes identity is invalid")
+    manifest = _load_json_object(content, "asset failure child manifest")
+    root_fields = {"format", "format_version", "run_id", "status", "case_order", "results"}
+    if (
+        set(manifest) != root_fields
+        or manifest.get("format") != "agent-trace-json-storage-stage3-asset-failure-run"
+        or not _is_int(manifest.get("format_version")) or manifest["format_version"] != 1
+        or not isinstance(manifest.get("run_id"), str) or not manifest["run_id"]
+        or manifest.get("status") != "complete"
+        or not _matches_fixed_json(manifest.get("case_order"), list(ASSET_FAILURE_CASES))
+        or not isinstance(manifest.get("results"), list)
+        or len(manifest["results"]) != len(ASSET_FAILURE_CASES)
+    ):
+        raise RuntimeError("asset failure child root evidence is invalid")
+    namespaces = []
+    gated_results = []
+    for case, result in zip(ASSET_FAILURE_CASES, manifest["results"]):
+        if not isinstance(result, dict):
+            raise RuntimeError("asset failure result is invalid")
+        namespace = result.get("namespace")
+        pattern = r"jsons3_asset_failure_" + re.escape(case) + r"_[0-9a-f]{10}"
+        if not isinstance(namespace, str) or re.fullmatch(pattern, namespace) is None:
+            raise RuntimeError("asset failure namespace is invalid")
+        delete_status = result.get("final_status") if case == "delete_failure" else None
+        expected = _expected_asset_failure_result(case, namespace, output, delete_status)
+        if not _matches_fixed_json(result, expected):
+            raise RuntimeError(f"asset failure {case} evidence is invalid")
+        namespaces.append(namespace)
+        gated_results.append(result)
+    if len(set(namespaces)) != len(namespaces):
+        raise RuntimeError("asset failure namespaces are not unique")
+    return _strict_json_snapshot({
+        "engine": engine, "case_order": list(ASSET_FAILURE_CASES),
+        "namespaces": namespaces, "results": gated_results,
+        "cleanup": {"namespaces_removed": True, "object_directories_removed": True},
+    }, "asset failure evidence")
 
 
 def _artifact_identity(output, child_root, path):

@@ -1654,5 +1654,199 @@ class InterferenceCliTests(unittest.TestCase):
             self.assertTrue((output / "assets").is_dir())
 
 
+ASSET_FAILURE_CASES = (
+    "missing", "corrupt", "metadata_mismatch", "upload_then_db_failure",
+    "publish_failure", "delete_failure",
+)
+
+
+def valid_asset_failure_child(output):
+    """构造独立于故障 runner helper 的固定六故障 child。"""
+    rules = {
+        "missing": ("remove_published_object", "missing", False,
+                    "restore_missing_object", "available", "available", True),
+        "corrupt": ("modify_published_bytes", "corrupt", True,
+                    "replace_corrupt_object", "available", "available", True),
+        "metadata_mismatch": ("replace_catalog_metadata", "metadata_mismatch", True,
+                              "restore_catalog_metadata", "available", "available", True),
+        "upload_then_db_failure": ("fail_after_object_upload", "missing", True,
+                                   "remove_orphan_object", "absent", "absent", False),
+        "publish_failure": ("fail_pending_publication", "failed", False,
+                            "confirm_failed_publication", "failed", "failed", False),
+        "delete_failure": ("fail_deleting_object_removal", "deleting", True,
+                           "confirm_delete_failure_state", "deleting", "deleting", False),
+    }
+    results = []
+    for index, case in enumerate(ASSET_FAILURE_CASES):
+        injection, error, object_exists, recovery, injected_status, final_status, recovered = rules[case]
+        payload = ('{"content":"asset failure ' + case + '"}').encode()
+        digest = hashlib.sha256(payload).hexdigest()
+        namespace = f"jsons3_asset_failure_{case}_{index:010x}"
+        objects = (output / "child" / "asset-failure-cases" / case / "objects").resolve()
+        object_path = objects / digest[:2] / digest
+        prepared_status = "pending" if case == "publish_failure" else (
+            "absent" if case == "upload_then_db_failure" else "available"
+        )
+        resolver = {
+            "error": error, "content_visible": False, "content_length": None,
+            "sha256": None, "preview": None,
+        }
+        recovery_resolver = dict(resolver)
+        if recovered:
+            recovery_resolver = {
+                "error": None, "content_visible": True, "content_length": len(payload),
+                "sha256": digest, "preview": payload.decode(),
+            }
+        attempts = []
+        if case == "upload_then_db_failure":
+            attempts = [{"asset_id": digest, "error": None, "final_object_exists": True}]
+        elif case == "publish_failure":
+            attempts = [{"asset_id": digest, "error": "failed", "final_object_exists": False}]
+        results.append({
+            "case": case, "namespace": namespace, "asset_id": digest, "sha256": digest,
+            "injection_point": injection,
+            "catalog_transitions": [
+                {"phase": "injection", "asset_id": digest, "sha256": digest,
+                 "before": prepared_status, "after": injected_status},
+                {"phase": "recovery", "asset_id": digest, "sha256": digest,
+                 "before": injected_status, "after": final_status},
+            ],
+            "resolver": resolver,
+            "event_visible": case != "upload_then_db_failure",
+            "reconcile": {
+                "orphan_count": 1 if case == "upload_then_db_failure" else 0,
+                "orphan_paths": [str(object_path)] if case == "upload_then_db_failure" else [],
+            },
+            "store_observation": {
+                "object_path": str(object_path), "object_exists": object_exists,
+                "publish_attempts": attempts,
+            },
+            "recovery_actions": [recovery], "recovery_resolver": recovery_resolver,
+            "reconcile_after_recovery": {"orphan_count": 0, "orphan_paths": []},
+            "final_status": final_status,
+            "cleanup": {
+                "namespace": namespace, "adapter_cleanup_target": namespace + "_asset_ref",
+                "namespace_removed": True, "object_directory": str(objects),
+                "object_directory_removed": True, "errors": [],
+            },
+            "validation_errors": [], "execution_error": None,
+        })
+    return {
+        "format": "agent-trace-json-storage-stage3-asset-failure-run",
+        "format_version": 1, "run_id": "jsons3-asset-failures-0123456789",
+        "status": "complete", "case_order": list(ASSET_FAILURE_CASES), "results": results,
+    }
+
+
+class AssetFailureProductionGateTests(unittest.TestCase):
+    """验证六故障 child bytes 的独立 production 门禁。"""
+
+    def gate(self, root, mutate=None, engine="opengauss"):
+        output = root / "attempt-1"
+        child_root = output / "child"
+        child_root.mkdir(parents=True)
+        manifest = valid_asset_failure_child(output)
+        if mutate is not None:
+            mutate(manifest)
+        run_stage3.write_manifest_atomic(child_root / "run-manifest.json", manifest)
+        child = run_stage3._read_child(output, child_root / "run-manifest.json")
+        return run_stage3._gate_asset_failures(child, output, engine), child
+
+    def assert_rejected(self, mutate=None, engine="opengauss"):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaises((RuntimeError, ValueError)):
+                self.gate(Path(directory), mutate, engine)
+
+    def test_gate_accepts_both_engines_and_returns_isolated_complete_evidence(self):
+        """捕获门禁遗漏 engine、namespace、cleanup 或返回 child 可变对象。"""
+        for engine in ("opengauss", "clickhouse"):
+            with self.subTest(engine=engine), tempfile.TemporaryDirectory() as directory:
+                evidence, child = self.gate(Path(directory), engine=engine)
+                self.assertEqual(evidence["engine"], engine)
+                self.assertEqual(evidence["case_order"], list(ASSET_FAILURE_CASES))
+                self.assertEqual(len(set(evidence["namespaces"])), 6)
+                self.assertEqual(evidence["cleanup"], {
+                    "namespaces_removed": True, "object_directories_removed": True,
+                })
+                child["_manifest"]["results"][0]["case"] = "forged"
+                self.assertEqual(evidence["results"][0]["case"], "missing")
+                evidence["results"][0]["case"] = "changed"
+                fresh, _ = self.gate(Path(directory) / "fresh", engine=engine)
+                self.assertEqual(fresh["results"][0]["case"], "missing")
+
+    def test_gate_rejects_root_path_order_fields_and_engine_drift(self):
+        """捕获 root 身份、case 覆盖或固定 child 相对路径漂移。"""
+        mutations = (
+            lambda value: value.update(format="wrong"),
+            lambda value: value.update(format_version=True),
+            lambda value: value.update(status="running"),
+            lambda value: value.update(run_id=""),
+            lambda value: value["case_order"].reverse(),
+            lambda value: value["results"].__setitem__(1, dict(value["results"][0])),
+            lambda value: value.update(extra=True),
+            lambda value: value["results"][0].update(extra=True),
+        )
+        for mutation in mutations:
+            self.assert_rejected(mutation)
+        self.assert_rejected(engine="sqlite")
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "attempt-1"
+            rogue = output / "rogue"
+            rogue.mkdir(parents=True)
+            run_stage3.write_manifest_atomic(rogue / "run-manifest.json", valid_asset_failure_child(output))
+            child = run_stage3._read_child(output, rogue / "run-manifest.json")
+            with self.assertRaisesRegex(RuntimeError, "child manifest path"):
+                run_stage3._gate_asset_failures(child, output, "opengauss")
+
+    def test_gate_rejects_types_identity_namespace_and_cleanup_binding(self):
+        """捕获 bool/float、摘要、namespace 与物理 cleanup target 冒充证据。"""
+        mutations = (
+            lambda value: value["results"][0]["reconcile"].update(orphan_count=False),
+            lambda value: value["results"][0]["store_observation"].update(object_exists=1),
+            lambda value: value["results"][0].update(event_visible=1.0),
+            lambda value: value["results"][0].update(asset_id="0" * 64, sha256="0" * 64),
+            lambda value: value["results"][0].update(namespace=""),
+            lambda value: value["results"][0]["cleanup"].update(adapter_cleanup_target="wrong"),
+            lambda value: value["results"][0]["cleanup"].update(namespace_removed=1),
+            lambda value: value["results"][0].update(execution_error=""),
+        )
+        for mutation in mutations:
+            self.assert_rejected(mutation)
+
+    def test_gate_rejects_each_fixed_failure_semantic_family(self):
+        """捕获状态链、resolver、orphan、对象、publish 与恢复语义漂移。"""
+        mutations = (
+            lambda value: value["results"][0].update(injection_point="wrong"),
+            lambda value: value["results"][1]["catalog_transitions"][0].update(after="failed"),
+            lambda value: value["results"][2]["resolver"].update(error="corrupt"),
+            lambda value: value["results"][3].update(event_visible=True),
+            lambda value: value["results"][3]["reconcile"].update(orphan_count=0, orphan_paths=[]),
+            lambda value: value["results"][0]["store_observation"].update(object_exists=True),
+            lambda value: value["results"][4]["store_observation"].update(publish_attempts=[]),
+            lambda value: value["results"][0].update(recovery_actions=["wrong"]),
+            lambda value: value["results"][0]["recovery_resolver"].update(content_length=1),
+            lambda value: value["results"][5].update(final_status="available"),
+        )
+        for mutation in mutations:
+            self.assert_rejected(mutation)
+
+    def test_gate_rejects_output_escape_and_cross_case_object_paths(self):
+        """捕获 object/reconcile 路径逃逸 output 或串用另一 case 的对象。"""
+        def escape(value):
+            value["results"][0]["store_observation"]["object_path"] = "/tmp/escape"
+
+        def cross_case(value):
+            source = value["results"][0]["store_observation"]["object_path"]
+            value["results"][3]["store_observation"]["object_path"] = source
+            value["results"][3]["reconcile"]["orphan_paths"] = [source]
+
+        def cleanup_escape(value):
+            value["results"][0]["cleanup"]["object_directory"] = "/tmp"
+
+        for mutation in (escape, cross_case, cleanup_escape):
+            self.assert_rejected(mutation)
+
+
 if __name__ == "__main__":
     unittest.main()
