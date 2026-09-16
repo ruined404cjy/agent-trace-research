@@ -32,6 +32,25 @@ WATERMARK_TARGETS = {
     "full_core": ("events_full", "events_core"),
     "asset_ref": ("events_analytics", "assets"),
 }
+CODE_EVIDENCE = {
+    name: {"path": f"/source/{name}.py", "bytes": 100, "sha256": character * 64}
+    for name, character in zip(("runner", "common", "assets", "adapter"), "ef01")
+}
+DDL_SHA256 = {
+    key: character * 64
+    for key, character in zip(
+        (
+            (workload, round_index)
+            for workload in PERFORMANCE_WORKLOADS + ("correctness_only",)
+            for round_index in range(4 if workload in PERFORMANCE_WORKLOADS else 1)
+        ),
+        "23456789abcde",
+    )
+}
+QUERY_SHA256 = {
+    workload: character * 64
+    for workload, character in zip(PERFORMANCE_WORKLOADS + ("correctness_only",), "3456")
+}
 
 
 def sample(workload, round_index, position, scenario, number, latency):
@@ -115,6 +134,9 @@ def formal_target(root, engine="opengauss", layout="same_table"):
                 "position": position,
                 "round_order": list(order),
                 "input": json.loads(json.dumps(INPUT_IDENTITY)),
+                "code": json.loads(json.dumps(CODE_EVIDENCE)),
+                "ddl_sha256": DDL_SHA256[(workload, round_index)],
+                "query_catalog_sha256": QUERY_SHA256[workload],
                 "correctness": {
                     "truth_identity": IDENTITY,
                     "formal_samples": len(round_samples),
@@ -138,10 +160,24 @@ def formal_target(root, engine="opengauss", layout="same_table"):
                     "natural_stable_parts": engine == "clickhouse",
                     "optimize_final": False,
                 },
-                "storage": {"tables": {name: {"total_bytes": 100,
-                                                  "part_count": 2, "marks": 3}
-                                        for name in WATERMARK_TARGETS[layout]},
-                             "merges": []},
+                "storage": {
+                    "tables": {
+                        name: (
+                            {
+                                "part_count": 2, "rows": 10, "marks": 3,
+                                "compressed_bytes": 100, "uncompressed_bytes": 200,
+                                "columns": {},
+                            }
+                            if engine == "clickhouse"
+                            else {
+                                "heap_bytes": 40, "index_bytes": 20,
+                                "toast_bytes": 40, "total_bytes": 100,
+                            }
+                        )
+                        for name in WATERMARK_TARGETS[layout]
+                    },
+                    "merges": [],
+                },
                 "cleanup": {"removed": True, "asset_directory_removed": True},
             })
         workloads[workload] = {"status": "complete", "rounds": rounds}
@@ -153,6 +189,12 @@ def formal_target(root, engine="opengauss", layout="same_table"):
         "layout": layout,
         "latin_square": [list(LAYOUTS[index:] + LAYOUTS[:index]) for index in range(4)],
         "input": json.loads(json.dumps(INPUT_IDENTITY)),
+        "code": json.loads(json.dumps(CODE_EVIDENCE)),
+        "ddl_sha256": sorted(DDL_SHA256.values()),
+        "query_catalog_sha256": {
+            workload: [QUERY_SHA256[workload]]
+            for workload in PERFORMANCE_WORKLOADS + ("correctness_only",)
+        },
         "correctness": {
             "rounds_complete": 4,
             "formal_samples": len(all_samples),
@@ -197,6 +239,52 @@ class StageThreeSummaryTest(unittest.TestCase):
                 candidate = json.loads(json.dumps(manifest))
                 del candidate["workloads"]["main"]["rounds"][0][field]
                 with self.subTest(field=field), self.assertRaisesRegex(ValueError, message):
+                    report.validate_run(candidate)
+
+    def test_rejects_missing_or_mismatched_provenance(self):
+        """正式 target 和每轮必须共享完整 code、DDL 与 workload query 身份。"""
+        with tempfile.TemporaryDirectory() as directory:
+            _, manifest, _ = formal_target(directory)
+            for case in (
+                "target_code", "round_code", "target_ddl", "round_ddl",
+                "target_query", "round_query",
+            ):
+                candidate = json.loads(json.dumps(manifest))
+                record = candidate["workloads"]["main"]["rounds"][0]
+                if case == "target_code":
+                    del candidate["code"]
+                elif case == "round_code":
+                    del record["code"]
+                elif case == "target_ddl":
+                    candidate["ddl_sha256"] = ["7" * 64]
+                elif case == "round_ddl":
+                    record["ddl_sha256"] = "7" * 64
+                elif case == "target_query":
+                    del candidate["query_catalog_sha256"]["main"]
+                else:
+                    record["query_catalog_sha256"] = "7" * 64
+                with self.subTest(case=case), self.assertRaisesRegex(
+                    ValueError, "provenance evidence"
+                ):
+                    report.validate_run(candidate)
+
+    def test_rejects_shallow_access_evidence(self):
+        """空 plan、缺 openGauss index scan 或缺正式 validation 标记均失败。"""
+        with tempfile.TemporaryDirectory() as directory:
+            _, manifest, _ = formal_target(directory)
+            for case in ("index_scans", "plan", "mode", "access_structure"):
+                candidate = json.loads(json.dumps(manifest))
+                record = candidate["workloads"]["main"]["rounds"][0]
+                query_id = next(iter(record["access"]["plans"]))
+                if case == "index_scans":
+                    del record["access"]["index_scans"]
+                elif case == "plan":
+                    record["access"]["plans"][query_id] = ""
+                else:
+                    del record["access_validation"][query_id][case]
+                with self.subTest(case=case), self.assertRaisesRegex(
+                    ValueError, "access evidence"
+                ):
                     report.validate_run(candidate)
 
     def test_rejects_incomplete_identity_correctness_and_latin_schedule(self):
@@ -258,6 +346,55 @@ class StageThreeSummaryTest(unittest.TestCase):
                 "".join(json.dumps(item) + "\n" for item in samples)
             )
             with self.assertRaisesRegex(ValueError, "query_complete_ms is invalid"):
+                report.summarize([target])
+
+    def test_rejects_schema_invalid_numeric_types_and_zero_response(self):
+        """整数证据拒绝 bool/float，完整响应 bytes 必须为正数。"""
+        with tempfile.TemporaryDirectory() as directory:
+            for case in (
+                "input_bool", "round_index_bool", "position_bool",
+                "response_float", "request_count_float", "storage_float",
+                "zero_response",
+            ):
+                target, manifest, samples = formal_target(Path(directory) / case)
+                if case == "input_bool":
+                    manifest["input"]["generation_manifest"]["bytes"] = True
+                    for workload in manifest["workloads"].values():
+                        for record in workload["rounds"]:
+                            record["input"]["generation_manifest"]["bytes"] = True
+                elif case == "round_index_bool":
+                    manifest["workloads"]["main"]["rounds"][1]["round_index"] = True
+                elif case == "position_bool":
+                    manifest["workloads"]["main"]["rounds"][3]["position"] = True
+                elif case == "response_float":
+                    samples[0]["database_response_bytes"] = 10.5
+                    samples[0]["response_bytes"] = 12.5
+                elif case == "request_count_float":
+                    samples[0]["request_count"] = 2.5
+                elif case == "storage_float":
+                    table = next(iter(manifest["workloads"]["main"]["rounds"][0]["storage"]["tables"].values()))
+                    table["total_bytes"] = 100.5
+                else:
+                    samples[0]["database_response_bytes"] = 0
+                    samples[0]["resolver_payload_bytes"] = 0
+                    samples[0]["response_bytes"] = 0
+                (target / "run-manifest.json").write_text(json.dumps(manifest))
+                (target / "samples.jsonl").write_text(
+                    "".join(json.dumps(item) + "\n" for item in samples)
+                )
+                with self.subTest(case=case), self.assertRaises(ValueError):
+                    report.summarize([target])
+
+    def test_rejects_zero_batch_application_ready_instead_of_dropping_sample(self):
+        """batch 吞吐必须使用全部五个成功样本，零分母使整轮失败。"""
+        with tempfile.TemporaryDirectory() as directory:
+            target, _, samples = formal_target(directory)
+            batch = next(item for item in samples if item["scenario"] == "batch:main")
+            batch["application_ready_ms"] = 0
+            (target / "samples.jsonl").write_text(
+                "".join(json.dumps(item) + "\n" for item in samples)
+            )
+            with self.assertRaisesRegex(ValueError, "application_ready_ms must be positive"):
                 report.summarize([target])
 
     def test_rejects_repeated_round_index_and_missing_scan_evidence(self):
@@ -442,6 +579,23 @@ class StageThreeSummaryTest(unittest.TestCase):
                 with self.assertRaisesRegex(OSError, "directory fsync failed"):
                     report.write_summary_atomic(output, {"status": "complete"})
             self.assertFalse(output.exists())
+            self.assertEqual(list(output.parent.glob(".*.tmp")), [])
+
+    def test_existing_summary_is_idempotent_and_never_clobbered(self):
+        """既有有效结果只允许相同内容重放，不允许覆盖或失败后丢失。"""
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "summary.json"
+            original = b'{"status":"complete","value":1}\n'
+            output.write_bytes(original)
+
+            with patch.object(report.os, "replace") as replace:
+                report.write_summary_atomic(output, {"status": "complete", "value": 1})
+            replace.assert_not_called()
+            self.assertEqual(output.read_bytes(), original)
+
+            with self.assertRaisesRegex(FileExistsError, "already exists"):
+                report.write_summary_atomic(output, {"status": "complete", "value": 2})
+            self.assertEqual(output.read_bytes(), original)
             self.assertEqual(list(output.parent.glob(".*.tmp")), [])
 
 
