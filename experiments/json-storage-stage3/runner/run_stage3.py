@@ -59,6 +59,11 @@ def build_parser():
     part_states.add_argument("--output", type=Path, required=True)
     part_states.add_argument("--layout", choices=("same_table", "separate", "full_core", "asset_ref"),
                              required=True)
+    interference = commands.add_parser("interference")
+    interference.add_argument("--input", type=Path, required=True)
+    interference.add_argument("--output", type=Path, required=True)
+    interference.add_argument("--layout", choices=("same_table", "separate", "full_core", "asset_ref"),
+                              required=True)
     return parser
 
 
@@ -91,6 +96,8 @@ def _code_evidence(operation):
     }
     if operation == "part-states":
         modules["part_state_runner"] = run_clickhouse_part_states
+    if operation == "interference":
+        modules["interference_runner"] = run_interference
     return {role: _file_identity(module.__file__) for role, module in modules.items()}
 
 
@@ -974,7 +981,7 @@ def _gate_part_states(child, formal, layout, database):
         raise RuntimeError("part-state cleanup evidence is invalid")
 
 
-def _part_runtime_evidence(adapter, endpoints):
+def _clickhouse_runtime_evidence(adapter, endpoints):
     """在 namespace 创建前采集并门禁固定 ClickHouse 运行身份。"""
     runtime = run_layout_matrix._engine_runtime(adapter, "clickhouse")
     container = run_layout_matrix._container_evidence(endpoints.clickhouse_container)
@@ -983,19 +990,19 @@ def _part_runtime_evidence(adapter, endpoints):
         not isinstance(runtime, dict) or not isinstance(runtime.get("version"), str)
         or not runtime["version"] or runtime.get("source") != "database-query"
     ):
-        raise RuntimeError("part-state runtime evidence is invalid")
+        raise RuntimeError("ClickHouse runtime evidence is invalid")
     if (
         not isinstance(container, dict) or container.get("container") != endpoints.clickhouse_container
         or not isinstance(container.get("image"), str) or not container["image"]
         or not isinstance(container.get("image_id"), str) or not container["image_id"]
     ):
-        raise RuntimeError("part-state container evidence is invalid")
+        raise RuntimeError("ClickHouse container evidence is invalid")
     if (
         not isinstance(host, dict) or not isinstance(host.get("platform"), str) or not host["platform"]
         or not isinstance(host.get("machine"), str) or not host["machine"]
         or not _is_int(host.get("cpu_count"), 1) or not _is_int(host.get("memory_total_kib"), 1)
     ):
-        raise RuntimeError("part-state host evidence is invalid")
+        raise RuntimeError("ClickHouse host evidence is invalid")
     return runtime, container, host
 
 
@@ -1005,7 +1012,123 @@ def _remove_asset_directory(asset_root):
     if asset_root.exists():
         shutil.rmtree(asset_root)
     if asset_root.exists():
-        raise RuntimeError("part-state asset directory remains after cleanup")
+        raise RuntimeError("asset directory remains after cleanup")
+
+
+def _gate_interference_metadata(metadata, formal):
+    """复制并门禁固定 factory metadata，拒绝类型或冻结输入漂移。"""
+    snapshot = _json_value(metadata)
+    try:
+        snapshot = json.loads(json.dumps(snapshot, ensure_ascii=False, allow_nan=False))
+    except (TypeError, ValueError) as error:
+        raise RuntimeError("interference factory metadata is not JSON-safe") from error
+    eligible = production._continuous_blocks(formal)
+    expected = {
+        "selection_rules": {
+            "full_block_rows": formal.truth.block_size,
+            "outside_query_window": _json_value(formal.truth.query_window),
+            "requires_main_payload": True,
+            "query_scenarios": {
+                "list": "list:first", "preview": "preview:first",
+                "detail_2m": "detail:text_2m", "trace_long": "trace:p95",
+                "batch_loop": "batch:main",
+            },
+        },
+        "eligible_block_count": len(eligible),
+        "eligible_block_indices": [index for index, _ in eligible],
+        "eligible_block_sha256": [
+            canonical_digest([_json_value(row) for row in block]) for _, block in eligible
+        ],
+        "cyclic_replay": True,
+        "main_query_catalog_sha256": _query_catalog_sha256(formal),
+        "preload_block_count": len(formal.main_blocks),
+        "block_size": formal.truth.block_size,
+        "final_watermark": formal.truth.record_count,
+        "seed": formal.truth.seed,
+    }
+    if not _matches_fixed_json(snapshot, expected):
+        raise RuntimeError("interference factory metadata is invalid")
+    if snapshot["seed"] != SEED or snapshot["final_watermark"] != 48_534:
+        raise RuntimeError("interference factory metadata violates formal constants")
+    return snapshot
+
+
+def _interference_partial_namespaces(output):
+    """尽力从 child root 保留失败前已经发布的 phase namespace。"""
+    path = Path(output) / "child" / "run-manifest.json"
+    try:
+        manifest = _load_json_object(path.read_bytes(), "interference child manifest")
+    except (OSError, ValueError):
+        return []
+    phases = manifest.get("phases")
+    if not isinstance(phases, list):
+        return []
+    namespaces = []
+    for phase in phases:
+        namespace = phase.get("namespace") if isinstance(phase, dict) else None
+        if isinstance(namespace, str) and namespace and namespace not in namespaces:
+            namespaces.append(namespace)
+    return namespaces
+
+
+def _run_interference(arguments, envelope):
+    """执行固定 ClickHouse interference，并发布门禁后的运行证据。"""
+    output = arguments.output.resolve()
+    layout = arguments.layout
+    formal = load_formal_input(arguments.input.resolve())
+    _record_formal_evidence(envelope, formal)
+    asset_root = output / "assets" if layout == "asset_ref" else None
+    envelope["namespace_policy"] = {
+        "strategy": "runner-fixed-phase-unique", "reuse": False,
+        "phase_order": [phase.name for phase in run_interference.FIXED_PHASES],
+        "namespace_prefix": "jsons3_if_<phase>_", "namespaces": [],
+    }
+    envelope["cleanup"] = {
+        "namespaces": [], "namespaces_removed": False,
+        "asset_directory_applicable": layout == "asset_ref",
+        "asset_directory_removed": layout != "asset_ref",
+    }
+    endpoints = EngineEndpoints()
+    probe = create_adapter(
+        "clickhouse", layout, "jsons3_runtime_probe", formal, asset_root, endpoints,
+    )
+    runtime, container, host = _clickhouse_runtime_evidence(probe, endpoints)
+    envelope["runtime"] = {
+        "operation": "interference", "engine": "clickhouse", "layout": layout,
+        "endpoint": {"host": endpoints.clickhouse_host, "port": endpoints.clickhouse_port},
+        "container": _json_value(container), "engine_runtime": _json_value(runtime),
+        "host": _json_value(host),
+    }
+    adapter_factory, targets_factory, metadata = production.interference_factories(
+        formal, layout, asset_root, endpoints,
+    )
+    metadata = _gate_interference_metadata(metadata, formal)
+    envelope["interference"] = metadata
+    child_root = output / "child"
+    run_interference.run_interference(
+        adapter_factory, targets_factory, child_root, scope="formal",
+    )
+    child = _read_child(output, child_root / "run-manifest.json")
+    evidence = _gate_interference(child, formal, layout)
+    cleanup = {
+        "namespaces": list(evidence["namespaces"]), "namespaces_removed": True,
+        "asset_directory_applicable": layout == "asset_ref",
+        "asset_directory_removed": layout != "asset_ref",
+    }
+    envelope["namespace_policy"]["namespaces"] = list(evidence["namespaces"])
+    envelope["cleanup"] = cleanup
+    if asset_root is not None:
+        _remove_asset_directory(asset_root)
+        cleanup["asset_directory_removed"] = True
+    _verify_interference_artifacts(output, evidence["artifacts"])
+    confirmed = _read_child(output, child_root / "run-manifest.json")
+    if confirmed["_identity"] != child["_identity"]:
+        raise RuntimeError("interference child manifest changed after gate")
+    envelope.update({
+        "artifacts": evidence["artifacts"],
+        "child": _child_evidence(confirmed),
+        "cleanup": cleanup,
+    })
 
 
 def _run_part_states(arguments, envelope):
@@ -1026,7 +1149,7 @@ def _run_part_states(arguments, envelope):
     database = getattr(adapter, "database", None)
     if not isinstance(database, str) or not database:
         raise RuntimeError("part-state adapter database identity is invalid")
-    runtime, container, host = _part_runtime_evidence(adapter, endpoints)
+    runtime, container, host = _clickhouse_runtime_evidence(adapter, endpoints)
     blocks, query_cases = part_state_inputs(formal)
     run_part_states(adapter, blocks, query_cases, child_root, samples_per_query=30)
     child = _read_child(output, child_root / "run-manifest.json")
@@ -1187,6 +1310,8 @@ def main(argv=None):
             _run_candidate(arguments, envelope)
         elif arguments.operation == "part-states":
             _run_part_states(arguments, envelope)
+        elif arguments.operation == "interference":
+            _run_interference(arguments, envelope)
         else:
             raise RuntimeError(f"unsupported production operation: {arguments.operation}")
         envelope["status"] = "complete"
@@ -1197,6 +1322,11 @@ def main(argv=None):
         child, child_error = _failed_child(output, arguments.operation)
         if child is not None:
             envelope["child"] = child
+        if arguments.operation == "interference":
+            namespaces = _interference_partial_namespaces(output)
+            if namespaces:
+                envelope["namespace_policy"]["namespaces"] = namespaces
+                envelope["cleanup"]["namespaces"] = namespaces
         if child_error is not None:
             error.add_note(
                 f"child snapshot failed: {type(child_error).__name__}: {child_error}"

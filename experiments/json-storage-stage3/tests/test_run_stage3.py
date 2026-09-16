@@ -1006,17 +1006,18 @@ def interference_raw_sample(stream, sequence, query_id=None):
 def interference_formal_fixture():
     """构造能通过真实 continuous block 选择器的最小正式输入。"""
     blocks = []
-    for index in range(153):
+    for index in range(190):
         row = {
             "project_id": "outside-query-window",
             "start_time": "2026-01-01T00:00:00.000Z",
-            "payload_path": "payload.bin" if index >= 108 else None,
+            "payload_path": "payload.bin" if 108 <= index < 153 else None,
             "ingest_seq": (index + 1) * 256 - 1,
         }
         blocks.append((row,) * 256)
     return SimpleNamespace(
         truth=SimpleNamespace(
-            block_size=256,
+            seed=20260907, identity_sha256="a" * 64, record_count=48_534,
+            block_size=256, block_count=190,
             query_window={
                 "project_id": "query-project",
                 "start_time": "2026-02-01T00:00:00.000Z",
@@ -1087,6 +1088,11 @@ def valid_interference_tree(output, layout="same_table"):
                                                      "uncompressed_bytes": 0}
                                            for name in catalog.write_tables}, "merges": []},
                     "active_part_backlog": 0, "active_merge_count": 0}
+        if layout == "asset_ref":
+            snapshot["storage"]["asset_store"] = {
+                "available_object_count": 0, "available_bytes": 0,
+                "orphan_object_count": 0, "orphan_bytes": 0,
+            }
         manifest = {"format": "agent-trace-json-storage-stage3-interference-phase",
                     "format_version": 1, "status": "complete", "phase": phase.name,
                     "seed": 20260907, "execution_scope": "formal",
@@ -1407,6 +1413,217 @@ class InterferenceProductionGateTests(unittest.TestCase):
         child = run_stage3._read_child(output, output / "rogue" / "run-manifest.json")
         with self.assertRaisesRegex(RuntimeError, "child manifest path"):
             run_stage3._gate_interference(child, self.formal, "same_table")
+
+
+class InterferenceCliTests(unittest.TestCase):
+    """验证 interference CLI 的固定 production 编排和失败证据。"""
+
+    def run_interference_cli(self, root, layout="same_table", *, factory_mutate=None,
+                             runner_error=None, gate_error=None, runtime=None,
+                             remove_error=None, replace_artifact=False):
+        """以受控 child runner 执行 CLI，并返回 output 与实际调用记录。"""
+        output = root / "attempt-1"
+        input_root = root / "input"
+        formal = interference_formal_fixture()
+        formal.root = input_root.resolve()
+        formal.identity = {"kind": "formal", "identity_sha256": "b" * 64}
+        calls = []
+        parsed = {}
+
+        def metadata():
+            eligible = production._continuous_blocks(formal)
+            return {
+                "selection_rules": {
+                    "full_block_rows": 256,
+                    "outside_query_window": dict(formal.truth.query_window),
+                    "requires_main_payload": True,
+                    "query_scenarios": {
+                        "list": "list:first", "preview": "preview:first",
+                        "detail_2m": "detail:text_2m", "trace_long": "trace:p95",
+                        "batch_loop": "batch:main",
+                    },
+                },
+                "eligible_block_count": 45,
+                "eligible_block_indices": [index for index, _ in eligible],
+                "eligible_block_sha256": [
+                    canonical_digest([dict(row) for row in block]) for _, block in eligible
+                ],
+                "cyclic_replay": True,
+                "main_query_catalog_sha256": query_digest(formal),
+                "preload_block_count": 190,
+                "block_size": 256,
+                "final_watermark": 48_534,
+                "seed": 20260907,
+            }
+
+        def fake_create(engine, layout_arg, namespace, formal_arg, asset_root, endpoints):
+            self.assertEqual((engine, layout_arg, namespace), (
+                "clickhouse", layout, "jsons3_runtime_probe",
+            ))
+            self.assertIs(formal_arg, formal)
+            self.assertIsInstance(endpoints, production.EngineEndpoints)
+            self.assertEqual(asset_root, output / "assets" if layout == "asset_ref" else None)
+            calls.append("probe")
+            return SimpleNamespace()
+
+        def fake_factories(formal_arg, layout_arg, asset_root, endpoints):
+            self.assertEqual(json.loads((output / "run-manifest.json").read_text())["status"], "running")
+            self.assertIs(formal_arg, formal)
+            self.assertEqual(layout_arg, layout)
+            self.assertEqual(asset_root, output / "assets" if layout == "asset_ref" else None)
+            self.assertIsInstance(endpoints, production.EngineEndpoints)
+            value = metadata()
+            if factory_mutate is not None:
+                factory_mutate(value)
+            calls.append("factories")
+            return object(), object(), value
+
+        def fake_runner(adapter_factory, targets_factory, child_root, **kwargs):
+            self.assertEqual(kwargs, {"scope": "formal"})
+            self.assertEqual(child_root, output / "child")
+            self.assertIsNotNone(adapter_factory)
+            self.assertIsNotNone(targets_factory)
+            if layout == "asset_ref":
+                (output / "assets").mkdir()
+            child, values = valid_interference_tree(output, layout)
+            parsed.update(values)
+            calls.append("runner")
+            if runner_error is not None:
+                raise runner_error
+            return child
+
+        runtime_value = runtime or {"version": "25.12", "source": "database-query"}
+        patches = [
+            patch.object(run_stage3, "load_formal_input", return_value=formal),
+            patch.object(run_stage3, "create_adapter", side_effect=fake_create),
+            patch.object(run_stage3.production, "interference_factories", side_effect=fake_factories),
+            patch.object(run_stage3.run_interference, "run_interference", side_effect=fake_runner),
+            patch.object(run_stage3, "_parse_interference_raw", side_effect=lambda path, *_args, **_kwargs: (
+                parsed[Path(path).parent.name]["warmup" if Path(path).name.startswith("warmup")
+                                               else "measurement"]
+            )),
+            patch.object(run_stage3.run_layout_matrix, "_engine_runtime", return_value=runtime_value),
+            patch.object(run_stage3.run_layout_matrix, "_container_evidence", return_value={
+                "container": "agent-trace-clickhouse-25-12", "image": "clickhouse",
+                "image_id": "sha256:id",
+            }),
+            patch.object(run_stage3.run_layout_matrix, "_host_evidence", return_value={
+                "platform": "test", "machine": "x86_64", "cpu_count": 1,
+                "memory_total_kib": 1,
+            }),
+        ]
+        if gate_error is not None:
+            patches.append(patch.object(run_stage3, "_gate_interference", side_effect=gate_error))
+        if remove_error is not None:
+            patches.append(patch.object(run_stage3, "_remove_asset_directory", side_effect=remove_error))
+        if replace_artifact:
+            original_verify = run_stage3._verify_interference_artifacts
+
+            def replace_then_verify(output_arg, artifacts):
+                (Path(output_arg) / artifacts[-1]["path"]).write_text("replaced")
+                original_verify(output_arg, artifacts)
+
+            patches.append(patch.object(run_stage3, "_verify_interference_artifacts",
+                                        side_effect=replace_then_verify))
+        for context in patches:
+            context.start()
+        try:
+            result = run_stage3.main([
+                "interference", "--input", str(input_root), "--output", str(output),
+                "--layout", layout,
+            ])
+        finally:
+            for context in reversed(patches):
+                context.stop()
+        return result, output, formal, calls
+
+    def test_parser_and_four_layouts_keep_the_interference_surface_fixed(self):
+        """捕获 CLI 暴露调度参数或 factory/probe 偏离四布局固定调用。"""
+        parser = run_stage3.build_parser()
+        for option in ("--seed", "--phase", "--warmup", "--measurement", "--scope",
+                       "--runner", "--endpoint", "--namespace", "--process-policy"):
+            with self.subTest(option=option):
+                with self.assertRaises(SystemExit):
+                    parser.parse_args(["interference", "--input", "in", "--output", "out",
+                                       "--layout", "same_table", option, "x"])
+        for layout in ("same_table", "separate", "full_core", "asset_ref"):
+            with self.subTest(layout=layout), tempfile.TemporaryDirectory() as directory:
+                result, output, formal, calls = self.run_interference_cli(Path(directory), layout)
+                envelope = json.loads((output / "run-manifest.json").read_text())
+                self.assertEqual(result, 0)
+                self.assertEqual(calls, ["probe", "factories", "runner"])
+                self.assertEqual(envelope["status"], "complete")
+                self.assertEqual(envelope["namespace_policy"]["strategy"],
+                                 "runner-fixed-phase-unique")
+                self.assertEqual(envelope["namespace_policy"]["namespaces"], [
+                    f"jsons3_if_{phase.name}" for phase in run_interference.FIXED_PHASES
+                ])
+                self.assertEqual(envelope["runtime"]["operation"], "interference")
+                self.assertEqual(envelope["runtime"]["engine"], "clickhouse")
+                self.assertEqual(envelope["runtime"]["layout"], layout)
+                self.assertIn("interference_runner", envelope["code"])
+                self.assertEqual(envelope["interference"]["main_query_catalog_sha256"],
+                                 envelope["query_catalog_sha256"])
+                self.assertEqual(len(envelope["artifacts"]), 16)
+                self.assertEqual(envelope["child"]["path"], "child/run-manifest.json")
+                self.assertTrue(envelope["cleanup"]["namespaces_removed"])
+                self.assertEqual(envelope["cleanup"]["asset_directory_applicable"], layout == "asset_ref")
+                self.assertTrue(envelope["cleanup"]["asset_directory_removed"])
+                self.assertFalse((output / "assets").exists())
+
+    def test_metadata_drift_and_post_gate_failures_publish_failed_envelopes(self):
+        """捕获 factory metadata 漂移、gate 后替换或 Asset 清理失败仍发布 complete。"""
+        mutations = {
+            "bool_count": lambda value: value.update(eligible_block_count=True),
+            "block_count": lambda value: value.update(eligible_block_count=44),
+            "digest": lambda value: value.update(main_query_catalog_sha256="0" * 64),
+            "eligible": lambda value: value["eligible_block_indices"].pop(),
+        }
+        for name, mutate in mutations.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                with self.assertRaises(RuntimeError):
+                    self.run_interference_cli(Path(directory), factory_mutate=mutate)
+                failed = json.loads((Path(directory) / "attempt-1" / "run-manifest.json").read_text())
+                self.assertEqual(failed["status"], "failed")
+                self.assertEqual(failed["truth"]["record_count"], 48_534)
+                self.assertIn("query_catalog_sha256", failed)
+
+        for name, options in (
+            ("runtime", {"runtime": {"version": "", "source": "database-query"}}),
+            ("factory", {"factory_mutate": lambda _value: (_ for _ in ()).throw(
+                RuntimeError("factory failed"))}),
+            ("gate", {"gate_error": RuntimeError("gate failed")}),
+            ("asset_cleanup", {"layout": "asset_ref", "remove_error": OSError("unlink failed")}),
+            ("artifact", {"layout": "asset_ref", "replace_artifact": True}),
+        ):
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                with self.assertRaises(Exception):
+                    self.run_interference_cli(Path(directory), **options)
+                failed = json.loads((Path(directory) / "attempt-1" / "run-manifest.json").read_text())
+                self.assertEqual(failed["status"], "failed")
+                self.assertEqual(failed["input"]["kind"], "formal")
+                self.assertEqual(failed["truth"]["record_count"], 48_534)
+                if name not in {"runtime", "factory"}:
+                    self.assertEqual(failed["child"]["path"], "child/run-manifest.json")
+                if name == "artifact":
+                    self.assertTrue(failed["cleanup"]["asset_directory_removed"])
+                    self.assertFalse((Path(directory) / "attempt-1" / "assets").exists())
+
+    def test_runner_failure_records_partial_namespaces_and_preserves_assets(self):
+        """捕获 child 已发布后 runner 失败丢失 phase namespace 或提前删除 Asset 证据。"""
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, "unknown server-side completion"):
+                self.run_interference_cli(
+                    Path(directory), layout="asset_ref",
+                    runner_error=RuntimeError("unknown server-side completion"),
+                )
+            output = Path(directory) / "attempt-1"
+            failed = json.loads((output / "run-manifest.json").read_text())
+            self.assertEqual(failed["status"], "failed")
+            self.assertEqual(failed["namespace_policy"]["namespaces"], [
+                f"jsons3_if_{phase.name}" for phase in run_interference.FIXED_PHASES
+            ])
+            self.assertTrue((output / "assets").is_dir())
 
 
 if __name__ == "__main__":
