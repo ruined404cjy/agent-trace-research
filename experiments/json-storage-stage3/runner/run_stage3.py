@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import shutil
 import sys
 import uuid
 from collections.abc import Mapping
@@ -14,7 +15,11 @@ import common
 import production
 import run_layout_matrix
 from common import canonical_digest
-from production import EngineEndpoints, candidate_config, create_adapter, load_formal_input
+from production import (
+    EngineEndpoints, candidate_config, create_adapter, load_formal_input, part_state_inputs,
+)
+import run_clickhouse_part_states
+from run_clickhouse_part_states import run_part_states
 from run_layout_matrix import run_layout, write_manifest_atomic
 
 
@@ -36,7 +41,7 @@ WATERMARK_KEYS = {"assets", "events_analytics"}
 
 
 def build_parser():
-    """构造仅包含本切片两个固定操作的命令行解析器。"""
+    """构造仅暴露固定正式参数的命令行解析器。"""
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="operation", required=True)
     generate = commands.add_parser("generate-input")
@@ -45,6 +50,11 @@ def build_parser():
     candidate = commands.add_parser("candidate")
     candidate.add_argument("--input", type=Path, required=True)
     candidate.add_argument("--output", type=Path, required=True)
+    part_states = commands.add_parser("part-states")
+    part_states.add_argument("--input", type=Path, required=True)
+    part_states.add_argument("--output", type=Path, required=True)
+    part_states.add_argument("--layout", choices=("same_table", "separate", "full_core", "asset_ref"),
+                             required=True)
     return parser
 
 
@@ -75,6 +85,8 @@ def _code_evidence(operation):
         "common": common,
         "assets": assets,
     }
+    if operation == "part-states":
+        modules["part_state_runner"] = run_clickhouse_part_states
     return {role: _file_identity(module.__file__) for role, module in modules.items()}
 
 
@@ -433,6 +445,222 @@ def _gate_candidate(child, formal, namespace):
         raise RuntimeError("candidate host evidence is invalid")
 
 
+def _require_part_object(value, name):
+    """取得非空 part-state object，缺失时拒绝发布 complete。"""
+    if not isinstance(value, dict) or not value:
+        raise RuntimeError(f"part-state {name} evidence is missing")
+    return value
+
+
+def _gate_part_state_samples(state, expected_count):
+    """核对一个物理状态的成功样本、访问路径和 QueryFinish 证据。"""
+    samples = state.get("query_samples")
+    if not isinstance(samples, list) or len(samples) != expected_count:
+        raise RuntimeError("part-state query sample count mismatch")
+    query_ids = []
+    for sample in samples:
+        if not isinstance(sample, dict):
+            raise RuntimeError("part-state query sample is invalid")
+        query_id = sample.get("query_id")
+        validation = sample.get("validation")
+        if (
+            sample.get("status") != "success" or sample.get("error") is not None
+            or not isinstance(query_id, str) or not query_id
+            or not _is_int(sample.get("response_bytes"), 1)
+            or not isinstance(validation, dict)
+            or not _is_int(validation.get("row_count"))
+            or not _is_int(validation.get("validated_payload_bytes"))
+        ):
+            raise RuntimeError("part-state query sample evidence is invalid")
+        query_ids.append(query_id)
+    if len(set(query_ids)) != len(query_ids):
+        raise RuntimeError("part-state query IDs are duplicated")
+    expected_ids = set(query_ids)
+    evidence = {
+        "query_plans": state.get("query_plans"),
+        "query_details": state.get("query_details"),
+        "query_finish": state.get("query_finish"),
+    }
+    if any(not isinstance(value, dict) or set(value) != expected_ids for value in evidence.values()):
+        raise RuntimeError("part-state access evidence does not cover successful samples")
+    for query_id in query_ids:
+        plan = evidence["query_plans"][query_id]
+        detail = evidence["query_details"][query_id]
+        finish = evidence["query_finish"][query_id]
+        if not isinstance(plan, str) or not plan.strip():
+            raise RuntimeError("part-state query plan is empty")
+        if (
+            not isinstance(detail, dict)
+            or not isinstance(detail.get("kind"), str) or not detail["kind"]
+            or not isinstance(detail.get("statement"), str) or not detail["statement"].strip()
+            or not isinstance(detail.get("declared_source"), str) or not detail["declared_source"]
+            or not _is_int(detail.get("scanned_rows"))
+            or not _is_int(detail.get("scanned_bytes"))
+        ):
+            raise RuntimeError("part-state query detail evidence is invalid")
+        if (
+            not isinstance(finish, dict) or finish.get("type") != "QueryFinish"
+            or not _is_int(finish.get("exception_code")) or finish["exception_code"] != 0
+            or not _is_int(finish.get("read_rows")) or not _is_int(finish.get("read_bytes"))
+        ):
+            raise RuntimeError("part-state QueryFinish evidence is invalid")
+    if (
+        not _is_int(state.get("successful_samples"), 1)
+        or state["successful_samples"] != expected_count
+        or not _is_int(state.get("failed_samples")) or state["failed_samples"] != 0
+        or not _is_int(state.get("query_finish_count"), 1)
+        or state["query_finish_count"] != expected_count
+    ):
+        raise RuntimeError("part-state sample totals are invalid")
+
+
+def _gate_part_states(child, formal, layout, database):
+    """独立门禁 part-state child，不信任 runner 的返回对象。"""
+    manifest = child["_manifest"]
+    catalog = common.build_layout_catalog(layout)
+    fixed = {
+        "format": "agent-trace-json-storage-stage3-clickhouse-part-states",
+        "format_version": 1,
+        "status": "complete",
+        "layout": layout,
+        "physical_targets": list(catalog.write_tables),
+        "controlled_table": catalog.list_source,
+        "state_order": ["fragmented", "merging", "stable", "single_part"],
+        "samples_per_query": 30,
+    }
+    for key, expected in fixed.items():
+        value = manifest.get(key)
+        if value != expected or (
+            isinstance(expected, int) and not isinstance(expected, bool) and not _is_int(value)
+        ):
+            raise RuntimeError(f"part-state {key} mismatch")
+    if "errors" in manifest:
+        raise RuntimeError("part-state child contains errors")
+    states = manifest.get("states")
+    if not isinstance(states, list) or len(states) != 4:
+        raise RuntimeError("part-state states are incomplete")
+    expected_count = len(formal.main_queries) * 30
+    for expected_name, state in zip(fixed["state_order"], states):
+        if not isinstance(state, dict) or state.get("name") != expected_name:
+            raise RuntimeError("part-state state order mismatch")
+        if state.get("controlled_table") != catalog.list_source:
+            raise RuntimeError("part-state controlled table mismatch")
+        if state.get("predicate_proven") is not True or state.get("error") is not None:
+            raise RuntimeError("part-state predicate evidence is invalid")
+        tables = state.get("tables")
+        if not isinstance(tables, dict) or set(tables) != set(catalog.write_tables):
+            raise RuntimeError("part-state table evidence is incomplete")
+        for table in catalog.write_tables:
+            values = tables[table]
+            if not isinstance(values, dict) or any(
+                not _is_int(values.get(metric))
+                for metric in ("part_count", "marks", "compressed_bytes", "uncompressed_bytes")
+            ):
+                raise RuntimeError("part-state table metrics are invalid")
+        if not isinstance(state.get("active_merges"), list) or not isinstance(state.get("observations"), list):
+            raise RuntimeError("part-state observations are invalid")
+        if layout == "asset_ref":
+            asset_store = _require_part_object(state.get("asset_store"), "asset store")
+            if any(not _is_int(asset_store.get(field)) for field in (
+                "available_object_count", "available_bytes", "orphan_object_count", "orphan_bytes",
+            )):
+                raise RuntimeError("part-state asset store evidence is invalid")
+        expected_optimized = list(catalog.write_tables) if expected_name == "single_part" else []
+        if state.get("optimized_targets") != expected_optimized:
+            raise RuntimeError("part-state optimized targets mismatch")
+        _gate_part_state_samples(state, expected_count)
+    restoration = _require_part_object(manifest.get("restoration"), "restoration")
+    if (
+        restoration.get("attempted") is not True or restoration.get("restored") is not True
+        or restoration.get("targets") != list(catalog.write_tables)
+    ):
+        raise RuntimeError("part-state restoration evidence is invalid")
+    cleanup = _require_part_object(manifest.get("cleanup"), "cleanup")
+    if cleanup.get("namespace") != database or cleanup.get("removed") is not True:
+        raise RuntimeError("part-state cleanup evidence is invalid")
+
+
+def _part_runtime_evidence(adapter, endpoints):
+    """在 namespace 创建前采集并门禁固定 ClickHouse 运行身份。"""
+    runtime = run_layout_matrix._engine_runtime(adapter, "clickhouse")
+    container = run_layout_matrix._container_evidence(endpoints.clickhouse_container)
+    host = run_layout_matrix._host_evidence()
+    if (
+        not isinstance(runtime, dict) or not isinstance(runtime.get("version"), str)
+        or not runtime["version"] or runtime.get("source") != "database-query"
+    ):
+        raise RuntimeError("part-state runtime evidence is invalid")
+    if (
+        not isinstance(container, dict) or container.get("container") != endpoints.clickhouse_container
+        or not isinstance(container.get("image"), str) or not container["image"]
+        or not isinstance(container.get("image_id"), str) or not container["image_id"]
+    ):
+        raise RuntimeError("part-state container evidence is invalid")
+    if (
+        not isinstance(host, dict) or not isinstance(host.get("platform"), str) or not host["platform"]
+        or not isinstance(host.get("machine"), str) or not host["machine"]
+        or not _is_int(host.get("cpu_count"), 1) or not _is_int(host.get("memory_total_kib"), 1)
+    ):
+        raise RuntimeError("part-state host evidence is invalid")
+    return runtime, container, host
+
+
+def _remove_asset_directory(asset_root):
+    """删除本命令独占的 Asset 目录，并确认路径已不存在。"""
+    asset_root = Path(asset_root)
+    if asset_root.exists():
+        shutil.rmtree(asset_root)
+    if asset_root.exists():
+        raise RuntimeError("part-state asset directory remains after cleanup")
+
+
+def _run_part_states(arguments, envelope):
+    """执行固定 ClickHouse part-state control，并门禁 child 证据。"""
+    output = arguments.output.resolve()
+    layout = arguments.layout
+    formal = load_formal_input(arguments.input.resolve())
+    _record_formal_evidence(envelope, formal)
+    namespace = f"jsons3_parts_{layout}_{uuid.uuid4().hex[:10]}"
+    envelope["namespace_policy"] = {
+        "strategy": "unique-random-suffix", "prefix": f"jsons3_parts_{layout}_",
+        "namespace": namespace, "reuse": False,
+    }
+    asset_root = output / "assets" if layout == "asset_ref" else None
+    child_root = output / "child"
+    endpoints = EngineEndpoints()
+    adapter = create_adapter("clickhouse", layout, namespace, formal, asset_root, endpoints)
+    database = getattr(adapter, "database", None)
+    if not isinstance(database, str) or not database:
+        raise RuntimeError("part-state adapter database identity is invalid")
+    runtime, container, host = _part_runtime_evidence(adapter, endpoints)
+    blocks, query_cases = part_state_inputs(formal)
+    run_part_states(adapter, blocks, query_cases, child_root, samples_per_query=30)
+    child = _read_child(output, child_root / "run-manifest.json")
+    _gate_part_states(child, formal, layout, database)
+    cleanup = _json_value(child["_manifest"]["cleanup"])
+    cleanup.update({
+        "asset_directory_removed": layout != "asset_ref",
+        "asset_directory_applicable": layout == "asset_ref",
+    })
+    envelope["cleanup"] = cleanup
+    if asset_root is not None:
+        _remove_asset_directory(asset_root)
+        cleanup["asset_directory_removed"] = True
+    confirmed = _read_child(output, child_root / "run-manifest.json")
+    if confirmed["_identity"] != child["_identity"]:
+        raise RuntimeError("part-state child manifest changed after gate")
+    envelope.update({
+        "runtime": {
+            "operation": "part-states", "engine": "clickhouse", "layout": layout,
+            "endpoint": {"host": endpoints.clickhouse_host, "port": endpoints.clickhouse_port},
+            "container": _json_value(container), "engine_runtime": _json_value(runtime),
+            "host": _json_value(host),
+        },
+        "child": _child_evidence(confirmed),
+        "cleanup": cleanup,
+    })
+
+
 def _move_new(source, destination):
     """将一个 staging artifact 移至不存在的最终路径。"""
     source = Path(source)
@@ -561,8 +789,12 @@ def main(argv=None):
     try:
         if arguments.operation == "generate-input":
             _run_generate(arguments, envelope)
-        else:
+        elif arguments.operation == "candidate":
             _run_candidate(arguments, envelope)
+        elif arguments.operation == "part-states":
+            _run_part_states(arguments, envelope)
+        else:
+            raise RuntimeError(f"unsupported production operation: {arguments.operation}")
         envelope["status"] = "complete"
         write_manifest_atomic(manifest_path, envelope)
     except Exception as error:

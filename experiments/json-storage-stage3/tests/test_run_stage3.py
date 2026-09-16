@@ -12,7 +12,7 @@ from unittest.mock import patch
 STAGE_DIR = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(STAGE_DIR / "runner"))
 
-from common import QuerySpec, TruthCatalog, canonical_digest
+from common import QuerySpec, TruthCatalog, build_layout_catalog, canonical_digest
 import production
 import run_stage3
 
@@ -38,6 +38,7 @@ def formal_fixture(root):
             "generation_manifest": {"bytes": 1, "sha256": "b" * 64},
         },
         main_queries=queries,
+        main_blocks=(({"ingest_seq": 0},),),
     )
 
 
@@ -158,12 +159,86 @@ def write_child(output, formal, mutate=None):
     (child / "samples.jsonl").write_text("".join(json.dumps(row) + "\n" for row in samples))
 
 
+def valid_part_child(formal, layout, namespace):
+    """构造通过 production gate 的 part-state child 证据。"""
+    catalog = build_layout_catalog(layout)
+    query_cases = tuple(formal.main_queries)
+    states = []
+    for state_name in ("fragmented", "merging", "stable", "single_part"):
+        samples = []
+        for query, truth in query_cases:
+            for index in range(30):
+                query_id = f"{state_name}-{truth.scenario}-{index}"
+                samples.append({
+                    "scenario": truth.scenario, "kind": query.kind, "status": "success",
+                    "query_id": query_id, "response_bytes": 1,
+                    "validation": {"row_count": 1, "validated_payload_bytes": 1},
+                    "error": None,
+                })
+        query_ids = [sample["query_id"] for sample in samples]
+        state = {
+            "name": state_name, "controlled_table": catalog.list_source,
+            "predicate_proven": True,
+            "tables": {
+                table: {"part_count": 1, "marks": 0, "compressed_bytes": 0,
+                        "uncompressed_bytes": 0}
+                for table in catalog.write_tables
+            },
+            "active_merges": [], "observations": [], "query_samples": samples,
+            "query_plans": {query_id: "ReadFromMergeTree" for query_id in query_ids},
+            "query_details": {
+                query_id: {"kind": sample["kind"], "statement": "SELECT 1",
+                           "declared_source": catalog.list_source, "scanned_rows": 0,
+                           "scanned_bytes": 0}
+                for query_id, sample in zip(query_ids, samples)
+            },
+            "query_finish": {
+                query_id: {"type": "QueryFinish", "exception_code": 0,
+                           "read_rows": 0, "read_bytes": 0}
+                for query_id in query_ids
+            },
+            "successful_samples": len(samples), "failed_samples": 0,
+            "query_finish_count": len(samples), "optimized_targets": (
+                list(catalog.write_tables) if state_name == "single_part" else []
+            ),
+            "error": None,
+        }
+        if layout == "asset_ref":
+            state["asset_store"] = {
+                "available_object_count": 0, "available_bytes": 0,
+                "orphan_object_count": 0, "orphan_bytes": 0,
+            }
+        states.append(state)
+    return {
+        "format": "agent-trace-json-storage-stage3-clickhouse-part-states",
+        "format_version": 1, "run_id": "jsons3-clickhouse-parts-0123456789",
+        "status": "complete", "layout": layout,
+        "physical_targets": list(catalog.write_tables),
+        "controlled_table": catalog.list_source,
+        "state_order": ["fragmented", "merging", "stable", "single_part"],
+        "samples_per_query": 30, "states": states,
+        "restoration": {"attempted": True, "restored": True,
+                        "targets": list(catalog.write_tables)},
+        "cleanup": {"namespace": namespace, "removed": True},
+    }
+
+
+def write_part_child(output, formal, layout, namespace, mutate=None):
+    """写入 part-state runner 的 child manifest。"""
+    child = output / "child"
+    child.mkdir(parents=True)
+    manifest = valid_part_child(formal, layout, namespace)
+    if mutate is not None:
+        mutate(manifest)
+    run_stage3.write_manifest_atomic(child / "run-manifest.json", manifest)
+
+
 class ParserAndLifecycleTests(unittest.TestCase):
     def test_parser_rejects_unpublished_commands_and_tunable_production_arguments(self):
-        """捕获提前暴露 7G2 命令或允许调用方改写正式常量。"""
+        """捕获 part-state 参数漂移或其他未发布操作进入 CLI。"""
         parser = run_stage3.build_parser()
         for argv in (
-            ["part-states", "--input", "i", "--output", "o"],
+            ["part-states", "--input", "i", "--output", "o", "--samples", "1"],
             ["candidate", "--input", "i", "--output", "o", "--seed", "1"],
             ["generate-input", "--source", "s", "--output", "o", "--engine", "clickhouse"],
         ):
@@ -171,6 +246,11 @@ class ParserAndLifecycleTests(unittest.TestCase):
                 parser.parse_args(argv)
         self.assertEqual(parser.parse_args(["candidate", "--input", "i", "--output", "o"]).operation,
                          "candidate")
+        arguments = parser.parse_args([
+            "part-states", "--input", "i", "--output", "o", "--layout", "same_table",
+        ])
+        self.assertEqual(arguments.operation, "part-states")
+        self.assertEqual(arguments.layout, "same_table")
 
     def test_existing_output_stops_before_any_input_or_database_work(self):
         """捕获空目录复用及拒绝前读取输入、生成 payload 或创建 adapter。"""
@@ -692,6 +772,174 @@ class CandidateTests(unittest.TestCase):
                 run_stage3.write_manifest_atomic(Path(directory) / "manifest.json", {
                     "status": "failed", "value": math.nan,
                 })
+
+
+class PartStateProductionTests(unittest.TestCase):
+    """验证 part-state CLI 的固定生产接线与独立 child gate。"""
+
+    def run_part_states_cli(self, root, layout="same_table", mutate=None,
+                            runtime=None, runner_error=None, gate_patch=None):
+        """以真实 CLI envelope 运行受控的 part-state child 替身。"""
+        output = root / "attempt-1"
+        input_root = root / "input"
+        formal = formal_fixture(input_root)
+        namespace = f"jsons3_parts_{layout}_0123456789"
+        database = f"{namespace}_{layout}"
+        calls = []
+
+        def fake_create(engine, layout_arg, namespace_arg, formal_arg, asset_root, endpoints):
+            self.assertEqual((engine, layout_arg, namespace_arg), ("clickhouse", layout, namespace))
+            self.assertIs(formal_arg, formal)
+            self.assertIsInstance(endpoints, production.EngineEndpoints)
+            self.assertEqual(asset_root, output / "assets" if layout == "asset_ref" else None)
+            return SimpleNamespace(database=database)
+
+        def fake_runner(adapter, blocks, query_cases, child_root, **kwargs):
+            running = json.loads((output / "run-manifest.json").read_text())
+            self.assertEqual(running["status"], "running")
+            self.assertEqual(blocks, formal.main_blocks)
+            self.assertEqual(query_cases, formal.main_queries)
+            self.assertEqual(kwargs, {"samples_per_query": 30})
+            self.assertEqual(child_root, output / "child")
+            if layout == "asset_ref":
+                (output / "assets").mkdir()
+            write_part_child(output, formal, layout, database, mutate)
+            calls.append("runner")
+            if runner_error is not None:
+                raise runner_error
+
+        runtime_value = runtime or {"version": "25.12", "source": "database-query"}
+        patches = [
+            patch.object(run_stage3, "load_formal_input", return_value=formal),
+            patch.object(run_stage3, "create_adapter", side_effect=fake_create),
+            patch.object(run_stage3, "part_state_inputs", return_value=(
+                formal.main_blocks, formal.main_queries,
+            )),
+            patch.object(run_stage3, "run_part_states", side_effect=fake_runner, create=True),
+            patch.object(run_stage3.run_layout_matrix, "_engine_runtime", return_value=runtime_value),
+            patch.object(run_stage3.run_layout_matrix, "_container_evidence", return_value={
+                "container": "agent-trace-clickhouse-25-12", "image": "clickhouse", "image_id": "sha256:id",
+            }),
+            patch.object(run_stage3.run_layout_matrix, "_host_evidence", return_value={
+                "platform": "test", "machine": "x86_64", "cpu_count": 1, "memory_total_kib": 1,
+            }),
+            patch.object(run_stage3.uuid, "uuid4", return_value=SimpleNamespace(hex="0123456789abcdef")),
+        ]
+        if gate_patch is not None:
+            patches.append(patch.object(run_stage3, "_gate_part_states", side_effect=gate_patch,
+                                        create=True))
+        for context in patches:
+            context.start()
+        try:
+            result = run_stage3.main([
+                "part-states", "--input", str(input_root), "--output", str(output), "--layout", layout,
+            ])
+        finally:
+            for context in reversed(patches):
+                context.stop()
+        return result, output, formal, calls
+
+    def test_part_states_wires_all_layouts_with_only_fixed_runner_argument(self):
+        """捕获四布局 asset 路径、namespace 或 runner 可调参数漂移。"""
+        for layout in ("same_table", "separate", "full_core", "asset_ref"):
+            with self.subTest(layout=layout), tempfile.TemporaryDirectory() as directory:
+                result, output, formal, calls = self.run_part_states_cli(Path(directory), layout)
+                envelope = json.loads((output / "run-manifest.json").read_text())
+                self.assertEqual(result, 0)
+                self.assertEqual(calls, ["runner"])
+                self.assertEqual(envelope["status"], "complete")
+                self.assertEqual(envelope["namespace_policy"], {
+                    "strategy": "unique-random-suffix", "prefix": f"jsons3_parts_{layout}_",
+                    "namespace": f"jsons3_parts_{layout}_0123456789", "reuse": False,
+                })
+                self.assertEqual(envelope["runtime"]["engine"], "clickhouse")
+                self.assertEqual(envelope["runtime"]["layout"], layout)
+                self.assertEqual(envelope["child"]["path"], "child/run-manifest.json")
+                self.assertEqual(envelope["cleanup"]["namespace"],
+                                 f"jsons3_parts_{layout}_0123456789_{layout}")
+                self.assertEqual(envelope["truth"]["identity_sha256"], formal.truth.identity_sha256)
+                self.assertTrue(envelope["cleanup"]["asset_directory_removed"])
+                self.assertEqual(envelope["cleanup"]["asset_directory_applicable"], layout == "asset_ref")
+                self.assertIn("part_state_runner", envelope["code"])
+
+    def test_part_states_formal_and_namespace_failures_publish_available_evidence(self):
+        """捕获 formal 或 namespace 故障吞掉 running/输入身份/namespace policy。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "formal"
+            with patch.object(run_stage3, "load_formal_input", side_effect=ValueError("bad input")):
+                with self.assertRaisesRegex(ValueError, "bad input"):
+                    run_stage3.main(["part-states", "--input", str(root / "input"),
+                                     "--output", str(output), "--layout", "same_table"])
+            self.assertEqual(json.loads((output / "run-manifest.json").read_text())["status"], "failed")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            with patch.object(run_stage3, "create_adapter", side_effect=RuntimeError("create failed")), \
+                 patch.object(run_stage3, "load_formal_input", return_value=formal_fixture(root / "input")), \
+                 patch.object(run_stage3.uuid, "uuid4", return_value=SimpleNamespace(hex="0123456789abcdef")):
+                with self.assertRaisesRegex(RuntimeError, "create failed"):
+                    run_stage3.main(["part-states", "--input", str(root / "input"),
+                                     "--output", str(root / "namespace"), "--layout", "same_table"])
+            failed = json.loads((root / "namespace" / "run-manifest.json").read_text())
+            self.assertEqual(failed["input"]["kind"], "formal")
+            self.assertEqual(failed["namespace_policy"]["namespace"], "jsons3_parts_same_table_0123456789")
+
+    def test_part_state_gate_rejects_invalid_control_table_state_order_ids_and_metrics(self):
+        """捕获 child 控制表、状态顺序、样本身份或 bool 指标伪装为完整证据。"""
+        mutations = {
+            "controlled_table": lambda manifest: manifest["states"][0].update(controlled_table="wrong"),
+            "state_order": lambda manifest: manifest["states"].reverse(),
+            "duplicate_id": lambda manifest: manifest["states"][0]["query_samples"][1].update(
+                query_id=manifest["states"][0]["query_samples"][0]["query_id"],
+            ),
+            "bool_metric": lambda manifest: manifest["states"][0]["tables"]["events"].update(
+                marks=True,
+            ),
+        }
+        for name, mutation in mutations.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                with self.assertRaisesRegex(RuntimeError, "part-state"):
+                    self.run_part_states_cli(Path(directory), mutate=mutation)
+
+    def test_part_states_missing_runtime_and_asset_cleanup_failure_prevent_complete(self):
+        """捕获运行身份缺失或独占 Asset 目录未删除仍发布 complete。"""
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, "runtime"):
+                self.run_part_states_cli(Path(directory), runtime={"version": "", "source": "database-query"})
+            self.assertEqual(json.loads((Path(directory) / "attempt-1" / "run-manifest.json").read_text())["status"],
+                             "failed")
+
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(run_stage3, "_remove_asset_directory", side_effect=OSError("unlink failed"),
+                              create=True):
+                with self.assertRaisesRegex(OSError, "unlink failed"):
+                    self.run_part_states_cli(Path(directory), layout="asset_ref")
+            failed = json.loads((Path(directory) / "attempt-1" / "run-manifest.json").read_text())
+            self.assertEqual(failed["status"], "failed")
+            self.assertFalse(failed["cleanup"]["asset_directory_removed"])
+
+    def test_part_states_child_replacement_and_runner_failure_keep_child_identity(self):
+        """捕获 gate 后 child 替换或 runner 失败时丢失固定 child 身份。"""
+        original_gate = getattr(run_stage3, "_gate_part_states", None)
+
+        def replace_after_gate(child, formal, layout, namespace):
+            original_gate(child, formal, layout, namespace)
+            value = json.loads(Path(child["_path"]).read_text())
+            value["tampered"] = True
+            run_stage3.write_manifest_atomic(Path(child["_path"]), value)
+
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, "changed after gate"):
+                self.run_part_states_cli(Path(directory), gate_patch=replace_after_gate)
+            self.assertEqual(json.loads((Path(directory) / "attempt-1" / "run-manifest.json").read_text())["status"],
+                             "failed")
+
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, "runner failed"):
+                self.run_part_states_cli(Path(directory), runner_error=RuntimeError("runner failed"))
+            failed = json.loads((Path(directory) / "attempt-1" / "run-manifest.json").read_text())
+            self.assertEqual(failed["child"]["path"], "child/run-manifest.json")
 
 
 if __name__ == "__main__":
