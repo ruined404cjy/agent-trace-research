@@ -1878,5 +1878,281 @@ class AssetFailureProductionGateTests(unittest.TestCase):
             self.assert_rejected(mutation)
 
 
+class AssetFailureCliTests(unittest.TestCase):
+    """验证 Asset 六故障 CLI 的固定生产接线和失败证据。"""
+
+    def run_asset_failure_cli(self, root, engine="opengauss", *, factory_error=None,
+                              runtime=None, container=None, host=None,
+                              probe_cleanup_error=None, runner_error=None,
+                              gate_error=None, replace_after_gate=False,
+                              invalid_partial_child=False):
+        """以受控 production 依赖执行 CLI，并返回 envelope 接线记录。"""
+        output = root / "attempt-1"
+        calls = []
+        create_calls = []
+        adapter = SimpleNamespace(engine=engine)
+        control = SimpleNamespace(
+            adapter=adapter,
+            create=lambda: create_calls.append("create"),
+        )
+        catalog_factory = object()
+        fault_injector = object()
+
+        def adapter_factory(namespace, object_directory):
+            self.assertEqual(namespace, "jsons3_asset_runtime_probe")
+            self.assertEqual(object_directory, output / "runtime-probe-assets")
+            object_directory.mkdir(parents=True)
+            calls.append("probe")
+            return control
+
+        def fake_factories(engine_arg, endpoints):
+            self.assertEqual(
+                json.loads((output / "run-manifest.json").read_text())["status"],
+                "running",
+            )
+            self.assertEqual(engine_arg, engine)
+            self.assertIsInstance(endpoints, production.EngineEndpoints)
+            calls.append("factories")
+            if factory_error is not None:
+                raise factory_error
+            return adapter_factory, catalog_factory, fault_injector
+
+        def fake_runtime(adapter_arg, engine_arg):
+            self.assertIs(adapter_arg, adapter)
+            self.assertEqual(engine_arg, engine)
+            calls.append("runtime")
+            return runtime or {"version": "test-db", "source": "database-query"}
+
+        expected_container = (
+            "agent-trace-opengauss-v6" if engine == "opengauss"
+            else "agent-trace-clickhouse-25-12"
+        )
+
+        def fake_container(container_name):
+            self.assertEqual(container_name, expected_container)
+            return container or {
+                "container": expected_container,
+                "image": engine + "-image",
+                "image_id": "sha256:id",
+            }
+
+        def fake_runner(child_root, **kwargs):
+            self.assertEqual(child_root, output / "child")
+            self.assertEqual(set(kwargs), {
+                "adapter_factory", "catalog_factory", "fault_injector", "namespace_factory",
+            })
+            self.assertIs(kwargs["adapter_factory"], adapter_factory)
+            self.assertIs(kwargs["catalog_factory"], catalog_factory)
+            self.assertIs(kwargs["fault_injector"], fault_injector)
+            manifest = valid_asset_failure_child(output)
+            namespaces = []
+            for case, result in zip(
+                run_stage3.run_asset_failures.FAILURE_CASES, manifest["results"],
+            ):
+                namespace = kwargs["namespace_factory"](case)
+                self.assertRegex(namespace, rf"^jsons3_af_{case.name}_[0-9a-f]{{10}}$")
+                result["namespace"] = namespace
+                result["cleanup"]["namespace"] = namespace
+                result["cleanup"]["adapter_cleanup_target"] = namespace + "_asset_ref"
+                namespaces.append(namespace)
+            self.assertEqual(len(set(namespaces)), 6)
+            child_root.mkdir(parents=True)
+            if runner_error is not None:
+                manifest["status"] = "failed"
+                manifest["results"] = manifest["results"][:2]
+            if invalid_partial_child:
+                (child_root / "run-manifest.json").write_bytes(b"{invalid")
+            else:
+                run_stage3.write_manifest_atomic(child_root / "run-manifest.json", manifest)
+            calls.append("runner")
+            if runner_error is not None:
+                raise runner_error
+
+        actual_gate = run_stage3._gate_asset_failures
+
+        def gate(child, output_arg, engine_arg):
+            if gate_error is not None:
+                raise gate_error
+            evidence = actual_gate(child, output_arg, engine_arg)
+            if replace_after_gate:
+                manifest = json.loads(Path(child["_path"]).read_text())
+                manifest["replaced"] = True
+                run_stage3.write_manifest_atomic(Path(child["_path"]), manifest)
+            return evidence
+
+        patches = [
+            patch.object(run_stage3.production, "asset_failure_factories",
+                         side_effect=fake_factories),
+            patch.object(run_stage3.run_asset_failures, "run_failure_catalog",
+                         side_effect=fake_runner),
+            patch.object(run_stage3.run_layout_matrix, "_engine_runtime",
+                         side_effect=fake_runtime),
+            patch.object(run_stage3.run_layout_matrix, "_container_evidence",
+                         side_effect=fake_container),
+            patch.object(run_stage3.run_layout_matrix, "_host_evidence", return_value=host or {
+                "platform": "test", "machine": "x86_64", "cpu_count": 1,
+                "memory_total_kib": 1,
+            }),
+            patch.object(run_stage3, "_gate_asset_failures", side_effect=gate),
+        ]
+        if probe_cleanup_error is not None:
+            patches.append(patch.object(
+                run_stage3, "_remove_asset_directory", side_effect=probe_cleanup_error,
+            ))
+        for context in patches:
+            context.start()
+        try:
+            result = run_stage3.main([
+                "asset-failures", "--output", str(output), "--engine", engine,
+            ])
+        finally:
+            for context in reversed(patches):
+                context.stop()
+        return result, output, calls, create_calls
+
+    def test_parser_and_both_engines_use_fixed_production_dependencies(self):
+        """捕获 CLI 暴露可调依赖、串用 endpoint/container 或创建 probe namespace。"""
+        parser = run_stage3.build_parser()
+        for option in (
+            "--input", "--layout", "--case", "--fixture", "--namespace", "--store",
+            "--writer", "--endpoint", "--factory", "--fault-injector",
+        ):
+            with self.subTest(option=option), self.assertRaises(SystemExit):
+                parser.parse_args([
+                    "asset-failures", "--output", "out", "--engine", "opengauss", option, "x",
+                ])
+        for engine, endpoint in (
+            ("opengauss", {"host": "127.0.0.1", "port": 15432}),
+            ("clickhouse", {"host": "127.0.0.1", "port": 18123}),
+        ):
+            with self.subTest(engine=engine), tempfile.TemporaryDirectory() as directory:
+                result, output, calls, create_calls = self.run_asset_failure_cli(
+                    Path(directory), engine,
+                )
+                envelope = json.loads((output / "run-manifest.json").read_text())
+                self.assertEqual(result, 0)
+                self.assertEqual(calls, ["factories", "probe", "runtime", "runner"])
+                self.assertEqual(create_calls, [])
+                self.assertEqual(envelope["status"], "complete")
+                self.assertEqual(envelope["runtime"]["endpoint"], endpoint)
+                self.assertEqual(envelope["runtime"]["engine"], engine)
+                self.assertEqual(envelope["runtime"]["layout"], "asset_ref")
+                self.assertNotIn("input", envelope)
+                self.assertNotIn("truth", envelope)
+                self.assertNotIn("query_catalog_sha256", envelope)
+                self.assertEqual(envelope["namespace_policy"]["case_order"],
+                                 list(ASSET_FAILURE_CASES))
+                self.assertEqual(len(set(envelope["namespace_policy"]["namespaces"])), 6)
+                self.assertEqual(envelope["asset_failures"]["engine"], engine)
+                self.assertEqual(envelope["child"]["path"], "child/run-manifest.json")
+                self.assertIn("asset_failure_runner", envelope["code"])
+                self.assertTrue(envelope["cleanup"]["namespaces_removed"])
+                self.assertTrue(envelope["cleanup"]["object_directories_removed"])
+                self.assertTrue(envelope["cleanup"]["runtime_probe_directory_removed"])
+                self.assertEqual(envelope["cleanup"]["runtime_probe_directory"],
+                                 str(output / "runtime-probe-assets"))
+                self.assertFalse((output / "runtime-probe-assets").exists())
+
+    def test_factory_runtime_and_probe_cleanup_fail_closed_with_available_evidence(self):
+        """捕获前置失败伪报 cleanup、删除 probe 现场或丢失已采集 runtime。"""
+        scenarios = (
+            ("factory", {"factory_error": RuntimeError("factory failed")}),
+            ("runtime", {"runtime": {"version": "", "source": "database-query"}}),
+            ("cleanup", {"probe_cleanup_error": OSError("probe unlink failed")}),
+        )
+        for name, options in scenarios:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                with self.assertRaises(Exception):
+                    self.run_asset_failure_cli(Path(directory), **options)
+                output = Path(directory) / "attempt-1"
+                failed = json.loads((output / "run-manifest.json").read_text())
+                self.assertEqual(failed["status"], "failed")
+                self.assertEqual(failed["namespace_policy"]["namespaces"], [])
+                self.assertFalse(failed["cleanup"]["namespaces_removed"])
+                self.assertFalse(failed["cleanup"]["object_directories_removed"])
+                self.assertFalse(failed["cleanup"]["runtime_probe_directory_removed"])
+                if name == "factory":
+                    self.assertNotIn("runtime", failed)
+                    self.assertFalse((output / "runtime-probe-assets").exists())
+                else:
+                    self.assertTrue((output / "runtime-probe-assets").is_dir())
+                if name == "cleanup":
+                    self.assertEqual(failed["runtime"]["engine_runtime"]["version"], "test-db")
+
+    def test_runner_partial_gate_and_post_gate_failures_preserve_exact_state(self):
+        """捕获 partial namespace/child 丢失，或 gate 后替换仍发布 complete。"""
+        scenarios = (
+            ("runner", {"runner_error": RuntimeError("runner failed")}, 2, False),
+            ("gate", {"gate_error": RuntimeError("gate failed")}, 6, False),
+            ("post_gate", {"replace_after_gate": True}, 6, True),
+        )
+        for name, options, namespace_count, cleanup_complete in scenarios:
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                with self.assertRaises(RuntimeError):
+                    self.run_asset_failure_cli(Path(directory), **options)
+                output = Path(directory) / "attempt-1"
+                failed = json.loads((output / "run-manifest.json").read_text())
+                self.assertEqual(failed["status"], "failed")
+                self.assertEqual(failed["child"]["path"], "child/run-manifest.json")
+                self.assertEqual(len(failed["namespace_policy"]["namespaces"]), namespace_count)
+                self.assertEqual(failed["cleanup"]["namespaces_removed"], cleanup_complete)
+                self.assertEqual(failed["cleanup"]["object_directories_removed"], cleanup_complete)
+                self.assertTrue(failed["cleanup"]["runtime_probe_directory_removed"])
+                self.assertFalse((output / "runtime-probe-assets").exists())
+                if name == "post_gate":
+                    self.assertIn("asset_failures", failed)
+
+    def test_invalid_partial_child_does_not_mask_the_runner_exception(self):
+        """捕获 partial child 解析失败替换原始数据库运行异常。"""
+        with tempfile.TemporaryDirectory() as directory:
+            original = RuntimeError("database operation failed")
+            with self.assertRaises(RuntimeError) as raised:
+                self.run_asset_failure_cli(
+                    Path(directory), runner_error=original, invalid_partial_child=True,
+                )
+            self.assertIs(raised.exception, original)
+            failed = json.loads(
+                (Path(directory) / "attempt-1" / "run-manifest.json").read_text()
+            )
+            self.assertEqual(failed["status"], "failed")
+            self.assertEqual(failed["child"]["bytes"], len(b"{invalid"))
+            self.assertEqual(failed["namespace_policy"]["namespaces"], [])
+
+    def test_runtime_rejects_wrong_source_container_and_host_resources(self):
+        """捕获不完整 runtime/container/host 身份进入两引擎 complete envelope。"""
+        invalid = (
+            {"runtime": {"version": "test", "source": "self-report"}},
+            {"runtime": {
+                "version": "test", "source": "database-query", "self_reported": True,
+            }},
+            {"container": {
+                "container": "wrong", "image": "image", "image_id": "sha256:id",
+            }},
+            {"container": {
+                "container": "agent-trace-opengauss-v6", "image": "", "image_id": "sha256:id",
+            }},
+            {"container": {
+                "container": "agent-trace-opengauss-v6", "image": "image", "image_id": "",
+            }},
+            {"host": {
+                "platform": "", "machine": "x86_64", "cpu_count": 1,
+                "memory_total_kib": 1,
+            }},
+            {"host": {
+                "platform": "test", "machine": "x86_64", "cpu_count": True,
+                "memory_total_kib": 1,
+            }},
+        )
+        for options in invalid:
+            with self.subTest(options=options), tempfile.TemporaryDirectory() as directory:
+                with self.assertRaises(RuntimeError):
+                    self.run_asset_failure_cli(Path(directory), **options)
+                failed = json.loads(
+                    (Path(directory) / "attempt-1" / "run-manifest.json").read_text()
+                )
+                self.assertEqual(failed["status"], "failed")
+                self.assertTrue((Path(directory) / "attempt-1" / "runtime-probe-assets").is_dir())
+
+
 if __name__ == "__main__":
     unittest.main()

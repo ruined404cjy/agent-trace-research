@@ -66,6 +66,9 @@ def build_parser():
     interference.add_argument("--output", type=Path, required=True)
     interference.add_argument("--layout", choices=("same_table", "separate", "full_core", "asset_ref"),
                               required=True)
+    asset_failures = commands.add_parser("asset-failures")
+    asset_failures.add_argument("--output", type=Path, required=True)
+    asset_failures.add_argument("--engine", choices=("opengauss", "clickhouse"), required=True)
     return parser
 
 
@@ -110,6 +113,8 @@ def _code_evidence(operation):
         modules["part_state_runner"] = run_clickhouse_part_states
     if operation == "interference":
         modules["interference_runner"] = run_interference
+    if operation == "asset-failures":
+        modules["asset_failure_runner"] = run_asset_failures
     return {role: _file_identity(module.__file__) for role, module in modules.items()}
 
 
@@ -1139,29 +1144,43 @@ def _gate_part_states(child, formal, layout, database):
         raise RuntimeError("part-state cleanup evidence is invalid")
 
 
-def _clickhouse_runtime_evidence(adapter, endpoints):
-    """在 namespace 创建前采集并门禁固定 ClickHouse 运行身份。"""
-    runtime = run_layout_matrix._engine_runtime(adapter, "clickhouse")
-    container = run_layout_matrix._container_evidence(endpoints.clickhouse_container)
+def _database_runtime_evidence(adapter, engine, endpoints):
+    """在 namespace 创建前采集并门禁固定数据库运行身份。"""
+    if engine == "opengauss":
+        container_name = endpoints.opengauss_container
+    elif engine == "clickhouse":
+        container_name = endpoints.clickhouse_container
+    else:
+        raise ValueError(f"unsupported runtime engine: {engine}")
+    runtime = run_layout_matrix._engine_runtime(adapter, engine)
+    container = run_layout_matrix._container_evidence(container_name)
     host = run_layout_matrix._host_evidence()
     if (
-        not isinstance(runtime, dict) or not isinstance(runtime.get("version"), str)
+        not isinstance(runtime, dict) or set(runtime) != {"version", "source"}
+        or not isinstance(runtime.get("version"), str)
         or not runtime["version"] or runtime.get("source") != "database-query"
     ):
-        raise RuntimeError("ClickHouse runtime evidence is invalid")
+        raise RuntimeError("database runtime evidence is invalid")
     if (
-        not isinstance(container, dict) or container.get("container") != endpoints.clickhouse_container
+        not isinstance(container, dict) or set(container) != {"container", "image", "image_id"}
+        or container.get("container") != container_name
         or not isinstance(container.get("image"), str) or not container["image"]
         or not isinstance(container.get("image_id"), str) or not container["image_id"]
     ):
-        raise RuntimeError("ClickHouse container evidence is invalid")
+        raise RuntimeError("database container evidence is invalid")
     if (
-        not isinstance(host, dict) or not isinstance(host.get("platform"), str) or not host["platform"]
+        not isinstance(host, dict)
+        or set(host) != {"platform", "machine", "cpu_count", "memory_total_kib"}
+        or not isinstance(host.get("platform"), str) or not host["platform"]
         or not isinstance(host.get("machine"), str) or not host["machine"]
         or not _is_int(host.get("cpu_count"), 1) or not _is_int(host.get("memory_total_kib"), 1)
     ):
-        raise RuntimeError("ClickHouse host evidence is invalid")
-    return runtime, container, host
+        raise RuntimeError("database host evidence is invalid")
+    return (
+        _strict_json_snapshot(runtime, "database runtime evidence"),
+        _strict_json_snapshot(container, "database container evidence"),
+        _strict_json_snapshot(host, "database host evidence"),
+    )
 
 
 def _remove_asset_directory(asset_root):
@@ -1246,7 +1265,7 @@ def _run_interference(arguments, envelope):
     probe = create_adapter(
         "clickhouse", layout, "jsons3_runtime_probe", formal, asset_root, endpoints,
     )
-    runtime, container, host = _clickhouse_runtime_evidence(probe, endpoints)
+    runtime, container, host = _database_runtime_evidence(probe, "clickhouse", endpoints)
     envelope["runtime"] = {
         "operation": "interference", "engine": "clickhouse", "layout": layout,
         "endpoint": {"host": endpoints.clickhouse_host, "port": endpoints.clickhouse_port},
@@ -1293,6 +1312,107 @@ def _run_interference(arguments, envelope):
     })
 
 
+def _asset_failure_partial_namespaces(output):
+    """尽力从 child root 保留失败前已经发布的 case namespace。"""
+    path = Path(output) / "child" / "run-manifest.json"
+    try:
+        manifest = _load_json_object(path.read_bytes(), "asset failure child manifest")
+    except (OSError, ValueError):
+        return []
+    results = manifest.get("results")
+    if not isinstance(results, list):
+        return []
+    namespaces = []
+    for result in results:
+        if not isinstance(result, dict):
+            continue
+        case, namespace = result.get("case"), result.get("namespace")
+        if (
+            case in ASSET_FAILURE_CASES
+            and isinstance(namespace, str)
+            and re.fullmatch(r"jsons3_af_" + re.escape(case) + r"_[0-9a-f]{10}", namespace)
+            and namespace not in namespaces
+        ):
+            namespaces.append(namespace)
+    return namespaces
+
+
+def _run_asset_failures(arguments, envelope):
+    """执行固定两引擎 Asset 六故障，并发布门禁后的运行证据。"""
+    output = arguments.output.resolve()
+    engine = arguments.engine
+    probe_directory = output / "runtime-probe-assets"
+    envelope["namespace_policy"] = {
+        "strategy": "runner-fixed-case-unique", "reuse": False,
+        "case_order": list(ASSET_FAILURE_CASES),
+        "namespace_prefix": "jsons3_af_<case>_", "namespaces": [],
+    }
+    cleanup = {
+        "namespaces": [], "namespaces_removed": False,
+        "object_directories_removed": False,
+        "runtime_probe_directory": str(probe_directory),
+        "runtime_probe_directory_removed": False,
+    }
+    envelope["cleanup"] = cleanup
+    endpoints = EngineEndpoints()
+    adapter_factory, catalog_factory, fault_injector = production.asset_failure_factories(
+        engine, endpoints,
+    )
+    probe_control = adapter_factory("jsons3_asset_runtime_probe", probe_directory)
+    adapter = getattr(probe_control, "adapter", None)
+    runtime, container, host = _database_runtime_evidence(adapter, engine, endpoints)
+    if engine == "opengauss":
+        endpoint = {"host": endpoints.opengauss_host, "port": endpoints.opengauss_port}
+    else:
+        endpoint = {"host": endpoints.clickhouse_host, "port": endpoints.clickhouse_port}
+    envelope["runtime"] = {
+        "operation": "asset-failures", "engine": engine, "layout": "asset_ref",
+        "endpoint": endpoint, "container": _json_value(container),
+        "engine_runtime": _json_value(runtime), "host": _json_value(host),
+    }
+    _remove_asset_directory(probe_directory)
+    cleanup["runtime_probe_directory_removed"] = True
+
+    generated_cases = set()
+    generated_namespaces = set()
+
+    def namespace_factory(case):
+        """为每个固定 case 生成一次独占且受长度限制的 namespace。"""
+        name = getattr(case, "name", None)
+        if name not in ASSET_FAILURE_CASES or name in generated_cases:
+            raise ValueError("asset failure namespace case is invalid or duplicated")
+        while True:
+            namespace = f"jsons3_af_{name}_{uuid.uuid4().hex[:10]}"
+            if namespace not in generated_namespaces:
+                break
+        generated_cases.add(name)
+        generated_namespaces.add(namespace)
+        return namespace
+
+    child_root = output / "child"
+    run_asset_failures.run_failure_catalog(
+        child_root,
+        adapter_factory=adapter_factory,
+        catalog_factory=catalog_factory,
+        fault_injector=fault_injector,
+        namespace_factory=namespace_factory,
+    )
+    child = _read_child(output, child_root / "run-manifest.json")
+    evidence = _gate_asset_failures(child, output, engine)
+    namespaces = list(evidence["namespaces"])
+    envelope["namespace_policy"]["namespaces"] = namespaces
+    cleanup.update({
+        "namespaces": namespaces,
+        "namespaces_removed": evidence["cleanup"]["namespaces_removed"],
+        "object_directories_removed": evidence["cleanup"]["object_directories_removed"],
+    })
+    envelope["asset_failures"] = evidence
+    confirmed = _read_child(output, child_root / "run-manifest.json")
+    if confirmed["_identity"] != child["_identity"]:
+        raise RuntimeError("asset failure child manifest changed after gate")
+    envelope["child"] = _child_evidence(confirmed)
+
+
 def _run_part_states(arguments, envelope):
     """执行固定 ClickHouse part-state control，并门禁 child 证据。"""
     output = arguments.output.resolve()
@@ -1311,7 +1431,7 @@ def _run_part_states(arguments, envelope):
     database = getattr(adapter, "database", None)
     if not isinstance(database, str) or not database:
         raise RuntimeError("part-state adapter database identity is invalid")
-    runtime, container, host = _clickhouse_runtime_evidence(adapter, endpoints)
+    runtime, container, host = _database_runtime_evidence(adapter, "clickhouse", endpoints)
     blocks, query_cases = part_state_inputs(formal)
     run_part_states(adapter, blocks, query_cases, child_root, samples_per_query=30)
     child = _read_child(output, child_root / "run-manifest.json")
@@ -1474,6 +1594,8 @@ def main(argv=None):
             _run_part_states(arguments, envelope)
         elif arguments.operation == "interference":
             _run_interference(arguments, envelope)
+        elif arguments.operation == "asset-failures":
+            _run_asset_failures(arguments, envelope)
         else:
             raise RuntimeError(f"unsupported production operation: {arguments.operation}")
         envelope["status"] = "complete"
@@ -1486,6 +1608,11 @@ def main(argv=None):
             envelope["child"] = child
         if arguments.operation == "interference":
             namespaces = _interference_partial_namespaces(output)
+            if namespaces:
+                envelope["namespace_policy"]["namespaces"] = namespaces
+                envelope["cleanup"]["namespaces"] = namespaces
+        if arguments.operation == "asset-failures":
+            namespaces = _asset_failure_partial_namespaces(output)
             if namespaces:
                 envelope["namespace_policy"]["namespaces"] = namespaces
                 envelope["cleanup"]["namespaces"] = namespaces
