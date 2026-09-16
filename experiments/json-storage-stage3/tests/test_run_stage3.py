@@ -188,13 +188,13 @@ def valid_part_child(formal, layout, namespace):
             "query_plans": {query_id: "ReadFromMergeTree" for query_id in query_ids},
             "query_details": {
                 query_id: {"kind": sample["kind"], "statement": "SELECT 1",
-                           "declared_source": catalog.list_source, "scanned_rows": 0,
-                           "scanned_bytes": 0}
+                           "declared_source": catalog.list_source, "scanned_rows": 1,
+                           "scanned_bytes": 1}
                 for query_id, sample in zip(query_ids, samples)
             },
             "query_finish": {
                 query_id: {"type": "QueryFinish", "exception_code": 0,
-                           "read_rows": 0, "read_bytes": 0}
+                           "read_rows": 1, "read_bytes": 1}
                 for query_id in query_ids
             },
             "successful_samples": len(samples), "failed_samples": 0,
@@ -895,6 +895,43 @@ class PartStateProductionTests(unittest.TestCase):
             ),
             "bool_metric": lambda manifest: manifest["states"][0]["tables"]["events"].update(
                 marks=True,
+            ),
+        }
+        for name, mutation in mutations.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                with self.assertRaisesRegex(RuntimeError, "part-state"):
+                    self.run_part_states_cli(Path(directory), mutate=mutation)
+
+    def test_part_state_gate_requires_every_formal_query_in_each_state(self):
+        """捕获每个 state 以重复 list 样本替代缺失 batch 后仍满足总数。"""
+        def replace_batch_with_list(manifest):
+            for state in manifest["states"]:
+                for sample in state["query_samples"]:
+                    if sample["kind"] == "batch":
+                        sample.update(scenario="list:first", kind="list")
+                        state["query_details"][sample["query_id"]]["kind"] = "list"
+
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, "part-state"):
+                self.run_part_states_cli(Path(directory), mutate=replace_batch_with_list)
+
+    def test_part_state_gate_cross_checks_sample_detail_and_query_finish(self):
+        """捕获同一 query 的 kind、扫描计数和结果行数证据相互冲突。"""
+        def first_query(manifest):
+            state = manifest["states"][0]
+            sample = state["query_samples"][0]
+            return (
+                sample,
+                state["query_details"][sample["query_id"]],
+                state["query_finish"][sample["query_id"]],
+            )
+
+        mutations = {
+            "detail_kind": lambda manifest: first_query(manifest)[1].update(kind="batch"),
+            "scanned_rows": lambda manifest: first_query(manifest)[1].update(scanned_rows=7),
+            "scanned_bytes": lambda manifest: first_query(manifest)[1].update(scanned_bytes=9),
+            "read_rows_below_result": lambda manifest: first_query(manifest)[0]["validation"].update(
+                row_count=2,
             ),
         }
         for name, mutation in mutations.items():

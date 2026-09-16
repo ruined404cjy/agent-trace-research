@@ -7,6 +7,7 @@ import json
 import shutil
 import sys
 import uuid
+from collections import Counter
 from collections.abc import Mapping
 from pathlib import Path
 
@@ -452,8 +453,14 @@ def _require_part_object(value, name):
     return value
 
 
-def _gate_part_state_samples(state, expected_count):
+def _gate_part_state_samples(state, query_catalog, samples_per_query):
     """核对一个物理状态的成功样本、访问路径和 QueryFinish 证据。"""
+    expected_queries = Counter(
+        (truth.scenario, query.kind)
+        for query, truth in query_catalog
+        for _ in range(samples_per_query)
+    )
+    expected_count = len(query_catalog) * samples_per_query
     samples = state.get("query_samples")
     if not isinstance(samples, list) or len(samples) != expected_count:
         raise RuntimeError("part-state query sample count mismatch")
@@ -473,8 +480,11 @@ def _gate_part_state_samples(state, expected_count):
         ):
             raise RuntimeError("part-state query sample evidence is invalid")
         query_ids.append(query_id)
+    if Counter((sample.get("scenario"), sample.get("kind")) for sample in samples) != expected_queries:
+        raise RuntimeError("part-state formal query samples mismatch")
     if len(set(query_ids)) != len(query_ids):
         raise RuntimeError("part-state query IDs are duplicated")
+    samples_by_id = {sample["query_id"]: sample for sample in samples}
     expected_ids = set(query_ids)
     evidence = {
         "query_plans": state.get("query_plans"),
@@ -504,6 +514,14 @@ def _gate_part_state_samples(state, expected_count):
             or not _is_int(finish.get("read_rows")) or not _is_int(finish.get("read_bytes"))
         ):
             raise RuntimeError("part-state QueryFinish evidence is invalid")
+        sample = samples_by_id[query_id]
+        if (
+            detail["kind"] != sample.get("kind")
+            or detail["scanned_rows"] != finish["read_rows"]
+            or detail["scanned_bytes"] != finish["read_bytes"]
+            or finish["read_rows"] < sample["validation"]["row_count"]
+        ):
+            raise RuntimeError("part-state query evidence is inconsistent")
     if (
         not _is_int(state.get("successful_samples"), 1)
         or state["successful_samples"] != expected_count
@@ -539,7 +557,6 @@ def _gate_part_states(child, formal, layout, database):
     states = manifest.get("states")
     if not isinstance(states, list) or len(states) != 4:
         raise RuntimeError("part-state states are incomplete")
-    expected_count = len(formal.main_queries) * 30
     for expected_name, state in zip(fixed["state_order"], states):
         if not isinstance(state, dict) or state.get("name") != expected_name:
             raise RuntimeError("part-state state order mismatch")
@@ -568,7 +585,7 @@ def _gate_part_states(child, formal, layout, database):
         expected_optimized = list(catalog.write_tables) if expected_name == "single_part" else []
         if state.get("optimized_targets") != expected_optimized:
             raise RuntimeError("part-state optimized targets mismatch")
-        _gate_part_state_samples(state, expected_count)
+        _gate_part_state_samples(state, formal.main_queries, fixed["samples_per_query"])
     restoration = _require_part_object(manifest.get("restoration"), "restoration")
     if (
         restoration.get("attempted") is not True or restoration.get("restored") is not True
