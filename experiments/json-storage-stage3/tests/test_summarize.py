@@ -1,0 +1,449 @@
+import json
+import os
+import stat
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+
+STAGE_DIR = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(STAGE_DIR / "report"))
+
+import summarize as report
+
+
+LAYOUTS = ("same_table", "separate", "full_core", "asset_ref")
+PERFORMANCE_WORKLOADS = (
+    "main", "equal_total_few_large", "equal_total_many_medium",
+)
+IDENTITY = "a" * 64
+INPUT_IDENTITY = {
+    "kind": "formal",
+    "generation_manifest": {"bytes": 1, "sha256": "b" * 64},
+    "truth": {"bytes": 1, "sha256": "c" * 64},
+    "events": {"bytes": 1, "sha256": "d" * 64},
+    "identity_sha256": IDENTITY,
+}
+WATERMARK_TARGETS = {
+    "same_table": ("events",),
+    "separate": ("events_analytics", "event_payloads"),
+    "full_core": ("events_full", "events_core"),
+    "asset_ref": ("events_analytics", "assets"),
+}
+
+
+def sample(workload, round_index, position, scenario, number, latency):
+    """构造一条已通过 truth 校验的正式原始样本。"""
+    return {
+        "workload": workload,
+        "round_index": round_index,
+        "position": position,
+        "scenario": scenario,
+        "kind": "batch" if scenario.startswith("batch:") else "list",
+        "status": "success",
+        "query_id": f"{workload}-{round_index}-{scenario}-{number}",
+        "database_response_bytes": 10,
+        "resolver_payload_bytes": 2,
+        "response_bytes": 12,
+        "database_protocol_bytes": 14,
+        "request_count": 2,
+        "query_complete_ms": latency,
+        "recovery_ms": latency + 10,
+        "validation_ms": latency + 20,
+        "application_ready_ms": latency + 30,
+        "validation": {"validated_payload_bytes": 1048576},
+    }
+
+
+def formal_target(root, engine="opengauss", layout="same_table"):
+    """写入一个最小正式 target，其 round 证据覆盖所有原始样本。"""
+    target = Path(root) / engine / layout
+    target.mkdir(parents=True)
+    workloads = {}
+    all_samples = []
+    for workload in PERFORMANCE_WORKLOADS + ("correctness_only",):
+        count = 4 if workload != "correctness_only" else 1
+        rounds = []
+        for round_index in range(count):
+            order = LAYOUTS[round_index:] + LAYOUTS[:round_index]
+            position = order.index(layout)
+            values = [round_index + 1] * 30
+            round_samples = [
+                sample(workload, round_index, position, "list:first", item, value)
+                for item, value in enumerate(values)
+            ]
+            if workload != "correctness_only":
+                round_samples.extend(
+                    sample(workload, round_index, position, f"batch:{workload}", item, 20)
+                    for item in range(5)
+                )
+            if engine == "opengauss":
+                for item in round_samples:
+                    item["database_protocol_bytes"] = None
+            all_samples.extend(round_samples)
+            ids = [item["query_id"] for item in round_samples]
+            access = {
+                "plans": {query_id: "observed scan" for query_id in ids},
+                "query_details": {
+                    query_id: {
+                        "scanned_rows": 1,
+                        "scanned_bytes": 1 if engine == "clickhouse" else None,
+                        "scanned_bytes_status": (
+                            "observed" if engine == "clickhouse" else "unavailable"
+                        ),
+                    }
+                    for query_id in ids
+                },
+            }
+            if engine == "clickhouse":
+                access["query_finish"] = {
+                    query_id: {"type": "QueryFinish", "read_rows": 1, "read_bytes": 1}
+                    for query_id in ids
+                }
+            else:
+                access["index_scans"] = {"events_list_idx": len(ids)}
+            rounds.append({
+                "format": "agent-trace-json-storage-stage3-layout-run",
+                "format_version": 1,
+                "status": "complete",
+                "engine": engine,
+                "layout": layout,
+                "workload": workload,
+                "round_index": round_index,
+                "position": position,
+                "round_order": list(order),
+                "input": json.loads(json.dumps(INPUT_IDENTITY)),
+                "correctness": {
+                    "truth_identity": IDENTITY,
+                    "formal_samples": len(round_samples),
+                    "successful_samples": len(round_samples),
+                    "failed_samples": 0,
+                    "response_bytes_validated": True,
+                },
+                "access": access,
+                "access_validation": {
+                    item["query_id"]: {
+                        "scenario": item["scenario"], "kind": item["kind"],
+                        "scanned_rows": 1, "scanned_bytes": 1,
+                        "access_structure": "observed", "mode": "formal",
+                    }
+                    for item in round_samples
+                },
+                "write": {"final_watermark": 10, "wall_ms": 1.0},
+                "maintenance": {
+                    "completed": True,
+                    "watermarks": {name: 10 for name in WATERMARK_TARGETS[layout]},
+                    "natural_stable_parts": engine == "clickhouse",
+                    "optimize_final": False,
+                },
+                "storage": {"tables": {name: {"total_bytes": 100,
+                                                  "part_count": 2, "marks": 3}
+                                        for name in WATERMARK_TARGETS[layout]},
+                             "merges": []},
+                "cleanup": {"removed": True, "asset_directory_removed": True},
+            })
+        workloads[workload] = {"status": "complete", "rounds": rounds}
+    manifest = {
+        "format": "agent-trace-json-storage-stage3-layout-matrix",
+        "format_version": 1,
+        "status": "complete",
+        "engine": engine,
+        "layout": layout,
+        "latin_square": [list(LAYOUTS[index:] + LAYOUTS[:index]) for index in range(4)],
+        "input": json.loads(json.dumps(INPUT_IDENTITY)),
+        "correctness": {
+            "rounds_complete": 4,
+            "formal_samples": len(all_samples),
+            "successful_samples": len(all_samples),
+            "response_bytes_validated": True,
+        },
+        "workloads": workloads,
+        "summary": {"main": {"pooled": "must not be used"}},
+        "global_cleanup": {"removed": True},
+    }
+    (target / "run-manifest.json").write_text(json.dumps(manifest))
+    (target / "samples.jsonl").write_text(
+        "".join(json.dumps(item) + "\n" for item in all_samples)
+    )
+    return target, manifest, all_samples
+
+
+class StageThreeSummaryTest(unittest.TestCase):
+    """验证正式矩阵汇总的证据门禁、分层统计和原子发布。"""
+
+    def test_rejects_non_complete_target(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _, manifest, _ = formal_target(directory)
+            manifest["status"] = "running"
+            with self.assertRaisesRegex(ValueError, "status is not complete"):
+                report.validate_run(manifest)
+
+    def test_rejects_missing_required_evidence_closed(self):
+        cases = (
+            ("input", "truth/input identity"),
+            ("correctness", "response-byte validation"),
+            ("access", "access evidence"),
+            ("access_validation", "access evidence"),
+            ("write", "write evidence"),
+            ("maintenance", "maintenance evidence"),
+            ("storage", "storage evidence"),
+            ("cleanup", "cleanup evidence"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            _, manifest, _ = formal_target(directory)
+            for field, message in cases:
+                candidate = json.loads(json.dumps(manifest))
+                del candidate["workloads"]["main"]["rounds"][0][field]
+                with self.subTest(field=field), self.assertRaisesRegex(ValueError, message):
+                    report.validate_run(candidate)
+
+    def test_rejects_incomplete_identity_correctness_and_latin_schedule(self):
+        """防止简化输入身份、计数矛盾或错位 Latin 顺序通过门禁。"""
+        with tempfile.TemporaryDirectory() as directory:
+            _, manifest, _ = formal_target(directory)
+            del manifest["input"]["truth"]
+            with self.assertRaisesRegex(ValueError, "truth/input identity"):
+                report.validate_run(manifest)
+
+            _, manifest, _ = formal_target(Path(directory) / "correctness")
+            manifest["workloads"]["main"]["rounds"][0]["correctness"][
+                "successful_samples"
+            ] -= 1
+            with self.assertRaisesRegex(ValueError, "correctness evidence"):
+                report.validate_run(manifest)
+
+            _, manifest, _ = formal_target(Path(directory) / "latin")
+            manifest["workloads"]["main"]["rounds"][0]["round_order"].reverse()
+            with self.assertRaisesRegex(ValueError, "Latin square order"):
+                report.validate_run(manifest)
+
+    def test_rejects_incomplete_clickhouse_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _, manifest, _ = formal_target(Path(directory) / "second", engine="clickhouse")
+            round_record = manifest["workloads"]["main"]["rounds"][0]
+            del round_record["access"]["query_finish"]
+            with self.assertRaisesRegex(ValueError, "QueryFinish"):
+                report.validate_run(manifest)
+            _, manifest, _ = formal_target(directory, engine="clickhouse")
+            manifest["workloads"]["main"]["rounds"][0]["maintenance"]["optimize_final"] = True
+            with self.assertRaisesRegex(ValueError, "optimize_final"):
+                report.validate_run(manifest)
+            _, manifest, _ = formal_target(Path(directory) / "malformed", engine="clickhouse")
+            query_finish = manifest["workloads"]["main"]["rounds"][0]["access"]["query_finish"]
+            next(iter(query_finish.values()))["type"] = "QueryStart"
+            with self.assertRaisesRegex(ValueError, "QueryFinish"):
+                report.validate_run(manifest)
+
+    def test_rejects_invalid_round_sample_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target, manifest, samples = formal_target(directory)
+            samples[0]["status"] = "failed"
+            (target / "samples.jsonl").write_text("".join(json.dumps(item) + "\n" for item in samples))
+            with self.assertRaisesRegex(ValueError, "failed sample"):
+                report.summarize([target])
+            target, manifest, samples = formal_target(Path(directory) / "second")
+            samples = [item for item in samples if item["query_id"] != "main-0-list:first-29"]
+            (target / "samples.jsonl").write_text("".join(json.dumps(item) + "\n" for item in samples))
+            with self.assertRaisesRegex(ValueError, "sample evidence"):
+                report.summarize([target])
+
+    def test_rejects_non_finite_metric(self):
+        """防止 NaN 绕过非负数检查并污染 percentile 和 JSON 输出。"""
+        with tempfile.TemporaryDirectory() as directory:
+            target, _, samples = formal_target(directory)
+            samples[0]["query_complete_ms"] = float("nan")
+            (target / "samples.jsonl").write_text(
+                "".join(json.dumps(item) + "\n" for item in samples)
+            )
+            with self.assertRaisesRegex(ValueError, "query_complete_ms is invalid"):
+                report.summarize([target])
+
+    def test_rejects_repeated_round_index_and_missing_scan_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            _, manifest, _ = formal_target(directory)
+            manifest["workloads"]["main"]["rounds"][1]["round_index"] = 0
+            with self.assertRaisesRegex(ValueError, "round index is duplicate"):
+                report.validate_run(manifest)
+            _, manifest, _ = formal_target(Path(directory) / "second")
+            detail = next(iter(manifest["workloads"]["main"]["rounds"][0]["access"]["query_details"].values()))
+            del detail["scanned_bytes"]
+            with self.assertRaisesRegex(ValueError, "access evidence"):
+                report.validate_run(manifest)
+
+    def test_rejects_round_identity_watermark_and_clickhouse_merge_gaps(self):
+        """防止错配 workload、水位或 ClickHouse merge 证据进入正式结果。"""
+        with tempfile.TemporaryDirectory() as directory:
+            _, manifest, _ = formal_target(directory)
+            manifest["workloads"]["main"]["rounds"][0]["workload"] = "correctness_only"
+            with self.assertRaisesRegex(ValueError, "workload identity"):
+                report.validate_run(manifest)
+
+            _, manifest, _ = formal_target(Path(directory) / "watermark")
+            manifest["workloads"]["main"]["rounds"][0]["maintenance"]["watermarks"]["events"] = 9
+            with self.assertRaisesRegex(ValueError, "watermark evidence"):
+                report.validate_run(manifest)
+
+            _, manifest, _ = formal_target(Path(directory) / "clickhouse", engine="clickhouse")
+            del manifest["workloads"]["main"]["rounds"][0]["storage"]["merges"]
+            with self.assertRaisesRegex(ValueError, "part/merge storage evidence"):
+                report.validate_run(manifest)
+
+    def test_accepts_all_formal_engine_layout_target_schemas(self):
+        """确认汇总接口接受 runner 会发布的八种正式 target schema。"""
+        with tempfile.TemporaryDirectory() as directory:
+            targets = [
+                formal_target(Path(directory) / f"{engine}-{layout}", engine, layout)[0]
+                for engine in ("opengauss", "clickhouse")
+                for layout in LAYOUTS
+            ]
+            summary = report.summarize(targets)
+            self.assertEqual(len(summary["matrix"]), 8)
+            self.assertEqual(summary, report.summarize(list(reversed(targets))))
+
+    def test_rejects_scenario_or_kind_not_explained_by_round_evidence(self):
+        """防止 query ID 存在但对应的 scenario 或 kind 证据错配。"""
+        with tempfile.TemporaryDirectory() as directory:
+            target, manifest, samples = formal_target(directory)
+            query_id = samples[0]["query_id"]
+            manifest["workloads"]["main"]["rounds"][0]["access_validation"][query_id][
+                "scenario"
+            ] = "preview:first"
+            (target / "run-manifest.json").write_text(json.dumps(manifest))
+            with self.assertRaisesRegex(ValueError, "scenario.*evidence"):
+                report.summarize([target])
+
+            target, manifest, samples = formal_target(Path(directory) / "kind")
+            samples[0]["kind"] = "batch"
+            query_id = samples[0]["query_id"]
+            manifest["workloads"]["main"]["rounds"][0]["access_validation"][query_id][
+                "kind"
+            ] = "batch"
+            (target / "run-manifest.json").write_text(json.dumps(manifest))
+            (target / "samples.jsonl").write_text(
+                "".join(json.dumps(item) + "\n" for item in samples)
+            )
+            with self.assertRaisesRegex(ValueError, "scenario/kind evidence"):
+                report.summarize([target])
+
+    def test_rejects_wrong_measurement_count_after_evidence_removal(self):
+        """确认计数门禁独立拒绝 29 个普通样本和 4 个 batch 样本。"""
+        for scenario, query_id in (
+            ("list:first", "main-0-list:first-29"),
+            ("batch:main", "main-0-batch:main-4"),
+        ):
+            with self.subTest(scenario=scenario), tempfile.TemporaryDirectory() as directory:
+                target, manifest, samples = formal_target(directory)
+                samples = [item for item in samples if item["query_id"] != query_id]
+                record = manifest["workloads"]["main"]["rounds"][0]
+                for evidence in ("plans", "query_details"):
+                    del record["access"][evidence][query_id]
+                del record["access_validation"][query_id]
+                record["correctness"]["formal_samples"] -= 1
+                record["correctness"]["successful_samples"] -= 1
+                (target / "run-manifest.json").write_text(json.dumps(manifest))
+                (target / "samples.jsonl").write_text(
+                    "".join(json.dumps(item) + "\n" for item in samples)
+                )
+                with self.assertRaisesRegex(ValueError, "required successful samples"):
+                    report.summarize([target])
+
+    def test_rejects_missing_raw_scenario_even_when_other_samples_remain(self):
+        """防止整类正式场景缺失后仍以剩余 raw samples 发布结果。"""
+        with tempfile.TemporaryDirectory() as directory:
+            target, _, samples = formal_target(directory)
+            samples = [
+                item for item in samples
+                if item["workload"] not in PERFORMANCE_WORKLOADS
+                or item["scenario"] != "list:first"
+            ]
+            (target / "samples.jsonl").write_text(
+                "".join(json.dumps(item) + "\n" for item in samples)
+            )
+            with self.assertRaisesRegex(ValueError, "sample evidence"):
+                report.summarize([target])
+
+    def test_uses_raw_samples_and_round_first_statistics(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target, _, samples = formal_target(directory)
+            for item in samples:
+                if item["workload"] == "main" and item["scenario"] == "list:first":
+                    base = item["round_index"]
+                    item["application_ready_ms"] = (0, 0, 100, 100)[base]
+                    if item["query_id"].endswith("-29"):
+                        item["application_ready_ms"] += 100
+            (target / "samples.jsonl").write_text("".join(json.dumps(item) + "\n" for item in samples))
+            summary = report.summarize([target])
+            result = summary["matrix"][0]["workloads"]["main"]["scenarios"]["list:first"]
+            self.assertEqual([item["round_index"] for item in result["rounds"]], [0, 1, 2, 3])
+            self.assertEqual(result["round_statistic_median"]["application_ready_ms"]["p95"], 50.0)
+            self.assertNotEqual(result["round_statistic_median"]["application_ready_ms"]["p95"], 100.0)
+
+    def test_keeps_metrics_and_workloads_independent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            target, _, samples = formal_target(directory)
+            samples[0]["query_complete_ms"] = 10000
+            (target / "samples.jsonl").write_text("".join(json.dumps(item) + "\n" for item in samples))
+            summary = report.summarize([target])
+            workloads = summary["matrix"][0]["workloads"]
+            self.assertEqual(set(workloads), set(PERFORMANCE_WORKLOADS))
+            scenario = workloads["main"]["scenarios"]["list:first"]["round_statistic_median"]
+            self.assertEqual(scenario["recovery_ms"]["p50"], 12.5)
+            self.assertEqual(scenario["validation_ms"]["p50"], 22.5)
+            self.assertEqual(scenario["application_ready_ms"]["p50"], 32.5)
+
+    def test_writes_complete_json_atomically_and_cleans_failed_temp_file(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "summary.json"
+            fsync_targets = []
+            replace_paths = []
+            original_replace = os.replace
+
+            def observe_replace(source, destination):
+                replace_paths.append((Path(source), Path(destination)))
+                original_replace(source, destination)
+
+            with (
+                patch.object(
+                    report.os, "fsync",
+                    side_effect=lambda fd: fsync_targets.append(
+                        "directory" if stat.S_ISDIR(os.fstat(fd).st_mode) else "file"
+                    ),
+                ),
+                patch.object(report.os, "replace", side_effect=observe_replace),
+            ):
+                report.write_summary_atomic(output, {"status": "complete", "value": 1})
+            self.assertEqual(json.loads(output.read_text()), {"status": "complete", "value": 1})
+            self.assertEqual(fsync_targets, ["file", "directory"])
+            self.assertEqual(replace_paths[0][0].parent, output.parent)
+            self.assertEqual(replace_paths[0][1], output)
+            self.assertEqual(list(output.parent.glob(".*.tmp")), [])
+            output.unlink()
+            with patch.object(report.os, "replace", side_effect=OSError("replace failed")):
+                with self.assertRaisesRegex(OSError, "replace failed"):
+                    report.write_summary_atomic(output, {"status": "complete"})
+            self.assertFalse(output.exists())
+            self.assertEqual(list(output.parent.glob(".*.tmp")), [])
+
+    def test_directory_fsync_failure_removes_published_target(self):
+        """防止 replace 后目录持久化失败却留下看似完整的结果。"""
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "summary.json"
+            calls = 0
+
+            def fail_directory_fsync(_):
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise OSError("directory fsync failed")
+
+            with patch.object(report.os, "fsync", side_effect=fail_directory_fsync):
+                with self.assertRaisesRegex(OSError, "directory fsync failed"):
+                    report.write_summary_atomic(output, {"status": "complete"})
+            self.assertFalse(output.exists())
+            self.assertEqual(list(output.parent.glob(".*.tmp")), [])
+
+
+if __name__ == "__main__":
+    unittest.main()
