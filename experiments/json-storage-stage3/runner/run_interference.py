@@ -8,6 +8,7 @@ import multiprocessing
 import os
 import queue
 import signal
+import sys
 import tempfile
 import threading
 import time
@@ -452,70 +453,155 @@ def run_owned_phase_process(operation, *, run_id, phase, policy, event_consumer=
     eof_seen = False
     failure_reason = None
     protocol_error = None
-    while True:
-        for _ in range(IPC_DRAIN_BATCH_SIZE):
-            try:
-                message_type, value = messages.get_nowait()
-            except queue.Empty:
-                break
-            if message_type == "event":
+    lifecycle = []
+    child_exit = {"kind": "running", "exit_code": None}
+    reader_evidence = None
+    teardown_errors = []
+
+    try:
+        while True:
+            for _ in range(IPC_DRAIN_BATCH_SIZE):
                 try:
-                    event = _validate_phase_event(
-                        value, run_id, phase, len(events), terminal_seen,
-                    )
-                except RuntimeError as error:
-                    failure_reason = "protocol_error"
-                    protocol_error = str(error)
+                    message_type, value = messages.get_nowait()
+                except queue.Empty:
                     break
-                events.append(event)
-                terminal_seen = event["type"] == "phase_terminal"
-                if event_consumer is not None:
+                if message_type == "event":
                     try:
-                        _consume_parent_event(event_consumer, event, deadline)
-                    except _ParentEventTimeout as error:
-                        failure_reason = "parent_event_timeout"
+                        event = _validate_phase_event(
+                            value, run_id, phase, len(events), terminal_seen,
+                        )
+                    except RuntimeError as error:
+                        failure_reason = "protocol_error"
                         protocol_error = str(error)
                         break
-                    except Exception as error:
-                        failure_reason = "parent_event_error"
-                        protocol_error = str(error) or type(error).__name__
-                        break
-            elif message_type == "reader_error":
-                failure_reason = "ipc_reader_error"
-                protocol_error = value
+                    events.append(event)
+                    terminal_seen = event["type"] == "phase_terminal"
+                    if event_consumer is not None:
+                        try:
+                            _consume_parent_event(event_consumer, event, deadline)
+                        except _ParentEventTimeout as error:
+                            failure_reason = "parent_event_timeout"
+                            protocol_error = str(error)
+                            break
+                        except Exception as error:
+                            failure_reason = "parent_event_error"
+                            protocol_error = str(error) or type(error).__name__
+                            break
+                elif message_type == "reader_error":
+                    failure_reason = "ipc_reader_error"
+                    protocol_error = value
+                    break
+                else:
+                    eof_seen = True
+            if failure_reason is not None:
                 break
-            else:
-                eof_seen = True
-        if failure_reason is not None:
-            break
-        if not process.is_alive() and eof_seen and messages.empty():
-            break
-        now = time.monotonic()
-        if now >= deadline:
-            failure_reason = (
-                "watchdog_timeout" if process.is_alive() else "ipc_drain_timeout"
-            )
-            break
-        time.sleep(min(policy.poll_interval_seconds, deadline - now))
+            if not process.is_alive() and eof_seen and messages.empty():
+                break
+            now = time.monotonic()
+            if now >= deadline:
+                failure_reason = (
+                    "watchdog_timeout" if process.is_alive() else "ipc_drain_timeout"
+                )
+                break
+            time.sleep(min(policy.poll_interval_seconds, deadline - now))
+    finally:
+        primary_error = sys.exc_info()[1]
+        try:
+            lifecycle = _stop_phase_process(process, policy)
+        except BaseException as error:
+            teardown_errors.append(("stop_child", error))
+            try:
+                child_alive = process.is_alive()
+            except BaseException as inspect_error:
+                child_alive = True
+                teardown_errors.append(("inspect_child_after_stop_failure", inspect_error))
+            if child_alive:
+                try:
+                    process.kill()
+                except BaseException as fallback_error:
+                    teardown_errors.append(("kill_child_after_stop_failure", fallback_error))
+                try:
+                    process.join(policy.kill_join_seconds)
+                except BaseException as fallback_error:
+                    teardown_errors.append(("join_child_after_stop_failure", fallback_error))
+        try:
+            if not process.is_alive():
+                process.join(0)
+        except BaseException as error:
+            teardown_errors.append(("join_terminated_child", error))
+        connection_closed = {}
+        for action, name, connection in (
+            ("close_receive_connection", "receive", receive_connection),
+            ("close_send_connection", "send", send_connection),
+        ):
+            try:
+                connection.close()
+                connection_closed[name] = True
+            except BaseException as error:
+                connection_closed[name] = False
+                teardown_errors.append((action, error))
+        reader_join_attempts = 0
+        reader_alive = True
+        for _ in range(2):
+            reader_join_attempts += 1
+            try:
+                reader.join(policy.reader_join_seconds)
+            except BaseException as error:
+                teardown_errors.append(("join_ipc_reader", error))
+            try:
+                reader_alive = reader.is_alive()
+            except BaseException as error:
+                teardown_errors.append(("inspect_ipc_reader", error))
+                reader_alive = True
+            if not reader_alive:
+                break
+        reader_evidence = {
+            "connection_closed": connection_closed["receive"],
+            "send_connection_closed": connection_closed["send"],
+            "join_timeout_seconds": policy.reader_join_seconds,
+            "join_attempts": reader_join_attempts,
+            "alive": reader_alive,
+        }
+        if reader_alive:
+            teardown_errors.append((
+                "join_ipc_reader", RuntimeError("owned IPC reader remained alive"),
+            ))
+        child_alive = True
+        try:
+            child_alive = process.is_alive()
+        except BaseException as error:
+            teardown_errors.append(("inspect_child_before_handle_close", error))
+        if not child_alive:
+            try:
+                child_exit = _explain_process_exit(process.exitcode)
+            except BaseException as error:
+                teardown_errors.append(("inspect_child_exit", error))
+            try:
+                process.close()
+            except BaseException as error:
+                teardown_errors.append(("close_process_handle", error))
+        else:
+            teardown_errors.append((
+                "stop_child", RuntimeError("owned phase child remained alive"),
+            ))
+        if primary_error is not None:
+            for action, error in teardown_errors:
+                try:
+                    primary_error.add_note(
+                        f"phase lifecycle teardown {action} failed: "
+                        f"{type(error).__name__}: "
+                        f"{str(error) or type(error).__name__}"
+                    )
+                except BaseException:
+                    # 记录失败不能替代 caller 的原始 BaseException。
+                    pass
+        elif reader_evidence["alive"] and failure_reason is None:
+            failure_reason = "ipc_reader_join_timeout"
+        elif child_alive and failure_reason is None:
+            failure_reason = "process_reap_timeout"
+        elif teardown_errors and failure_reason is None:
+            failure_reason = "lifecycle_teardown_error"
 
-    lifecycle = _stop_phase_process(process, policy) if failure_reason else []
-    if not process.is_alive():
-        process.join(0)
-    reader.join(policy.reader_join_seconds)
-    reader_join_attempts = 1
-    receive_connection.close()
-    if reader.is_alive():
-        reader.join(policy.reader_join_seconds)
-        reader_join_attempts += 1
-    reader_evidence = {
-        "connection_closed": True,
-        "join_timeout_seconds": policy.reader_join_seconds,
-        "join_attempts": reader_join_attempts,
-        "alive": reader.is_alive(),
-    }
-    if reader.is_alive() and failure_reason is None:
-        failure_reason = "ipc_reader_join_timeout"
-    child_exit = _explain_process_exit(process.exitcode)
     if failure_reason is None:
         if child_exit != {"kind": "exited", "exit_code": 0}:
             failure_reason = "child_exit"
@@ -537,16 +623,22 @@ def run_owned_phase_process(operation, *, run_id, phase, policy, event_consumer=
         }
         if protocol_error is not None:
             evidence["protocol_error"] = protocol_error
+        if teardown_errors:
+            evidence["teardown_errors"] = [
+                {
+                    "action": action,
+                    "error_type": type(error).__name__,
+                    "error": str(error) or type(error).__name__,
+                }
+                for action, error in teardown_errors
+            ]
         if failure_reason == "parent_event_timeout":
             evidence["artifact_publication"] = {
                 "status": "unavailable",
                 "reason": "parent_event_timeout",
                 "retry_safe": False,
             }
-        if not process.is_alive():
-            process.close()
         raise UnresolvedExecution(evidence)
-    process.close()
     return PhaseProcessOutcome(tuple(events), child_exit)
 
 

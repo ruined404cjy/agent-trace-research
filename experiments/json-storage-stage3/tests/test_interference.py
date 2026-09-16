@@ -630,6 +630,173 @@ class PhaseProcessBoundaryTest(unittest.TestCase):
         self.assertTrue(result["handler_restored"])
         self.assertEqual(result["timer"], (0.0, 0.0))
 
+    def test_consumer_keyboard_interrupt_reaps_resources_and_stops_later_phase(self):
+        """捕获 consumer BaseException 绕过 owned lifecycle 和后续 phase 门禁。"""
+        original_stop = interference_runner._stop_phase_process
+        original_reader = interference_runner._read_phase_events
+        interruption = KeyboardInterrupt("stop after current phase")
+        reader_name = "stage3-interference-ipc-quiet"
+        phases_started = []
+        lifecycle = {}
+
+        def track_reader(connection, messages):
+            lifecycle["connection"] = connection
+            original_reader(connection, messages)
+            lifecycle["reader_exited"] = True
+            lifecycle["connection_closed"] = connection.closed
+
+        def stop_and_fail_on_handle_close(process, policy):
+            stopped = original_stop(process, policy)
+            lifecycle["child_stopped"] = not process.is_alive()
+            lifecycle["child_exit"] = process.exitcode
+            original_close = process.close
+
+            def close_then_fail():
+                original_close()
+                lifecycle["process_handle_closed"] = True
+                raise RuntimeError("injected process handle close failure")
+
+            process.close = close_then_fail
+            return stopped
+
+        interference_runner._read_phase_events = track_reader
+        interference_runner._stop_phase_process = stop_and_fail_on_handle_close
+        reader_threads = []
+        try:
+            with self.assertRaises(KeyboardInterrupt) as raised:
+                for current_phase in ("quiet", "detail_2m"):
+                    phases_started.append(current_phase)
+                    run_owned_phase_process(
+                        lambda _send: threading.Event().wait(),
+                        run_id="run-consumer-abort", phase=current_phase,
+                        policy=PhaseProcessPolicy(
+                            watchdog_seconds=1.0, terminate_join_seconds=0.05,
+                            kill_join_seconds=0.05, reader_join_seconds=0.05,
+                        ),
+                        event_consumer=lambda _event: (_ for _ in ()).throw(
+                            interruption
+                        ),
+                    )
+
+            reader_threads = [
+                thread for thread in threading.enumerate()
+                if thread.name == reader_name
+            ]
+            reader_stopped = not any(thread.is_alive() for thread in reader_threads)
+        finally:
+            interference_runner._read_phase_events = original_reader
+            interference_runner._stop_phase_process = original_stop
+            for child in multiprocessing.active_children():
+                if child.name == "stage3-interference-quiet":
+                    child.terminate()
+                    child.join(1.0)
+                    child.close()
+            connection = lifecycle.get("connection")
+            if connection is not None and not connection.closed:
+                connection.close()
+            for reader in reader_threads:
+                reader.join(1.0)
+
+        self.assertIs(raised.exception, interruption)
+        self.assertEqual(raised.exception.args, ("stop after current phase",))
+        self.assertEqual(phases_started, ["quiet"])
+        self.assertTrue(lifecycle.get("child_stopped"))
+        self.assertIsNotNone(lifecycle.get("child_exit"))
+        self.assertTrue(reader_stopped)
+        self.assertTrue(lifecycle.get("reader_exited"))
+        self.assertTrue(lifecycle.get("connection_closed"))
+        self.assertTrue(lifecycle.get("process_handle_closed"))
+        self.assertTrue(any(
+            "injected process handle close failure" in note
+            for note in getattr(raised.exception, "__notes__", ())
+        ))
+
+    def test_consumer_system_exit_continues_teardown_after_stop_failure(self):
+        """捕获 child stop 失败后跳过 Pipe、reader 和 process handle 收束。"""
+        original_stop = interference_runner._stop_phase_process
+        original_thread = threading.Thread
+        termination = SystemExit(17)
+        lifecycle = {"reader_join_calls": 0}
+
+        def track_thread(*args, **kwargs):
+            thread = original_thread(*args, **kwargs)
+            original_join = thread.join
+
+            def track_join(timeout=None):
+                lifecycle["reader_join_calls"] += 1
+                return original_join(timeout)
+
+            thread.join = track_join
+            lifecycle["reader"] = thread
+            return thread
+
+        def stop_then_fail(process, policy):
+            stopped = original_stop(process, policy)
+            lifecycle["process"] = process
+            lifecycle["child_stopped"] = not process.is_alive()
+            original_close = process.close
+
+            def track_close():
+                lifecycle["process_handle_closed"] = True
+                return original_close()
+
+            process.close = track_close
+            raise RuntimeError("injected child stop teardown failure")
+
+        interference_runner.threading.Thread = track_thread
+        interference_runner._stop_phase_process = stop_then_fail
+        try:
+            with self.assertRaises(SystemExit) as raised:
+                run_owned_phase_process(
+                    lambda _send: threading.Event().wait(),
+                    run_id="run-consumer-system-exit", phase="quiet",
+                    policy=PhaseProcessPolicy(
+                        watchdog_seconds=1.0, terminate_join_seconds=0.05,
+                        kill_join_seconds=0.05, reader_join_seconds=0.05,
+                    ),
+                    event_consumer=lambda _event: (_ for _ in ()).throw(termination),
+                )
+        finally:
+            interference_runner._stop_phase_process = original_stop
+            interference_runner.threading.Thread = original_thread
+            reader = lifecycle.get("reader")
+            if reader is not None:
+                original_thread.join(reader, 1.0)
+            process = lifecycle.get("process")
+            if process is not None and not lifecycle.get("process_handle_closed"):
+                process.close()
+
+        self.assertIs(raised.exception, termination)
+        self.assertEqual(raised.exception.code, 17)
+        self.assertTrue(lifecycle.get("child_stopped"))
+        self.assertGreaterEqual(lifecycle["reader_join_calls"], 1)
+        self.assertFalse(lifecycle["reader"].is_alive())
+        self.assertTrue(lifecycle.get("process_handle_closed"))
+        self.assertTrue(any(
+            "injected child stop teardown failure" in note
+            for note in getattr(raised.exception, "__notes__", ())
+        ))
+
+    def test_consumer_exception_remains_unresolved_execution(self):
+        """捕获普通 consumer Exception 绕过既有 unresolved 分类。"""
+        with self.assertRaises(UnresolvedExecution) as raised:
+            run_owned_phase_process(
+                lambda _send: threading.Event().wait(),
+                run_id="run-consumer-error", phase="quiet",
+                policy=PhaseProcessPolicy(
+                    watchdog_seconds=1.0, terminate_join_seconds=0.05,
+                    kill_join_seconds=0.05, reader_join_seconds=0.05,
+                ),
+                event_consumer=lambda _event: (_ for _ in ()).throw(
+                    ValueError("consumer failed")
+                ),
+            )
+
+        self.assertEqual(raised.exception.evidence["reason"], "parent_event_error")
+        self.assertEqual(raised.exception.evidence["protocol_error"], "consumer failed")
+        self.assertNotEqual(raised.exception.evidence["child_exit"]["kind"], "running")
+        self.assertFalse(raised.exception.evidence["reader"]["alive"])
+
     def test_bounded_parent_consumer_fails_closed_outside_the_main_thread(self):
         """捕获 signal timeout 从非 main thread 静默降级为无界调用。"""
         operation_started = threading.Event()
@@ -916,7 +1083,6 @@ class InterferenceRunnerTest(unittest.TestCase):
             phase_manifest = json.loads(
                 (output / "quiet" / "run-manifest.json").read_text()
             )
-            root_manifest = json.loads((output / "run-manifest.json").read_text())
             root_manifest = json.loads((output / "run-manifest.json").read_text())
 
         self.assertEqual(factory_calls.value, 1)
