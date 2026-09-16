@@ -383,7 +383,7 @@ def _gate_asset_failures(child, output, engine):
         if not isinstance(result, dict):
             raise RuntimeError("asset failure result is invalid")
         namespace = result.get("namespace")
-        pattern = r"jsons3_asset_failure_" + re.escape(case) + r"_[0-9a-f]{10}"
+        pattern = r"jsons3_af_" + re.escape(case) + r"_[0-9a-f]{10}"
         if not isinstance(namespace, str) or re.fullmatch(pattern, namespace) is None:
             raise RuntimeError("asset failure namespace is invalid")
         delete_status = result.get("final_status") if case == "delete_failure" else None

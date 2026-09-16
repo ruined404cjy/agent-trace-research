@@ -1681,7 +1681,7 @@ def valid_asset_failure_child(output):
         injection, error, object_exists, recovery, injected_status, final_status, recovered = rules[case]
         payload = ('{"content":"asset failure ' + case + '"}').encode()
         digest = hashlib.sha256(payload).hexdigest()
-        namespace = f"jsons3_asset_failure_{case}_{index:010x}"
+        namespace = f"jsons3_af_{case}_{index:010x}"
         objects = (output / "child" / "asset-failure-cases" / case / "objects").resolve()
         object_path = objects / digest[:2] / digest
         prepared_status = "pending" if case == "publish_failure" else (
@@ -1813,6 +1813,36 @@ class AssetFailureProductionGateTests(unittest.TestCase):
         )
         for mutation in mutations:
             self.assert_rejected(mutation)
+
+    def test_gate_rejects_legacy_namespace_prefix(self):
+        """捕获会使最长物理 schema/database 超过 63 字符的旧前缀。"""
+        def use_legacy_prefix(value):
+            for index, result in enumerate(value["results"]):
+                namespace = f"jsons3_asset_failure_{result['case']}_{index:010x}"
+                result["namespace"] = namespace
+                result["cleanup"]["namespace"] = namespace
+                result["cleanup"]["adapter_cleanup_target"] = namespace + "_asset_ref"
+
+        self.assert_rejected(use_legacy_prefix)
+
+    def test_production_factories_construct_bounded_longest_case_without_database(self):
+        """捕获最长 case 派生出的生产 schema/database 超过 63 字符或构造时连接数据库。"""
+        namespace = "jsons3_af_upload_then_db_failure_0123456789"
+        endpoints = production.EngineEndpoints()
+        with tempfile.TemporaryDirectory() as directory, patch.object(
+            production.OpenGaussAdapter, "connect_worker",
+            side_effect=AssertionError("factory must not connect to openGauss"),
+        ), patch.object(
+            production.ClickHouseAdapter, "connect_worker",
+            side_effect=AssertionError("factory must not connect to ClickHouse"),
+        ):
+            for engine, attribute in (("opengauss", "schema"), ("clickhouse", "database")):
+                with self.subTest(engine=engine):
+                    adapter_factory, _, _ = production.asset_failure_factories(engine, endpoints)
+                    control = adapter_factory(namespace, Path(directory) / engine / "objects")
+                    physical = getattr(control.adapter, attribute)
+                    self.assertEqual(physical, namespace + "_asset_ref")
+                    self.assertLessEqual(len(physical), 63)
 
     def test_gate_rejects_each_fixed_failure_semantic_family(self):
         """捕获状态链、resolver、orphan、对象、publish 与恢复语义漂移。"""
