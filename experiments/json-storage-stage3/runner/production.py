@@ -1,8 +1,10 @@
 """组装阶段三正式输入及后续运行可复用的基础工厂。"""
 
 import json
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import MappingProxyType
 
 from assets import LocalAssetStore
 from common import LAYOUTS, QuerySpec, TruthCatalog
@@ -21,33 +23,25 @@ from run_layout_matrix import (
 _FORMAL_INPUT_SEAL = object()
 
 
-class _FrozenDict(dict):
-    """保留 dict 消费接口的递归只读映射。"""
-
-    @staticmethod
-    def _immutable(*_args, **_kwargs):
-        raise TypeError("formal input is read-only")
-
-    __setitem__ = _immutable
-    __delitem__ = _immutable
-    __ior__ = _immutable
-    clear = _immutable
-    pop = _immutable
-    popitem = _immutable
-    setdefault = _immutable
-    update = _immutable
-
-
 def _freeze(value):
-    """递归复制可变容器，保留现有 dict 和 tuple 读取接口。"""
-    if isinstance(value, _FrozenDict):
+    """递归复制可变容器并返回不继承 dict 的只读映射。"""
+    if isinstance(value, MappingProxyType):
         return value
-    if isinstance(value, dict):
-        return _FrozenDict({key: _freeze(item) for key, item in value.items()})
+    if isinstance(value, Mapping):
+        return MappingProxyType({key: _freeze(item) for key, item in value.items()})
     if isinstance(value, list):
         return tuple(_freeze(item) for item in value)
     if isinstance(value, tuple):
         return tuple(_freeze(item) for item in value)
+    return value
+
+
+def _thaw(value):
+    """为既有 runner 的可变配置边界建立隔离的普通容器副本。"""
+    if isinstance(value, Mapping):
+        return {key: _thaw(item) for key, item in value.items()}
+    if isinstance(value, tuple):
+        return tuple(_thaw(item) for item in value)
     return value
 
 
@@ -65,13 +59,15 @@ def _freeze_truth(truth: TruthCatalog) -> TruthCatalog:
 
 def _freeze_queries(query_cases):
     """冻结现有 query helper 返回的参数与独立 truth 行集。"""
-    return tuple(
-        (
-            QuerySpec(query.kind, _freeze(query.parameters)),
+    frozen_cases = []
+    for query, query_truth in query_cases:
+        frozen_query = QuerySpec(query.kind, dict(query.parameters))
+        object.__setattr__(frozen_query, "parameters", _freeze(query.parameters))
+        frozen_cases.append((
+            frozen_query,
             QueryTruth(query_truth.scenario, _freeze(query_truth.rows)),
-        )
-        for query, query_truth in query_cases
-    )
+        ))
+    return tuple(frozen_cases)
 
 
 @dataclass(frozen=True)
@@ -95,6 +91,7 @@ class EngineEndpoints:
             if (
                 not isinstance(value, str)
                 or not value
+                or not value.isprintable()
                 or value.strip() != value
                 or any(character.isspace() or ord(character) < 32 or ord(character) == 127
                        for character in value)
@@ -113,12 +110,12 @@ class FormalInput:
     root: Path
     truth: TruthCatalog
     events: tuple[dict[str, object], ...]
-    identity: dict[str, object]
-    generation: dict[str, object]
+    identity: Mapping[str, object]
+    generation: Mapping[str, object]
     main_events: tuple[dict[str, object], ...]
     main_blocks: tuple[tuple[dict[str, object], ...], ...]
     main_queries: tuple[tuple[QuerySpec, QueryTruth], ...]
-    main_contract: dict[str, object]
+    main_contract: Mapping[str, object]
     _validation_seal: object | None = field(default=None, init=False, repr=False, compare=False)
 
 
@@ -229,8 +226,8 @@ def candidate_config(formal: FormalInput, output: Path, asset_root: Path,
     return RunConfig(
         input_root=formal.root, output=Path(output), engine="clickhouse", layout="asset_ref",
         round_index=0, round_order=latin_square()[0], measurements=30,
-        batch_measurements=5, input_identity=formal.identity, command=tuple(command),
-        asset_root=Path(asset_root).resolve(), verified_events=formal.main_events, workload="main",
+        batch_measurements=5, input_identity=_thaw(formal.identity), command=tuple(command),
+        asset_root=Path(asset_root).resolve(), verified_events=_thaw(formal.main_events), workload="main",
     )
 
 

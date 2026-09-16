@@ -1,5 +1,6 @@
 import hashlib
 import json
+import operator
 import sys
 import tempfile
 import unittest
@@ -274,20 +275,27 @@ class ProductionFactoryTest(unittest.TestCase):
         self.assertEqual(formal.truth.query_window["page_size"], 256)
         query, query_truth = queries[0]
         mutation_attempts = (
-            lambda: formal.identity.__setitem__("kind", "smoke"),
-            lambda: formal.identity["provenance"].__setitem__("source", "changed"),
-            lambda: formal.generation.__setitem__("status", "failed"),
-            lambda: formal.events[0].__setitem__("event_id", "changed"),
-            lambda: blocks[0][0].__setitem__("event_id", "changed"),
-            lambda: formal.main_contract.__setitem__("payload_count", 0),
-            lambda: query.parameters.__setitem__("page_size", 1),
-            lambda: query_truth.rows[0].__setitem__("event_id", "changed"),
-            lambda: formal.truth.query_window.__setitem__("page_size", 1),
-            lambda: config.input_identity.__setitem__("kind", "smoke"),
+            lambda: operator.setitem(formal.identity, "kind", "smoke"),
+            lambda: operator.setitem(formal.identity["provenance"], "source", "changed"),
+            lambda: operator.setitem(formal.generation, "status", "failed"),
+            lambda: operator.setitem(formal.events[0], "event_id", "changed"),
+            lambda: operator.setitem(blocks[0][0], "event_id", "changed"),
+            lambda: operator.setitem(formal.main_contract, "payload_count", 0),
+            lambda: operator.setitem(query.parameters, "page_size", 1),
+            lambda: operator.setitem(query_truth.rows[0], "event_id", "changed"),
+            lambda: operator.setitem(formal.truth.query_window, "page_size", 1),
+            lambda: dict.__setitem__(formal.identity, "kind", "smoke"),
+            lambda: dict.update(formal.events[0], {"event_id": "changed"}),
+            lambda: dict.clear(blocks[0][0]),
+            lambda: dict.pop(query.parameters, "page_size"),
         )
         for attempt in mutation_attempts:
             with self.assertRaises(TypeError):
                 attempt()
+        config.input_identity["kind"] = "smoke"
+        config.verified_events[0]["event_id"] = "changed"
+        self.assertEqual(formal.identity["kind"], "formal")
+        self.assertEqual(formal.main_events[0]["event_id"], "event-00000")
 
     def test_endpoints_reject_whitespace_and_out_of_range_ports(self):
         """捕获不可用的连接身份或端口仍进入 adapter 工厂。"""
@@ -295,7 +303,9 @@ class ProductionFactoryTest(unittest.TestCase):
             {"opengauss_host": " host"},
             {"opengauss_host": "host name"},
             {"clickhouse_host": "host\nname"},
+            {"opengauss_host": "host\u0080name"},
             {"opengauss_container": "container\tname"},
+            {"clickhouse_container": "container\u200bname"},
             {"clickhouse_container": " container"},
             {"opengauss_port": 65_536},
             {"clickhouse_port": 65_536},
