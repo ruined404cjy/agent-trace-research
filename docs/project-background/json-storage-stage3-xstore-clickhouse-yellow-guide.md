@@ -43,7 +43,7 @@
 
 1. 分支或归档资产不可用。
 2. 归档 SHA-256 校验失败，或解包后输入身份与冻结身份不一致。
-3. XStore 能力报告的任一必填字段缺少可执行证据。
+3. XStore 能力报告的任一必填字段状态为 unverified、状态取值未知，或缺少可执行证据。
 4. 代码 HEAD、工作区状态、引擎版本或输入身份无法记录。
 5. ClickHouse 未在回环地址就绪，或运行版本与本文不一致且未记录策略原因。
 6. 真值、完整 payload bytes、联合水位或清理证据缺失。
@@ -65,11 +65,13 @@
 | 归档蓝区已验证身份 | SHA-256 47737b02335c7b2ce76640599f2b2f8d7142935df3acfead29b95270db60ac8f，大小 19,313,037 bytes |
 | 归档根目录 | json-storage-stage3-formal-input/，内含 events.jsonl、truth.json、generation-manifest.json、payloads/ |
 
-归档由 [冻结输入打包工具](../../experiments/json-storage-stage3/tools/package_formal_input.py) 生成。源目录中的 run-manifest.json 属于生成阶段的包装元数据，按已记录裁决不进入归档。
+归档由 [冻结输入打包工具](../../experiments/json-storage-stage3/tools/package_formal_input.py) 生成。冻结源目录中的 run-manifest.json 由运行入口的 generate-input 操作写入，记录的是生成运行自身的 operation、command、代码身份与清理结果，不是冻结输入内容；打包工具按 SOURCE_ONLY_FILES 把它保留在源目录，不进入归档。归档只包含 events.jsonl、truth.json、generation-manifest.json 与 payloads/，多出任何其他条目时停止。
 
 ### 2.2 全局变量与删除守卫
 
 开始执行前设置以下变量，并把 /path/to 替换为黄区实际路径。变量块以 HTML 注释标记，供文档契约测试作为 shell 前置脚本复用。
+
+变量块定义全部全局变量、删除守卫函数与端口判据函数，但不修改当前目录，也不默认选择安装方式。每个可执行片段都要求这些变量与函数在当前 shell 中已经存在：把本变量块 `source` 一次，或在同一 shell 中粘贴一次，然后执行片段。CH_INSTALL_MODE 在第 5.3 或 5.4 节导出，之后的所有片段都在同一 shell 中继承该取值；新建 shell 时必须重新 source 变量块并按所选路径重新导出 CH_INSTALL_MODE，未设置时 5.7 与 9.1 节直接停止。
 
 <!-- shell-preamble -->
 ```bash
@@ -96,7 +98,8 @@ export CH_BIN="$CH_STATE/opt/clickhouse-common-static-${CH_VERSION}/usr/bin/clic
 export CH_CONFIG="$CH_STATE/etc/config.xml"
 export CH_HTTP_PORT=18123
 export CH_TCP_PORT=19000
-export CH_INSTALL_MODE=tgz
+unset CH_INSTALL_MODE
+export CH_ETC_ROOT=${CH_ETC_ROOT:-/etc}
 export CH_RPM_OVERRIDE=/etc/clickhouse-server/config.d/00-stage3-yellow.xml
 export CH_PIP_REQUIREMENT='psycopg[binary]==3.3.5'
 export PYTHON_BOOTSTRAP=python3
@@ -135,6 +138,27 @@ require_guide_path() {
   return 0
 }
 
+require_asset_workspace_path() {
+  # Asset 工作树必须来自 YELLOW_OUTPUT 下的某个输出根，并保持 .asset-work 固定末级目录名。
+  local target="$1"
+  local target_path output_path
+  if [ "${target##*/}" != ".asset-work" ]; then
+    printf 'refusing to delete non-asset workspace %s\n' "$target" >&2
+    return 1
+  fi
+  target_path=$(require_guide_path "$target") || return 1
+  output_path=$(cd -- "$YELLOW_OUTPUT" 2>/dev/null && pwd -P) || {
+    printf 'refusing to delete asset workspace: YELLOW_OUTPUT does not exist: %s\n' "$YELLOW_OUTPUT" >&2
+    return 1
+  }
+  case "$target_path" in
+    "$output_path"/?*/.asset-work) ;;
+    *) printf 'refusing to delete asset workspace outside output roots: %s\n' "$target_path" >&2; return 1 ;;
+  esac
+  printf '%s\n' "$target_path"
+  return 0
+}
+
 require_rpm_override_path() {
   # 只允许操作本指南创建的固定覆盖文件；父目录可由运维或测试显式改写，文件名固定。
   local target="${CH_RPM_OVERRIDE:-}"
@@ -146,23 +170,38 @@ require_rpm_override_path() {
 }
 
 listening_local_addresses() {
-  # 输出监听套接字的本地地址字段。ss 每行以对端地址结尾，端口判据不得锚定行尾。
-  if ss -ltnH >/dev/null 2>&1; then
-    ss -ltnH | awk 'NF >= 4 { print $4 }'
-  else
-    ss -ltn | awk 'NR > 1 && NF >= 4 { print $4 }'
+  # 输出监听套接字的本地地址字段。ss 缺失或执行失败时返回 1，调用方不得把失败当作端口空闲。
+  local output
+  if output=$(ss -ltnH 2>/dev/null); then
+    if [ -n "$output" ]; then
+      printf '%s\n' "$output" | awk 'NF >= 4 { print $4 }'
+    fi
+    return 0
   fi
+  if output=$(ss -ltn 2>/dev/null); then
+    if [ -n "$output" ]; then
+      printf '%s\n' "$output" | awk 'NR > 1 && NF >= 4 { print $4 }'
+    fi
+    return 0
+  fi
+  printf 'ss is unavailable or failed; listening sockets are unknown\n' >&2
+  return 1
 }
 
 experiment_listeners() {
-  # 只保留实验端口的本地地址；无命中时输出为空。
-  listening_local_addresses | grep -E ":(${CH_HTTP_PORT}|${CH_TCP_PORT})$" || true
+  # 只保留实验端口的本地地址；无命中时输出为空，探测失败时返回 1。
+  local addresses
+  addresses=$(listening_local_addresses) || return 1
+  printf '%s\n' "$addresses" | grep -E ":(${CH_HTTP_PORT}|${CH_TCP_PORT})$" || true
 }
 
 assert_ports_free() {
-  # 任一实验端口仍被监听时返回 1，并打印命中的监听地址。
+  # 任一实验端口仍被监听或探测失败时返回 1，并打印命中的监听地址。
   local hits
-  hits=$(experiment_listeners)
+  if ! hits=$(experiment_listeners); then
+    printf 'port probe failed: listening sockets are unknown; treat as not free\n' >&2
+    return 1
+  fi
   if [ -n "$hits" ]; then
     printf 'experiment ports are still listening:\n%s\n' "$hits" >&2
     return 1
@@ -171,9 +210,12 @@ assert_ports_free() {
 }
 
 assert_ports_loopback_only() {
-  # 两个实验端口都必须存在且只绑定 127.0.0.1；否则打印实际监听地址并返回 1。
+  # 两个实验端口都必须存在且只绑定 127.0.0.1；探测失败或判据不满足时返回 1。
   local hits port
-  hits=$(experiment_listeners)
+  if ! hits=$(experiment_listeners); then
+    printf 'port probe failed: listening sockets are unknown; cannot confirm loopback\n' >&2
+    return 1
+  fi
   if [ -z "$hits" ]; then
     printf 'no listener found on ports %s and %s\n' "$CH_HTTP_PORT" "$CH_TCP_PORT" >&2
     return 1
@@ -197,7 +239,7 @@ assert_ports_loopback_only() {
 分支与归档资产由发布动作产生。YELLOW_RELEASE_TAG 的取值与发布动作使用的标签一致；执行时把该变量设为实际标签并记入运行记录。以下检查先于一切实验动作；任一检查失败时停止并请求发布。
 
 ```bash
-mkdir -p "$YELLOW_STATE" "$YELLOW_RELEASE"
+mkdir -p "$YELLOW_WORKSPACE" "$YELLOW_STATE" "$YELLOW_RELEASE"
 
 if ! git ls-remote --exit-code --heads "$YELLOW_REPO_HTTPS" "$YELLOW_BRANCH" \
      >"$YELLOW_STATE/branch-check.txt" 2>&1; then
@@ -256,23 +298,23 @@ mkdir -p "$YELLOW_STATE/probe"
 
 ### 3.2 XStore 能力报告
 
-能力报告是 adapter 实施的前置门禁。报告写入 $YELLOW_STATE/xstore/capability-report.json，每个字段给出实际执行的命令或 API 调用、原始输出摘录和状态 available 或 unavailable。缺少证据的字段写 unavailable 与原因，汇总器不得估算。
+能力报告是 adapter 实施的前置门禁。报告写入 $YELLOW_STATE/xstore/capability-report.json，每个字段给出实际执行的命令或 API 调用、原始输出摘录和状态。status 取值限定为 available、unavailable、unverified；模板对全部字段默认 unverified 且证据为空，未执行任何验证前不得写成 available。填写时 available 与非空的 evidence.command、evidence.observed 必须同时具备；unavailable 表示已执行验证但能力缺失或不可观测，observed 记录失败输出或缺失原因。汇总器不得估算缺失字段。
 
 ```json
 {
   "format": "agent-trace-json-storage-stage3-xstore-capability-report",
   "format_version": 1,
   "engine": {"product": "", "version": "", "protocol": "", "evidence": ""},
-  "sql_driver": {"status": "available", "evidence": {"command": "", "observed": ""}},
-  "ddl_dml": {"status": "available", "evidence": {"command": "", "observed": ""}},
-  "json_lob_types": {"status": "available", "evidence": {"command": "", "observed": ""}},
-  "transaction": {"status": "available", "evidence": {"command": "", "observed": ""}},
-  "extension_support": {"status": "available", "evidence": {"command": "", "observed": ""}},
-  "query_statistics": {"status": "available", "evidence": {"command": "", "observed": ""}},
-  "storage_accounting": {"status": "available", "evidence": {"command": "", "observed": ""}},
-  "background_work": {"status": "available", "evidence": {"command": "", "observed": ""}},
-  "cleanup": {"status": "available", "evidence": {"command": "", "observed": ""}},
-  "cache_control": {"status": "available", "evidence": {"command": "", "observed": ""}}
+  "sql_driver": {"status": "unverified", "evidence": {"command": "", "observed": ""}},
+  "ddl_dml": {"status": "unverified", "evidence": {"command": "", "observed": ""}},
+  "json_lob_types": {"status": "unverified", "evidence": {"command": "", "observed": ""}},
+  "transaction": {"status": "unverified", "evidence": {"command": "", "observed": ""}},
+  "extension_support": {"status": "unverified", "evidence": {"command": "", "observed": ""}},
+  "query_statistics": {"status": "unverified", "evidence": {"command": "", "observed": ""}},
+  "storage_accounting": {"status": "unverified", "evidence": {"command": "", "observed": ""}},
+  "background_work": {"status": "unverified", "evidence": {"command": "", "observed": ""}},
+  "cleanup": {"status": "unverified", "evidence": {"command": "", "observed": ""}},
+  "cache_control": {"status": "unverified", "evidence": {"command": "", "observed": ""}}
 }
 ```
 
@@ -290,6 +332,69 @@ mkdir -p "$YELLOW_STATE/probe"
 | background_work | 后台合并、压缩、清理任务的状态查询与暂停、恢复动作 |
 | cleanup | namespace、对象目录与临时配置的确定性清理方式与确认方式 |
 | cache_control | 冷热缓存控制动作及其生效证据 |
+
+报告填写完成后执行下列门禁；门禁输出记入运行记录。十个字段中任一字段为 unverified、状态取值未知，或缺少证据命令与原始输出时，adapter 实施停在门禁之前。
+
+```bash
+# 能力报告门禁：status 与证据必须由实际执行结果填充，模板默认值不能通过。
+"$PYTHON" - "$YELLOW_STATE/xstore/capability-report.json" > "$YELLOW_STATE/xstore/capability-gate.txt" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+CAPABILITIES = (
+    "sql_driver", "ddl_dml", "json_lob_types", "transaction", "extension_support",
+    "query_statistics", "storage_accounting", "background_work", "cleanup",
+    "cache_control",
+)
+VALID_STATUSES = ("available", "unavailable")
+
+path = Path(sys.argv[1])
+try:
+    report = json.loads(path.read_text(encoding="utf-8"))
+except (OSError, json.JSONDecodeError) as error:
+    raise SystemExit(f"capability report is unreadable: {error}")
+
+blocked = []
+unavailable = []
+for name in CAPABILITIES:
+    entry = report.get(name)
+    if not isinstance(entry, dict):
+        raise SystemExit(f"capability field is missing: {name}")
+    evidence = entry.get("evidence")
+    status = str(entry.get("status") or "").strip()
+    command = str(evidence.get("command") or "").strip() if isinstance(evidence, dict) else ""
+    observed = str(evidence.get("observed") or "").strip() if isinstance(evidence, dict) else ""
+    if status not in VALID_STATUSES:
+        blocked.append(f"{name}={status or 'missing'}")
+        continue
+    if not command or not observed:
+        raise SystemExit(f"capability field lacks evidence command or observed output: {name}")
+    if status == "unavailable":
+        unavailable.append(f"{name}: {observed}")
+
+if blocked:
+    raise SystemExit(
+        "capability report fields are unverified or unknown, adapter work is blocked: "
+        + ", ".join(sorted(blocked))
+    )
+engine = report.get("engine")
+if not isinstance(engine, dict):
+    raise SystemExit("capability report lacks engine identity")
+if not str(engine.get("product") or "").strip() or not str(engine.get("version") or "").strip():
+    raise SystemExit("capability report lacks engine product or version")
+
+print(f"capability report accepted: available={len(CAPABILITIES) - len(unavailable)} unavailable={len(unavailable)}")
+for reason in unavailable:
+    print(f"unavailable: {reason}")
+PY
+gate_status=$?
+cat "$YELLOW_STATE/xstore/capability-gate.txt"
+if [ "$gate_status" -ne 0 ]; then
+  printf 'capability report gate failed; adapter implementation stops\n' >&2
+  exit 1
+fi
+```
 
 ### 3.3 Python 运行环境
 
@@ -329,6 +434,7 @@ PY
 ### 4.1 获取代码并固定 HEAD
 
 ```bash
+mkdir -p "$YELLOW_WORKSPACE"
 cd "$YELLOW_WORKSPACE"
 test -d "$YELLOW_REPO/.git" || git clone "$YELLOW_REPO_HTTPS" "$YELLOW_REPO"
 git -C "$YELLOW_REPO" fetch origin "$YELLOW_BRANCH"
@@ -473,6 +579,8 @@ sha512sum -c 对三个包都必须输出 OK。摘要文件使用标准校验格�
 
 RPM 路径与 TGZ 路径互斥：每台主机只选一条路径，并把 CH_INSTALL_MODE 设为 rpm 或 tgz 记入运行记录。两条路径使用同一 HTTP 端口 18123 与原生端口 19000，同时安装会互相冲突。
 
+系统配置根目录由 CH_ETC_ROOT 指定，默认 /etc；下表路径按该默认值列出，改写 CH_ETC_ROOT 时表中路径相应替换。
+
 RPM 路径写入系统位置。按 rpm -qlp 核对，clickhouse-server-25.12.11.4.aarch64.rpm 与同批包安装后涉及的路径如下。
 
 | 路径 | 归属 |
@@ -485,20 +593,29 @@ RPM 路径写入系统位置。按 rpm -qlp 核对，clickhouse-server-25.12.11.
 
 回滚范围覆盖指南创建项与包默认配置：停止服务、删除覆盖文件、恢复备份的 /etc/clickhouse-server、重新启动并验证。包创建的数据目录保留，实验数据由 runner 的按 namespace DROP DATABASE 清理；只有在操作者明确决定该主机不再保留 ClickHouse 时，才执行包移除与数据目录处理。
 
-备份、下载与安装：
+备份包默认配置。preexisting=yes 时归档与校验清单必须同时产生：清单缺失时第 9.1 节停止，不执行恢复，也不删除状态目录。
 
 ```bash
+# 5.3 备份包默认配置
 export CH_INSTALL_MODE=rpm
 mkdir -p "$CH_STATE/backup"
-if [ -d /etc/clickhouse-server ]; then
-  sudo tar -czf "$CH_STATE/backup/etc-clickhouse-server.tar.gz" -C /etc clickhouse-server
+if [ -d "$CH_ETC_ROOT/clickhouse-server" ]; then
+  sudo tar -czf "$CH_STATE/backup/etc-clickhouse-server.tar.gz" -C "$CH_ETC_ROOT" clickhouse-server
   sha256sum "$CH_STATE/backup/etc-clickhouse-server.tar.gz" \
     | tee "$CH_STATE/backup/etc-clickhouse-server.sha256"
+  test -s "$CH_STATE/backup/etc-clickhouse-server.sha256" || {
+    printf 'configuration backup checksum is missing; stop here\n' >&2
+    exit 1
+  }
   printf 'preexisting=yes\n' | tee "$CH_STATE/backup/preexisting.txt"
 else
   printf 'preexisting=no\n' | tee "$CH_STATE/backup/preexisting.txt"
 fi
+```
 
+下载与安装：
+
+```bash
 cd "$CH_STATE/pkg"
 for name in clickhouse-common-static clickhouse-server clickhouse-client; do
   file="${name}-${CH_VERSION}.aarch64.rpm"
@@ -590,7 +707,7 @@ mkdir -p "$CH_STATE/data" "$CH_STATE/tmp" "$CH_STATE/user_files" \
 sha256sum "$CH_BIN" | tee "$CH_STATE/pkg/clickhouse-binary-sha256.txt"
 ```
 
-包内自带配置指向 /var/lib/clickhouse 与 /var/log/clickhouse-server。下面的脚本把路径、端口与监听地址改写为状态目录内的隔离值，并在写入前逐项断言，任一项不符时脚本以非零状态退出。
+包内自带配置指向 /var/lib/clickhouse 与 /var/log/clickhouse-server。下面的脚本把路径、端口与监听地址改写为状态目录内的隔离值，并在写入前逐项断言，任一项不符时脚本以非零状态退出。脚本锚点取自 ClickHouse 25.12.11.4 包内 ARM64 etc/clickhouse-server/config.xml 的原文；更换版本或更换发行包时先核对锚点文本，锚点缺失与锚点重复会分别以 config anchor not found 与 config anchor duplicated 失败。
 
 ```bash
 "$PYTHON" - \
@@ -611,9 +728,12 @@ text = source.read_text(encoding="utf-8")
 
 
 def replace(old, new):
-    """执行一次唯一字符串替换；未命中或重复命中时直接失败。"""
-    if text.count(old) != 1:
-        raise SystemExit(f"config anchor not unique: {old}")
+    """执行一次唯一字符串替换；锚点未命中或重复命中时分别失败。"""
+    count = text.count(old)
+    if count == 0:
+        raise SystemExit(f"config anchor not found: {old}")
+    if count != 1:
+        raise SystemExit(f"config anchor duplicated ({count}): {old}")
     return text.replace(old, new, 1)
 
 
@@ -727,6 +847,15 @@ fi
 暂停或结束实验时先停止引擎，再收集证据。本节不删除目录；目录、覆盖配置与备份的清理在第 9.1 节执行，重复执行保持幂等。
 
 ```bash
+# 5.7 停止服务：先确定安装模式，未设置或非 rpm/tgz 时停止，不执行任何停止动作。
+case "${CH_INSTALL_MODE:-}" in
+  rpm|tgz) ;;
+  *)
+    printf 'CH_INSTALL_MODE must be rpm or tgz, found %s; stop here\n' "${CH_INSTALL_MODE:-unset}" >&2
+    exit 1
+    ;;
+esac
+
 if [ "$CH_INSTALL_MODE" = "rpm" ]; then
   sudo systemctl stop clickhouse-server || true
   if sudo systemctl is-active --quiet clickhouse-server; then
@@ -751,7 +880,9 @@ assert_ports_free || exit 1
 
 ### 6.1 实施前置条件
 
-在能力报告补齐前停止 adapter 实施。进入实施阶段需要同时满足：能力报告的十个字段都有状态与证据；XStore 的 namespace 创建与删除、批量写入、提交、读取、执行统计、空间统计与后台任务接口已经用实际命令或 API 验证；冻结输入与 ClickHouse 侧已经完成一次单布局 smoke。
+在能力报告补齐前停止 adapter 实施。进入实施阶段需要同时满足：能力报告通过 3.2 节门禁，即十个字段的 status 都为 available 或 unavailable，且每个字段都有非空 evidence.command 与非空 evidence.observed；XStore 的 namespace 创建与删除、批量写入、提交、读取、执行统计、空间统计与后台任务接口已经用实际命令或 API 验证；冻结输入与 ClickHouse 侧已经完成一次单布局 smoke。出现 unverified、未知状态或缺失证据时停止，不进入 adapter 代码改动。
+
+adapter 实现并测试通过后，主矩阵之外的控制项按 7.1 节阶段 6 至 8 逐项执行：part-state 可适用项、混合负载与 Asset 故障恢复。任一控制项不适用时，在运行记录中引用能力报告的对应条目写明原因，并把结论标为不适用；未记录不适用与证据前不声明黄区对比完成。
 
 实现范围限定为新增 experiments/json-storage-stage3/runner/xstore.py、对应单元测试、endpoint 配置和汇总器的 xstore 分支。现有 openGauss 与 ClickHouse adapter、runner 语义、汇总器既有的四布局口径保持不变。
 
@@ -828,6 +959,11 @@ asset_ref 保留为应用侧参考布局：查询引用与 assets 记录，再�
 | 3 单 target candidate | 单引擎单布局的运行入口候选验证 | child run-manifest.json 为 complete，真值、响应字节、水位与清理证据齐全 |
 | 4 清理验证 | 清理后确认 namespace 与对象目录不存在 | 清理命令返回成功且对象清单为空 |
 | 5 正式矩阵 | ClickHouse 与 XStore 在同一主机串行执行四布局 | 每 target 四轮 Latin square 完成，全部门禁通过 |
+| 6 part-state | 对每个引擎与布局判定 part-state 控制是否适用；适用时执行 run_stage3.py part-states，记录 part 状态与合并证据；不适用时在运行记录中引用能力报告条目写明原因 | 每个 target 的结论为已执行通过，或记录不适用并附证据 |
+| 7 混合负载 | 执行 run_stage3.py interference，在单个 target 内部产生并发负载，并记录与串行基线的对比 | 混合负载证据与串行基线对比齐全，或记录不适用并附证据 |
+| 8 Asset 故障与恢复 | 执行 run_stage3.py asset-failures，记录失败注入、失败 block 证据、恢复动作与清理结果 | 失败与恢复证据齐全，或记录不适用并附证据 |
+
+黄区对比只有在第 5 至第 8 阶段全部通过，或对不适用项记录了带证据的不适用结论之后才成立；任一阶段失败时保留产物并标为 diagnostic，不发布完整比较结论。第 6 至第 8 阶段在驱动方式上与第 5 阶段一致：同一冻结输入、同一代码 HEAD、同一串行约束。
 
 串行执行：同一时刻只运行一个引擎的布局目标，避免 XStore 与 ClickHouse 争用 CPU、内存与磁盘。混合负载场景只在单个 target 内部产生并发。
 
@@ -899,19 +1035,29 @@ python experiments/json-storage-stage3/runner/run_layout_matrix.py \
 
 ### 8.3 比较结论门禁
 
-比较表只在四个布局的 complete 结果、四轮 Latin square、访问路径、维护状态与清理证据齐全后生成。汇总器对不完整 provenance 报错时，结论保持未发布状态。报告按三层陈述：引擎内布局结论、黄区同机跨引擎结论、不可比较边界。ClickHouse 数值与蓝区结果的版本差异必须在报告中记录。
+比较表只在四个布局的 complete 结果、四轮 Latin square、访问路径、维护状态、清理证据，以及 7.1 节第 6 至第 8 阶段结论齐全后生成；控制项适用时给出通过证据，不适用时给出带证据的不适用结论。汇总器对不完整 provenance 报错时，结论保持未发布状态。报告按三层陈述：引擎内布局结论、黄区同机跨引擎结论、不可比较边界。ClickHouse 数值与蓝区结果的版本差异必须在报告中记录。
 
 ## 9. 恢复、清理与回传
 
 ### 9.1 清理顺序
 
-清理保持幂等：已经缺失的目录按已清理处理，最终断言始终执行。顺序为停止 XStore 侧查询与后台任务，删除 XStore namespace 与对象目录，停止 ClickHouse，按安装路径回滚 ClickHouse 配置，删除指南创建的状态目录，确认端口不再监听。
+清理保持幂等：已经缺失的目录按已清理处理，最终断言始终执行。顺序为校验 CH_INSTALL_MODE，停止 XStore 侧查询与后台任务，删除 XStore namespace 与对象目录，停止 ClickHouse，按安装路径回滚 ClickHouse 配置，删除指南创建的运行输出根与状态目录，确认端口不再监听。
 
 ```bash
 # 1) XStore 侧：确认无运行中的查询与后台任务后删除 namespace 与对象目录，命令来自能力报告，
-#    删除后确认对象清单为空。
+#    删除后确认对象清单为空。能力报告把 XStore 对象目录放在 $YELLOW_STATE 之外时，先记录实际路径
+#    并停止，由操作者按同一条命令清理；本片段的递归删除只覆盖 $YELLOW_STATE 内的指南路径。
 
-# 2) ClickHouse 侧：RPM 路径在本片段内完成系统级回滚；读取备份与覆盖文件前不删除状态目录。
+# 2) 安装模式先于任何动作校验：未设置或取值非 rpm/tgz 时停止，不恢复备份，也不删除任何目录。
+case "${CH_INSTALL_MODE:-}" in
+  rpm|tgz) ;;
+  *)
+    printf 'CH_INSTALL_MODE must be rpm or tgz, found %s; stop here\n' "${CH_INSTALL_MODE:-unset}" >&2
+    exit 1
+    ;;
+esac
+
+# 3) ClickHouse 侧：RPM 路径在本片段内完成系统级回滚；读取备份与覆盖文件前不删除状态目录。
 if [ "$CH_INSTALL_MODE" = "rpm" ]; then
   sudo systemctl stop clickhouse-server || true
 
@@ -925,36 +1071,105 @@ if [ "$CH_INSTALL_MODE" = "rpm" ]; then
     exit 1
   fi
 
-  # 2.2 preexisting=yes 时按记录的备份恢复包默认配置；校验失败即停止，不删除状态目录。
-  if [ -f "$CH_STATE/backup/etc-clickhouse-server.sha256" ]; then
-    if ! sha256sum -c "$CH_STATE/backup/etc-clickhouse-server.sha256" >&2; then
-      printf 'configuration backup checksum verification failed; stop here\n' >&2
+# 2.2 按 preexisting 标记恢复包默认配置；yes 必须先有归档与校验清单，标记缺失或取值非法时停止。
+  case "$(cat "$CH_STATE/backup/preexisting.txt" 2>/dev/null)" in
+    preexisting=yes)
+      if [ ! -f "$CH_STATE/backup/etc-clickhouse-server.tar.gz" ] \
+        || [ ! -f "$CH_STATE/backup/etc-clickhouse-server.sha256" ]; then
+        printf 'pre-existing configuration backup is incomplete; stop here\n' >&2
+        exit 1
+      fi
+      if ! sha256sum -c "$CH_STATE/backup/etc-clickhouse-server.sha256" >&2; then
+        printf 'configuration backup checksum verification failed; stop here\n' >&2
+        exit 1
+      fi
+      sudo tar -xzf "$CH_STATE/backup/etc-clickhouse-server.tar.gz" -C "$CH_ETC_ROOT"
+      ;;
+    preexisting=no)
+      printf 'no pre-existing configuration backup to restore\n'
+      ;;
+    *)
+      printf 'preexisting marker is missing or invalid; stop here\n' >&2
       exit 1
-    fi
-  fi
-  if [ "$(cat "$CH_STATE/backup/preexisting.txt" 2>/dev/null || echo unknown)" = "yes" ]; then
-    sudo tar -xzf "$CH_STATE/backup/etc-clickhouse-server.tar.gz" -C /etc
-  else
-    printf 'no pre-existing configuration backup to restore\n'
-  fi
+      ;;
+  esac
 
-  # 2.3 验证恢复后的服务状态与覆盖文件状态，再停止服务。
+  # 2.3 写入临时回环覆盖再启动服务，验证回环与恢复后的配置状态，随后停止服务并删除临时覆盖文件。
+  require_rpm_override_path || exit 1
+  sudo install -d -m 0755 "$(dirname "$CH_RPM_OVERRIDE")"
+  sudo tee "$CH_RPM_OVERRIDE" >/dev/null <<'XML'
+<clickhouse>
+    <listen_host>127.0.0.1</listen_host>
+    <http_port>18123</http_port>
+    <tcp_port>19000</tcp_port>
+</clickhouse>
+XML
   sudo systemctl start clickhouse-server
   if ! sudo systemctl is-active --quiet clickhouse-server; then
     printf 'clickhouse-server did not start with the restored configuration; stop here\n' >&2
     exit 1
   fi
+  assert_ports_loopback_only || exit 1
   sudo systemctl stop clickhouse-server || true
+  sudo rm -f -- "$CH_RPM_OVERRIDE"
   if sudo test -f "$CH_RPM_OVERRIDE"; then
-    printf 'guide-owned override reappeared: %s\n' "$CH_RPM_OVERRIDE" >&2
+    printf 'temporary loopback override still exists: %s\n' "$CH_RPM_OVERRIDE" >&2
     exit 1
   fi
 elif [ -f "$CH_STATE/run/clickhouse.pid" ]; then
   kill "$(cat "$CH_STATE/run/clickhouse.pid")" 2>/dev/null || true
 fi
 
-# 3) 删除指南创建的状态目录，缺失即视为已清理。
-for target in "$YELLOW_STATE/clickhouse" "$YELLOW_STATE/runs/xstore-assets" "$YELLOW_STATE/runs/xstore-main"; do
+# 4) 先从已知输出根及 run-manifest.json 证据收集 runner Asset 工作树。
+asset_targets=(
+  "$YELLOW_OUTPUT/clickhouse-main/.asset-work"
+  "$YELLOW_OUTPUT/xstore-main/.asset-work"
+)
+if [ -d "$YELLOW_OUTPUT" ]; then
+  asset_evidence=$(
+    "$PYTHON_BOOTSTRAP" - "$YELLOW_OUTPUT" <<'PY'
+import json
+import sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+for manifest in sorted(root.rglob("run-manifest.json")):
+    try:
+        record = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as error:
+        raise SystemExit(f"cannot read cleanup evidence {manifest}: {error}")
+    cleanup = record.get("global_cleanup")
+    if not isinstance(cleanup, dict) or "asset_workspace" not in cleanup:
+        continue
+    workspace = cleanup["asset_workspace"]
+    if not isinstance(workspace, str) or not workspace.strip():
+        raise SystemExit(f"invalid asset_workspace cleanup evidence: {manifest}")
+    print(workspace)
+PY
+  ) || {
+    printf 'failed to collect Asset workspace paths from run manifests\n' >&2
+    exit 1
+  }
+  while IFS= read -r target; do
+    [ -n "$target" ] && asset_targets+=("$target")
+  done <<< "$asset_evidence"
+fi
+
+for target in "${asset_targets[@]}"; do
+  if [ -d "$target" ]; then
+    require_asset_workspace_path "$target" >/dev/null || exit 1
+    rm -rf -- "$target"
+    printf 'removed asset workspace: %s\n' "$target"
+  fi
+done
+
+# 5) 删除指南创建的主矩阵输出根与 ClickHouse 状态目录，缺失即视为已清理。
+guide_targets=(
+  "$YELLOW_OUTPUT/clickhouse-main"
+  "$YELLOW_OUTPUT/xstore-main"
+  "$YELLOW_STATE/clickhouse"
+)
+for target in "${guide_targets[@]}"; do
   if [ -d "$target" ]; then
     require_guide_path "$target" || exit 1
     rm -rf -- "$target"
@@ -963,9 +1178,15 @@ for target in "$YELLOW_STATE/clickhouse" "$YELLOW_STATE/runs/xstore-assets" "$YE
   fi
 done
 
-# 4) 最终断言覆盖本片段删除的每个目录，任一不满足即失败退出。
-for target in "$YELLOW_STATE/clickhouse" "$YELLOW_STATE/runs/xstore-assets" "$YELLOW_STATE/runs/xstore-main"; do
-  if [ -d "$target" ]; then
+# 6) 最终断言覆盖本片段删除的每个路径，任一不满足即失败退出。
+for target in "${asset_targets[@]}"; do
+  if [ -e "$target" ]; then
+    printf 'cleanup assertion failed, Asset workspace remains: %s\n' "$target" >&2
+    exit 1
+  fi
+done
+for target in "${guide_targets[@]}"; do
+  if [ -e "$target" ]; then
     printf 'cleanup assertion failed, directory remains: %s\n' "$target" >&2
     exit 1
   fi
@@ -974,7 +1195,7 @@ assert_ports_free || exit 1
 printf 'cleanup complete: %s\n' "$YELLOW_STATE"
 ```
 
-删除范围限定为指南创建的状态目录；RPM 路径只删除本指南创建的固定覆盖文件 /etc/clickhouse-server/config.d/00-stage3-yellow.xml，包创建的 /var/lib/clickhouse 与 /var/log/clickhouse-server 不在自动清理范围内。恢复包默认配置、验证服务与断言覆盖文件消失都需要 root 权限，缺少权限时停止。对象目录、后台任务或临时配置无法清理时停止后续运行，并记录未清理对象清单。
+删除范围限定为指南创建的路径：$YELLOW_OUTPUT 下的 clickhouse-main 与 xstore-main 两个主矩阵输出根、$YELLOW_STATE/clickhouse，以及各 target 的 run-manifest.json 在 global_cleanup.asset_workspace 中记录的后续控制运行 Asset 工作树。runner 为每个布局轮次在输出根下创建 .asset-work/engine/layout/workload/round-N，矩阵结束时按空目录清理；非空残留会被 runner 记为 global_cleanup.removed=false。本片段读取该证据，只接受 $YELLOW_OUTPUT 内以 .asset-work 结尾的路径，对每个路径执行删除守卫并断言消失；后续控制运行的其余证据目录保持不变。RPM 路径只删除本指南创建的固定覆盖文件 /etc/clickhouse-server/config.d/00-stage3-yellow.xml，包创建的 /var/lib/clickhouse 与 /var/log/clickhouse-server 不在自动清理范围内。恢复包默认配置、验证服务与断言覆盖文件消失都需要 root 权限，缺少权限时停止。对象目录、后台任务或临时配置无法清理时停止后续运行，并记录未清理对象清单。
 
 ### 9.2 回传材料
 
@@ -992,9 +1213,10 @@ printf 'cleanup complete: %s\n' "$YELLOW_STATE"
 在黄区 ARM64（EulerOS 2.13，无 Docker）主机上执行
 docs/project-background/json-storage-stage3-xstore-clickhouse-yellow-guide.md。
 
-执行顺序：可用性检查 → 环境探测与 XStore 能力报告 → 冻结输入校验 →
+执行顺序：可用性检查 → 环境探测与 XStore 能力报告（含能力报告门禁）→ 冻结输入校验 →
 ClickHouse 25.12.11.4 ARM64 部署与健康检查 → XStore adapter 实施门禁 →
-四布局同机串行对比（ClickHouse 与 XStore 各四轮 Latin square）→ 证据与清理。
+四布局同机串行对比（ClickHouse 与 XStore 各四轮 Latin square）→
+part-state 适用项、混合负载、Asset 故障与恢复（不适用时记录原因与证据）→ 证据与清理。
 
 按该指南的 fail-closed 规则执行：分支或归档资产不可用时、能力报告字段缺少证据时、
 真值或水位或清理证据缺失时停止并报告，不猜测 XStore 能力。

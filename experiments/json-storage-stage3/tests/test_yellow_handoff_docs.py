@@ -1,8 +1,10 @@
 """黄区交接正式文档的契约测试。"""
 
 import json
+import os
 import re
 import shlex
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -138,6 +140,29 @@ CAPABILITY_FIELDS = (
     "query_statistics", "storage_accounting", "background_work", "cleanup",
     "cache_control",
 )
+
+# 能力报告模板只声明未验证状态，门禁脚本在 unverified、未知状态或缺少证据时阻止 adapter 实施。
+CAPABILITY_DEFAULT_STATUS = "unverified"
+CAPABILITY_GATE_BLOCKED = "adapter work is blocked"
+CAPABILITY_GATE_EVIDENCE_ERROR = "lacks evidence command or observed output"
+
+# runner 在每个输出根下创建 Asset 工作树；清理必须覆盖真实路径而不是虚构目录。
+ASSET_WORKSPACE_NAME = ".asset-work"
+GUIDE_OUTPUT_ROOTS = ("clickhouse-main", "xstore-main")
+STALE_ASSET_PATH = "runs/xstore-assets"
+
+# 每条可执行片段都要求安装模式已经确定为 rpm 或 tgz。
+INSTALL_MODE_ERROR = "CH_INSTALL_MODE must be rpm or tgz"
+STOP_FENCE_MARKER = "# 5.7 停止服务"
+BACKUP_FENCE_MARKER = "# 5.3 备份包默认配置"
+
+# §7.1 阶段表在正式矩阵之后必须覆盖 part-state、混合负载与 Asset 故障恢复。
+CONTROL_STAGE_MARKERS = (
+    "6 part-state",
+    "7 混合负载",
+    "8 Asset 故障与恢复",
+)
+CONTROL_COMPLETION_GATE = "记录了带证据的不适用结论"
 
 ENVIRONMENT_PROBE_COMMANDS = (
     "uname -m", "/etc/os-release", "nproc", "free", "df -T", "findmnt",
@@ -386,6 +411,20 @@ class AssessmentDocumentContractTest(unittest.TestCase):
                 self.assertIn(
                     field, line, f"{number} 未标注为 {field}：{line.strip()}",
                 )
+
+    def test_document_names_median_fields_and_summarizer_scope(self):
+        """中位数表标注 latency_ms 与 application_ready_ms，恢复阶段表述与汇总器调用范围明确。"""
+        content = self.read_document()
+        self.assertNotIn(
+            "批量恢复总耗时", content, "recovery_ms 描述的是查询后结果恢复阶段，不是批量场景总耗时",
+        )
+        self.assertIn("查询后结果恢复阶段", content, "评估缺少查询后结果恢复阶段表述")
+        self.assertIn("`latency_ms`", content, "中位数表未标注轮次 result.json 的 latency_ms 字段")
+        self.assertIn("`application_ready_ms`", content, "评估未标注 application_ready_ms 口径")
+        self.assertIn(
+            "以单个 target 目录（main-matrix-attempt-1/opengauss/same_table）调用", content,
+            "汇总器调用范围必须写明是单个 target 目录",
+        )
 
 
 class YellowGuideContractTest(unittest.TestCase):
@@ -638,7 +677,7 @@ class YellowGuideContractTest(unittest.TestCase):
     def test_guide_config_rewrite_pins_state_paths_and_single_memory_ratio(self):
         """TGZ 配置改写把路径与端口指向状态目录，并只保留一个生效内存比例。"""
         fences = extract_code_fences(self.read_guide())
-        script = heredoc_body(fence_with(fences, "config anchor not unique")["body"], "PY")
+        script = heredoc_body(fence_with(fences, "config anchor")["body"], "PY")
         with tempfile.TemporaryDirectory() as root:
             template = Path(root) / "config.xml"
             template.write_text(CONFIG_TEMPLATE, encoding="utf-8")
@@ -681,34 +720,82 @@ class YellowGuideContractTest(unittest.TestCase):
         self.assertNotIn("<path>/var/lib/clickhouse/</path>", text, "数据目录必须指向状态目录")
 
     def test_guide_cleanup_is_idempotent_and_keeps_foreign_paths(self):
-        """清理片段可重复执行：状态目录被删除，重复执行成功，目录外路径不变。"""
+        """清理片段可重复执行：真实输出根与 Asset 工作树被删除，目录外路径不变。"""
         fences = extract_code_fences(self.read_guide())
         cleanup = fence_with(fences, "already clean")["body"]
         with tempfile.TemporaryDirectory() as root:
             state = Path(root) / "state"
             keep = Path(root) / "keep"
-            for relative in ("clickhouse/data", "runs/xstore-assets", "runs/xstore-main"):
+            for relative in (
+                f"clickhouse/data",
+                f"runs/{GUIDE_OUTPUT_ROOTS[0]}/{ASSET_WORKSPACE_NAME}/clickhouse/same_table",
+                f"runs/{GUIDE_OUTPUT_ROOTS[1]}/{ASSET_WORKSPACE_NAME}/xstore/same_table",
+                f"runs/{GUIDE_OUTPUT_ROOTS[1]}/xstore/same_table",
+            ):
                 target = state / relative
                 target.mkdir(parents=True)
                 (target / "sentinel.txt").write_text("x", encoding="utf-8")
+            (state / "runs" / "keep").mkdir(parents=True)
+            (state / "runs" / "keep" / "keep.txt").write_text("keep", encoding="utf-8")
             keep.mkdir()
             (keep / "keep.txt").write_text("keep", encoding="utf-8")
-            script = "\n".join((
-                shell_preamble(fences),
-                f"export YELLOW_STATE={shlex.quote(str(state))}",
+            extra = (
+                f"export YELLOW_OUTPUT={shlex.quote(str(state / 'runs'))}",
                 "export CH_INSTALL_MODE=tgz",
                 f"export CH_STATE={shlex.quote(str(state / Path('clickhouse')))}",
                 "ss() { echo 'State Recv-Q Send-Q Local Address:Port Peer Address:Port'; }",
-                cleanup,
-            ))
-            first = assert_bash_ok(self, script, "清理片段第一次执行")
-            second = assert_bash_ok(self, script, "清理片段第二次执行")
+            )
+            first = self.run_guide_fragment(cleanup, state, extra_lines=extra)
+            self.assertEqual(0, first.returncode, f"清理片段第一次执行失败：{first.stderr.strip()}")
+            second = self.run_guide_fragment(cleanup, state, extra_lines=extra)
+            self.assertEqual(0, second.returncode, f"清理片段第二次执行失败：{second.stderr.strip()}")
             self.assertIn("cleanup complete", first.stdout, "最终断言必须执行")
             self.assertIn("already clean", second.stdout, "重复执行必须按已清理处理")
             self.assertFalse((state / "clickhouse").exists(), "状态目录未删除")
-            self.assertFalse((state / "runs" / "xstore-assets").exists(), "对象目录未删除")
-            self.assertFalse((state / "runs" / "xstore-main").exists(), "XStore 运行目录未删除")
+            for name in GUIDE_OUTPUT_ROOTS:
+                self.assertFalse((state / "runs" / name).exists(), f"输出根未删除：{name}")
+            self.assertTrue((state / "runs" / "keep" / "keep.txt").is_file(), "清理不得触碰指南目录外路径")
             self.assertTrue((keep / "keep.txt").is_file(), "清理不得触碰指南目录外路径")
+
+    def test_guide_cleanup_uses_manifest_asset_workspace_evidence(self):
+        """后续控制运行的 Asset 工作树由 manifest 证据发现、守卫、删除并断言。"""
+        cleanup = fence_with(extract_code_fences(self.read_guide()), "already clean")["body"]
+        with tempfile.TemporaryDirectory() as root:
+            state = Path(root) / "state"
+            output = state / "runs"
+            future_root = output / "asset-failures-clickhouse"
+            asset_workspace = future_root / ASSET_WORKSPACE_NAME
+            manifest_dir = future_root / "clickhouse" / "asset_ref"
+            asset_workspace.mkdir(parents=True)
+            (asset_workspace / "sentinel.txt").write_text("owned", encoding="utf-8")
+            manifest_dir.mkdir(parents=True)
+            (manifest_dir / "run-manifest.json").write_text(json.dumps({
+                "global_cleanup": {
+                    "asset_workspace": str(asset_workspace),
+                    "removed": False,
+                },
+            }), encoding="utf-8")
+            (state / "clickhouse" / "run").mkdir(parents=True)
+            completed = self.run_guide_fragment(cleanup, state, extra_lines=(
+                f"export YELLOW_OUTPUT={shlex.quote(str(output))}",
+                "export CH_INSTALL_MODE=tgz",
+                "ss() { echo 'State Recv-Q Send-Q Local Address:Port Peer Address:Port'; }",
+            ))
+            self.assertEqual(0, completed.returncode, completed.stderr)
+            self.assertFalse(asset_workspace.exists(), "manifest 记录的 Asset 工作树未删除")
+            self.assertTrue(manifest_dir.is_dir(), "证据派生清理不得删除后续运行产物")
+            self.assertIn(str(asset_workspace), completed.stdout, "最终输出缺少证据派生路径断言")
+
+    def test_guide_cleanup_targets_runner_asset_workspaces(self):
+        """清理指向 runner 真实输出根下的 .asset-work，不出现虚构目录名。"""
+        content = self.read_guide()
+        fences = extract_code_fences(content)
+        cleanup = fence_with(fences, "already clean")["body"]
+        self.assertNotIn(STALE_ASSET_PATH, content, "指南不得引用虚构的 runs/xstore-assets 路径")
+        for name in GUIDE_OUTPUT_ROOTS:
+            self.assertIn(f"$YELLOW_OUTPUT/{name}", cleanup, f"清理缺少指南创建的输出根：{name}")
+        self.assertIn(ASSET_WORKSPACE_NAME, cleanup, "清理必须覆盖输出根下的 .asset-work")
+        self.assertIn(DELETION_GUARD, cleanup, "清理中的递归删除必须带路径守卫")
 
     def test_guide_defines_python_environment_and_preflight(self):
         """指南给出可复现虚拟环境与依赖来源，并在 loader 前做版本与导入检查。"""
@@ -867,33 +954,398 @@ class YellowGuideContractTest(unittest.TestCase):
             )
             override.parent.mkdir(parents=True)
             override.write_text("<clickhouse></clickhouse>\n", encoding="utf-8")
-            (state / "backup").mkdir(parents=True)
-            (state / "backup" / "preexisting.txt").write_text("no\n", encoding="utf-8")
+            (state / "clickhouse" / "backup").mkdir(parents=True)
+            (state / "clickhouse" / "backup" / "preexisting.txt").write_text(
+                "preexisting=no\n", encoding="utf-8",
+            )
             (state / "clickhouse" / "log").mkdir(parents=True)
-            (state / "runs" / "xstore-assets").mkdir(parents=True)
-            (state / "runs" / "xstore-main").mkdir(parents=True)
-            script = "\n".join((
-                shell_preamble(fences),
-                f"export YELLOW_STATE={shlex.quote(str(state))}",
-                f"export CH_STATE={shlex.quote(str(state / Path('clickhouse')))}",
+            for name in GUIDE_OUTPUT_ROOTS:
+                (state / "runs" / name / ASSET_WORKSPACE_NAME / "engine" / "same_table").mkdir(parents=True)
+            completed = self.run_guide_fragment(cleanup, state, extra_lines=(
+                f"export YELLOW_OUTPUT={shlex.quote(str(state / 'runs'))}",
                 f"export CH_RPM_OVERRIDE={shlex.quote(str(override))}",
                 "export CH_INSTALL_MODE=rpm",
                 'sudo() { "$@"; }',
-                "systemctl() { return 0; }",
-                "ss() { echo 'State Recv-Q Send-Q Local Address:Port Peer Address:Port'; }",
-                cleanup,
+                self.loopback_systemctl_stub(Path(root) / "observed-start.txt"),
+                self.loopback_ss_stub(),
             ))
-            completed = assert_bash_ok(self, script, "RPM 清理分支")
             self.assertFalse(override.exists(), "指南创建的覆盖文件必须被删除")
             self.assertFalse((state / "clickhouse").exists(), "状态目录必须删除")
-            self.assertFalse((state / "runs" / "xstore-assets").exists(), "对象目录必须删除")
-            self.assertFalse((state / "runs" / "xstore-main").exists(), "XStore 运行目录必须删除")
+            for name in GUIDE_OUTPUT_ROOTS:
+                self.assertFalse((state / "runs" / name).exists(), f"输出根必须删除：{name}")
             self.assertTrue((Path(root) / "etc").is_dir(), "不得删除覆盖文件之外的系统路径")
             self.assertTrue(
                 (Path(root) / "etc" / "clickhouse-server" / "config.d").is_dir(),
                 "覆盖文件所在目录保持不变",
             )
         self.assertIn("cleanup complete", completed.stdout, "清理必须输出完成标记")
+
+    def run_guide_fragment(self, fragment, state, extra_lines=()):
+        """在受控临时状态目录与指南变量块下执行片段，返回子进程结果。"""
+        fences = extract_code_fences(self.read_guide())
+        script = "\n".join((
+            shell_preamble(fences),
+            f"export YELLOW_STATE={shlex.quote(str(state))}",
+            f"export CH_STATE={shlex.quote(str(state / Path('clickhouse')))}",
+            *extra_lines,
+            fragment,
+        ))
+        return subprocess.run(["bash", "-c", script], text=True, capture_output=True, check=False)
+
+    def parse_probe(self, stdout):
+        """把 key=value 探针输出解析为字典。"""
+        return dict(line.split("=", 1) for line in stdout.splitlines() if "=" in line)
+
+    def loopback_systemctl_stub(self, observed):
+        """模拟 systemd：start 时记录覆盖文件状态并标记监听，stop 时清除标记。"""
+        return "\n".join((
+            "systemctl() {",
+            "  case \"$1\" in",
+            "    start)",
+            f"      if [ -f \"$CH_RPM_OVERRIDE\" ]; then printf 'override-present\\n' >> {shlex.quote(str(observed))};",
+            f"      else printf 'override-missing\\n' >> {shlex.quote(str(observed))}; fi",
+            "      mkdir -p \"$CH_STATE/run\"; touch \"$CH_STATE/run/.fake-listening\"; return 0 ;;",
+            "    stop)",
+            "      rm -f \"$CH_STATE/run/.fake-listening\"; return 0 ;;",
+            "    is-active)",
+            "      [ -f \"$CH_STATE/run/.fake-listening\" ]; return $? ;;",
+            "  esac",
+            "  return 0",
+            "}",
+        ))
+
+    def loopback_ss_stub(self):
+        """模拟 ss：标记文件存在时报告两个实验端口的回环监听。"""
+        return "\n".join((
+            "ss() {",
+            "  printf '%s\\n' 'State Recv-Q Send-Q Local Address:Port Peer Address:Port'",
+            "  if [ -f \"$CH_STATE/run/.fake-listening\" ]; then",
+            "    printf '%s\\n' 'LISTEN 0 4096 127.0.0.1:18123 0.0.0.0:*'",
+            "    printf '%s\\n' 'LISTEN 0 4096 127.0.0.1:19000 0.0.0.0:*'",
+            "  fi",
+            "}",
+        ))
+
+    def capability_report_template(self):
+        """返回指南中覆盖全部能力字段的 JSON 模板。"""
+        for fence in extract_code_fences(self.read_guide()):
+            if fence["info"].split()[:1] != ["json"]:
+                continue
+            try:
+                schema = json.loads(fence["body"])
+            except json.JSONDecodeError:
+                continue
+            if isinstance(schema, dict) and set(schema) >= set(CAPABILITY_FIELDS):
+                return schema
+        raise AssertionError("指南缺少覆盖全部能力字段的 JSON 模板")
+
+    def filled_capability_report(self):
+        """返回所有字段都带状态与证据的能力报告。"""
+        report = self.capability_report_template()
+        report["engine"] = {
+            "product": "xstore", "version": "1.0.0", "protocol": "native", "evidence": "SELECT version()",
+        }
+        for name in CAPABILITY_FIELDS:
+            report[name] = {
+                "status": "available",
+                "evidence": {"command": f"probe {name}", "observed": f"{name} ok"},
+            }
+        return report
+
+    def run_capability_gate(self, report):
+        """把能力报告写入临时文件并执行指南门禁脚本。"""
+        fences = extract_code_fences(self.read_guide())
+        script = heredoc_body(fence_with(fences, CAPABILITY_GATE_BLOCKED)["body"], "PY")
+        with tempfile.TemporaryDirectory() as root:
+            path = Path(root) / "capability-report.json"
+            path.write_text(json.dumps(report, ensure_ascii=False), encoding="utf-8")
+            return subprocess.run(
+                ["python3", "-", str(path)], input=script, text=True,
+                capture_output=True, check=False,
+            )
+
+    def test_guide_capability_template_defaults_to_unverified(self):
+        """能力报告模板不得把任何字段默认写成 available。"""
+        template = self.capability_report_template()
+        for name in CAPABILITY_FIELDS:
+            entry = template[name]
+            self.assertEqual(
+                CAPABILITY_DEFAULT_STATUS, entry["status"], f"{name} 默认状态必须为 unverified",
+            )
+            self.assertEqual("", entry["evidence"]["command"], f"{name} 默认证据命令必须为空")
+            self.assertEqual("", entry["evidence"]["observed"], f"{name} 默认证据输出必须为空")
+        self.assertEqual("", template["engine"]["product"], "引擎身份默认必须为空")
+
+    def test_guide_capability_gate_blocks_unverified_and_missing_evidence(self):
+        """门禁接受完整报告，拒绝模板默认值、未知状态与缺少证据的字段。"""
+        blocked = self.run_capability_gate(self.capability_report_template())
+        self.assertNotEqual(0, blocked.returncode, "未验证的模板必须被门禁拒绝")
+        self.assertIn(CAPABILITY_GATE_BLOCKED, blocked.stderr, "拒绝原因必须说明 adapter 实施被阻止")
+        for name in CAPABILITY_FIELDS:
+            self.assertIn(name, blocked.stderr, f"拒绝原因缺少字段：{name}")
+
+        accepted = self.run_capability_gate(self.filled_capability_report())
+        self.assertEqual(0, accepted.returncode, f"完整报告必须通过门禁：{accepted.stderr.strip()}")
+        self.assertIn("capability report accepted", accepted.stdout, "通过时必须输出接受摘要")
+
+        unknown = self.filled_capability_report()
+        unknown["cleanup"]["status"] = "unknown"
+        self.assertNotEqual(0, self.run_capability_gate(unknown).returncode, "未知状态必须被拒绝")
+
+        missing = self.filled_capability_report()
+        missing["cache_control"]["evidence"]["observed"] = ""
+        incomplete = self.run_capability_gate(missing)
+        self.assertNotEqual(0, incomplete.returncode, "缺少 observed 证据必须被拒绝")
+        self.assertIn(CAPABILITY_GATE_EVIDENCE_ERROR, incomplete.stderr, "缺少证据时必须给出可定位原因")
+
+    def test_guide_port_helpers_fail_closed_when_ss_is_unavailable(self):
+        """ss 返回非零或缺失时两个端口断言都失败，不得把探测失败当作端口空闲。"""
+        preamble = shell_preamble(extract_code_fences(self.read_guide()))
+        probe = "\n".join((
+            "assert_ports_free >/dev/null 2>&1; echo \"free=$?\"",
+            "assert_ports_loopback_only >/dev/null 2>&1; echo \"loop=$?\"",
+        ))
+        failing = subprocess.run(
+            ["bash", "-c", "\n".join((preamble, "ss() { return 1; }", probe))],
+            text=True, capture_output=True, check=False,
+        )
+        self.assertEqual(0, failing.returncode, f"探针失败：{failing.stderr.strip()}")
+        self.assertEqual(
+            {"free": "1", "loop": "1"}, self.parse_probe(failing.stdout),
+            "ss 返回非零时两个端口断言都必须失败",
+        )
+        missing = subprocess.run(
+            [shutil.which("bash"), "-c", "\n".join((preamble, probe))],
+            text=True, capture_output=True, check=False,
+            env={**os.environ, "PATH": ""},
+        )
+        self.assertEqual(0, missing.returncode, f"探针失败：{missing.stderr.strip()}")
+        self.assertEqual(
+            {"free": "1", "loop": "1"}, self.parse_probe(missing.stdout),
+            "ss 缺失时两个端口断言都必须失败",
+        )
+
+    def test_guide_rejects_unknown_install_mode_before_cleanup(self):
+        """未设置或非法的 CH_INSTALL_MODE 在停止与清理前退出，备份与状态目录保持不变。"""
+        content = self.read_guide()
+        self.assertIn(INSTALL_MODE_ERROR, content, "指南缺少安装模式校验")
+        fences = extract_code_fences(content)
+        stop = fence_with(fences, STOP_FENCE_MARKER)["body"]
+        cleanup = fence_with(fences, "already clean")["body"]
+        with tempfile.TemporaryDirectory() as root:
+            state = Path(root) / "state"
+            (state / "clickhouse" / "backup").mkdir(parents=True)
+            (state / "clickhouse" / "backup" / "preexisting.txt").write_text(
+                "preexisting=no\n", encoding="utf-8",
+            )
+            (state / "clickhouse" / "run").mkdir(parents=True)
+            for fragment, label in ((stop, "5.7 停止服务"), (cleanup, "9.1 清理")):
+                for mode_command in (
+                    "unset CH_INSTALL_MODE",
+                    "export CH_INSTALL_MODE=''",
+                    "export CH_INSTALL_MODE=RPM",
+                    "export CH_INSTALL_MODE=tar",
+                ):
+                    result = self.run_guide_fragment(fragment, state, extra_lines=(
+                        mode_command,
+                        "ss() { echo 'State Recv-Q Send-Q Local Address:Port Peer Address:Port'; }",
+                    ))
+                    self.assertNotEqual(0, result.returncode, f"{label} 未拒绝安装模式命令 {mode_command!r}")
+                    self.assertIn(INSTALL_MODE_ERROR, result.stderr, f"{label} 缺少安装模式错误信息")
+                    self.assertTrue(
+                        (state / "clickhouse" / "backup" / "preexisting.txt").is_file(),
+                        f"{label} 在安装模式非法时删除了备份",
+                    )
+                    self.assertTrue(
+                        (state / "clickhouse").is_dir(), f"{label} 在安装模式非法时删除了状态目录",
+                    )
+            valid = self.run_guide_fragment(stop, state, extra_lines=(
+                "export CH_INSTALL_MODE=tgz",
+                "ss() { echo 'State Recv-Q Send-Q Local Address:Port Peer Address:Port'; }",
+            ))
+            self.assertEqual(0, valid.returncode, f"tgz 模式必须继续执行：{valid.stderr.strip()}")
+
+    def test_guide_preamble_requires_explicit_install_mode_choice(self):
+        """仅加载变量块时不得默认选择安装方式，停止片段必须拒绝继续。"""
+        fences = extract_code_fences(self.read_guide())
+        stop = fence_with(fences, STOP_FENCE_MARKER)["body"]
+        with tempfile.TemporaryDirectory() as root:
+            state = Path(root) / "state"
+            (state / "clickhouse" / "run").mkdir(parents=True)
+            result = self.run_guide_fragment(stop, state, extra_lines=(
+                "ss() { echo 'State Recv-Q Send-Q Local Address:Port Peer Address:Port'; }",
+            ))
+        self.assertNotEqual(0, result.returncode, "变量块不得默认选择 tgz 安装方式")
+        self.assertIn(INSTALL_MODE_ERROR, result.stderr)
+
+    def test_guide_scopes_control_runs_after_the_main_matrix(self):
+        """执行序列在正式矩阵后覆盖 part-state、混合负载与 Asset 故障恢复，并给出完成门禁。"""
+        content = self.read_guide()
+        for marker in CONTROL_STAGE_MARKERS:
+            self.assertIn(marker, content, f"执行序列缺少阶段：{marker}")
+        table = content[content.index("### 7.1"):content.index("### 7.2")]
+        self.assertLess(table.index("5 正式矩阵"), table.index("6 part-state"), "控制阶段必须排在正式矩阵之后")
+        self.assertLess(table.index("6 part-state"), table.index("7 混合负载"), "阶段顺序必须为 part-state → 混合负载")
+        self.assertLess(table.index("7 混合负载"), table.index("8 Asset 故障与恢复"), "Asset 故障恢复排在混合负载之后")
+        for command in ("part-states", "interference", "asset-failures"):
+            self.assertIn(command, content, f"执行序列缺少命令：{command}")
+        self.assertIn(CONTROL_COMPLETION_GATE, content, "指南缺少不适用与证据的完成门禁")
+        self.assertIn("不适用", content, "指南缺少不适用的记录要求")
+
+    def test_guide_creates_workspace_before_changing_directory(self):
+        """仓库获取片段先创建 YELLOW_WORKSPACE 再进入该目录，可用性检查同样先创建。"""
+        fences = extract_code_fences(self.read_guide())
+        fetch = fence_with(fences, "git clone")["body"]
+        self.assertLess(
+            fetch.index('mkdir -p "$YELLOW_WORKSPACE"'), fetch.index('cd "$YELLOW_WORKSPACE"'),
+            "必须先创建 YELLOW_WORKSPACE 再 cd",
+        )
+        self.assertIn(
+            'mkdir -p "$YELLOW_WORKSPACE"', fence_with(fences, "branch-check.txt")["body"],
+            "可用性检查前必须创建 YELLOW_WORKSPACE",
+        )
+
+    def test_guide_explains_run_manifest_exclusion_without_external_reference(self):
+        """run-manifest.json 排除说明自包含，不依赖未提交的内部裁决记录。"""
+        content = self.read_guide()
+        self.assertNotIn("裁决", content, "指南不得引用未提交的裁决记录")
+        for term in ("run-manifest.json", "generate-input", "不进入归档"):
+            self.assertIn(term, content, f"指南缺少归档排除说明：{term}")
+
+    def test_guide_config_rewrite_distinguishes_missing_and_duplicate_anchors(self):
+        """配置锚点缺失与重复分别失败，锚点文本限定为 25.12.11.4 包内原文。"""
+        content = self.read_guide()
+        self.assertIn("25.12.11.4 包内", content, "必须说明锚点取自 25.12.11.4 包内 config.xml")
+        fences = extract_code_fences(content)
+        script = heredoc_body(fence_with(fences, "config anchor")["body"], "PY")
+        with tempfile.TemporaryDirectory() as root:
+            missing_template = Path(root) / "missing.xml"
+            missing_template.write_text(
+                "<clickhouse><http_port>8123</http_port></clickhouse>\n", encoding="utf-8",
+            )
+            missing = subprocess.run(
+                ["python3", "-", str(missing_template), str(Path(root) / "out.xml"),
+                 str(Path(root) / "state"), "18123", "19000"],
+                input=script, text=True, capture_output=True, check=False,
+            )
+            self.assertNotEqual(0, missing.returncode, "锚点缺失必须失败")
+            self.assertIn("config anchor not found", missing.stderr, "锚点缺失必须给出缺失原因")
+            duplicate_template = Path(root) / "duplicate.xml"
+            duplicate_template.write_text(
+                CONFIG_TEMPLATE.replace(
+                    "<http_port>8123</http_port>",
+                    "<http_port>8123</http_port>\n    <http_port>8123</http_port>",
+                ),
+                encoding="utf-8",
+            )
+            duplicated = subprocess.run(
+                ["python3", "-", str(duplicate_template), str(Path(root) / "dup.xml"),
+                 str(Path(root) / "state"), "18123", "19000"],
+                input=script, text=True, capture_output=True, check=False,
+            )
+            self.assertNotEqual(0, duplicated.returncode, "锚点重复必须失败")
+            self.assertIn("config anchor duplicated", duplicated.stderr, "锚点重复必须给出重复原因")
+
+    def test_guide_rpm_backup_and_restore_round_trips_real_bytes(self):
+        """preexisting=yes 必须先有校验清单，恢复片段真实还原备份字节。"""
+        fences = extract_code_fences(self.read_guide())
+        backup = fence_with(fences, BACKUP_FENCE_MARKER)["body"]
+        cleanup = fence_with(fences, "cleanup assertion failed")["body"]
+        self.assertLess(backup.index("sha256sum"), backup.index("preexisting=yes"), "备份清单必须先于 preexisting 标记")
+        self.assertIn("preexisting=yes", self.read_guide(), "指南必须记录 preexisting=yes 的处理")
+        self.assertIn("preexisting.txt", cleanup, "恢复片段必须读取 preexisting 标记")
+        with tempfile.TemporaryDirectory() as root:
+            etc_root = Path(root) / "etc"
+            (etc_root / "clickhouse-server").mkdir(parents=True)
+            original = b"<clickhouse><http_port>8123</http_port></clickhouse>\n"
+            (etc_root / "clickhouse-server" / "config.xml").write_bytes(original)
+            (etc_root / "clickhouse-server" / "users.xml").write_bytes(b"<clickhouse></clickhouse>\n")
+            state = Path(root) / "state"
+            (state / "clickhouse" / "run").mkdir(parents=True)
+            extra = (
+                f"export CH_ETC_ROOT={shlex.quote(str(etc_root))}",
+                f"export CH_RPM_OVERRIDE={shlex.quote(str(etc_root / 'clickhouse-server' / 'config.d' / '00-stage3-yellow.xml'))}",
+                "export CH_INSTALL_MODE=rpm",
+                'sudo() { "$@"; }',
+                self.loopback_systemctl_stub(Path(root) / "observed-start.txt"),
+                self.loopback_ss_stub(),
+            )
+            prepared = self.run_guide_fragment(backup, state, extra_lines=extra)
+            self.assertEqual(0, prepared.returncode, f"备份片段执行失败：{prepared.stderr.strip()}")
+            backup_dir = state / "clickhouse" / "backup"
+            self.assertTrue((backup_dir / "etc-clickhouse-server.tar.gz").is_file(), "preexisting=yes 缺少备份归档")
+            self.assertTrue((backup_dir / "etc-clickhouse-server.sha256").is_file(), "preexisting=yes 缺少校验清单")
+            self.assertEqual(
+                "preexisting=yes\n", (backup_dir / "preexisting.txt").read_text(encoding="utf-8"),
+            )
+
+            (etc_root / "clickhouse-server" / "config.xml").write_bytes(b"<clickhouse>installed</clickhouse>\n")
+            restored = self.run_guide_fragment(cleanup, state, extra_lines=extra)
+            self.assertEqual(0, restored.returncode, f"恢复片段执行失败：{restored.stderr.strip()}")
+            self.assertEqual(
+                original, (etc_root / "clickhouse-server" / "config.xml").read_bytes(),
+                "恢复未还原备份字节",
+            )
+
+        with tempfile.TemporaryDirectory() as root:
+            state = Path(root) / "state"
+            backup_dir = state / "clickhouse" / "backup"
+            backup_dir.mkdir(parents=True)
+            (backup_dir / "preexisting.txt").write_text("preexisting=yes\n", encoding="utf-8")
+            (backup_dir / "etc-clickhouse-server.tar.gz").write_bytes(b"not-a-real-archive")
+            (state / "clickhouse" / "run").mkdir(parents=True)
+            incomplete = self.run_guide_fragment(cleanup, state, extra_lines=(
+                "export CH_INSTALL_MODE=rpm",
+                'sudo() { "$@"; }',
+                self.loopback_systemctl_stub(Path(root) / "observed-start.txt"),
+                self.loopback_ss_stub(),
+            ))
+            self.assertNotEqual(0, incomplete.returncode, "preexisting=yes 缺少校验清单时必须停止")
+            self.assertTrue((state / "clickhouse").is_dir(), "缺少校验清单时不得删除状态目录")
+
+    def test_guide_rpm_restore_verification_stays_on_loopback(self):
+        """RPM 恢复验证用临时回环覆盖启动服务，验证回环后停止并删除临时覆盖文件。"""
+        fences = extract_code_fences(self.read_guide())
+        cleanup = fence_with(fences, "cleanup assertion failed")["body"]
+        segment = cleanup[cleanup.index("# 2.3"):]
+        self.assertLess(segment.index("systemctl start"), segment.index("assert_ports_loopback_only"), "先启动再验证回环")
+        self.assertLess(segment.index("assert_ports_loopback_only"), segment.index("systemctl stop"), "验证回环后再停止服务")
+        self.assertLess(segment.index("systemctl stop"), segment.index('rm -f -- "$CH_RPM_OVERRIDE"'), "停止后删除临时覆盖文件")
+        with tempfile.TemporaryDirectory() as root:
+            state = Path(root) / "state"
+            (state / "clickhouse" / "backup").mkdir(parents=True)
+            (state / "clickhouse" / "backup" / "preexisting.txt").write_text(
+                "preexisting=no\n", encoding="utf-8",
+            )
+            (state / "clickhouse" / "run").mkdir(parents=True)
+            observed = Path(root) / "observed-start.txt"
+            override = Path(root) / "etc" / "clickhouse-server" / "config.d" / "00-stage3-yellow.xml"
+            override.parent.mkdir(parents=True)
+            override.write_text("<clickhouse></clickhouse>\n", encoding="utf-8")
+            completed = self.run_guide_fragment(cleanup, state, extra_lines=(
+                f"export CH_RPM_OVERRIDE={shlex.quote(str(override))}",
+                "export CH_INSTALL_MODE=rpm",
+                'sudo() { "$@"; }',
+                self.loopback_systemctl_stub(observed),
+                self.loopback_ss_stub(),
+            ))
+            self.assertEqual(0, completed.returncode, f"RPM 恢复验证失败：{completed.stderr.strip()}")
+            self.assertEqual(
+                "override-present\n", observed.read_text(encoding="utf-8"),
+                "启动服务前必须已经写入临时回环覆盖文件",
+            )
+            self.assertFalse(override.exists(), "临时回环覆盖文件必须在验证后删除")
+            self.assertFalse((state / "clickhouse").exists(), "状态目录必须删除")
+
+    def test_plan_references_existing_experiment_paths(self):
+        """实施计划引用的 Stage 3 路径都必须存在。"""
+        self.assertTrue(HANDOFF_PLAN.is_file(), f"缺少实施计划：{HANDOFF_PLAN}")
+        plan = HANDOFF_PLAN.read_text(encoding="utf-8")
+        self.assertNotIn(
+            "experiments/json-storage-stage3/README.md", plan, "计划不得引用不存在的 Stage 3 README",
+        )
+        for target in sorted(set(re.findall(r"`(experiments/json-storage-stage3/[^`]+)`", plan))):
+            self.assertTrue((REPOSITORY_ROOT / target).exists(), f"计划引用了不存在的路径：{target}")
 
 
 if __name__ == "__main__":

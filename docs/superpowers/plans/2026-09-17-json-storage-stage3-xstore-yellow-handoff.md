@@ -31,8 +31,8 @@
 - Create: `experiments/json-storage-stage3/tests/test_yellow_handoff_docs.py`
 - Reference: `docs/superpowers/plans/2026-09-14-json-storage-stage3.md`
 - Reference: `.superpowers/sdd/2026-09-14-json-storage-stage3/progress.md`
-- Reference: `experiments/json-storage-stage3/common.py`
-- Reference: `experiments/json-storage-stage3/generate_payloads.py`
+- Reference: `experiments/json-storage-stage3/runner/common.py`
+- Reference: `experiments/json-storage-stage3/generator/generate_payloads.py`
 - Reference: `docs/temp/json-storage-stage3/runs/20260917-priority/main-matrix-attempt-1/`
 
 ### Step 1: Add a failing document contract test
@@ -82,7 +82,7 @@ Create the assessment with these sections and facts:
    - Require cold/warm cache distinction, concurrency, update/delete lifecycle, extension failure/recovery, and database-visible resource evidence before production extrapolation.
 7. **Conclusion boundaries and sources**
    - State what the current experiment can rank and what remains unknown.
-   - Link the Stage 3 plan, runner README, source files, and approved yellow-zone handoff design.
+   - Link the Stage 3 plan, layout runner, source files, and approved yellow-zone handoff design.
 
 ### Step 3: Run the focused test and inspect the document
 
@@ -115,7 +115,7 @@ git commit -m "docs: assess stage three layout representativeness"
 
 - Create: `experiments/json-storage-stage3/tools/package_formal_input.py`
 - Create: `experiments/json-storage-stage3/tests/test_package_formal_input.py`
-- Reference: `experiments/json-storage-stage3/production.py`
+- Reference: `experiments/json-storage-stage3/runner/production.py`
 - Reference: `docs/temp/json-storage-stage3/runs/20260917-priority/input/`
 
 ### Step 1: Add failing unit tests
@@ -220,11 +220,11 @@ git commit -m "feat: package stage three formal input"
 - Create: `docs/project-background/json-storage-stage3-xstore-clickhouse-yellow-guide.md`
 - Modify: `docs/README.md`
 - Modify: `experiments/json-storage-stage3/tests/test_yellow_handoff_docs.py`
-- Reference: `experiments/json-storage-stage3/common.py`
-- Reference: `experiments/json-storage-stage3/production.py`
-- Reference: `experiments/json-storage-stage3/run_stage3.py`
-- Reference: `experiments/json-storage-stage3/summarize.py`
-- Reference: `experiments/json-storage-stage3/README.md`
+- Reference: `experiments/json-storage-stage3/runner/common.py`
+- Reference: `experiments/json-storage-stage3/runner/production.py`
+- Reference: `experiments/json-storage-stage3/runner/run_stage3.py`
+- Reference: `experiments/json-storage-stage3/report/summarize.py`
+- Reference: `experiments/json-storage-stage3/runner/run_layout_matrix.py`
 
 ### Step 1: Extend the document contract test and observe failure
 

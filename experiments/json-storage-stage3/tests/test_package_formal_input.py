@@ -297,6 +297,74 @@ class PackageFormalInputTest(unittest.TestCase):
             [ARCHIVE_NAME, CHECKSUM_NAME],
         )
 
+    def test_output_inside_input_root_is_rejected(self):
+        """捕获把归档写进冻结输入目录造成源身份被污染。"""
+        before = self.inventory(self.source)
+        for output in (self.source / "out", self.source):
+            with self.assertRaises(ValueError):
+                packager.package_formal_input(self.source, output)
+
+        self.assertEqual(self.inventory(self.source), before)
+        self.assertFalse((self.source / "out").exists())
+
+    def test_checksum_publication_failure_rolls_back_archive(self):
+        """捕获第二次发布失败后留下没有清单的归档。"""
+        self.output.mkdir()
+        checksum_path = self.output / CHECKSUM_NAME
+        real_publish = packager._publish
+
+        def failing_publish(temporary, final):
+            """只让清单发布失败，归档发布保持原行为。"""
+            if Path(final) == checksum_path:
+                raise OSError("checksum publication failed")
+            return real_publish(temporary, final)
+
+        with patch.object(packager, "_publish", failing_publish):
+            with self.assertRaisesRegex(OSError, "checksum publication failed"):
+                packager.package_formal_input(self.source, self.output)
+
+        self.assert_no_output()
+
+    def test_checksum_failure_does_not_remove_replaced_archive(self):
+        """捕获回滚误删清单发布期间被其他写入者替换的归档。"""
+        self.output.mkdir()
+        archive_path = self.output / ARCHIVE_NAME
+        checksum_path = self.output / CHECKSUM_NAME
+        real_publish = packager._publish
+
+        def racing_publish(temporary, final):
+            """发布归档后，在清单失败前模拟其他写入者替换最终名。"""
+            if Path(final) == checksum_path:
+                archive_path.unlink()
+                archive_path.write_bytes(b"replacement-archive")
+                raise OSError("checksum publication failed after replacement")
+            return real_publish(temporary, final)
+
+        with patch.object(packager, "_publish", racing_publish):
+            with self.assertRaisesRegex(OSError, "checksum publication failed after replacement"):
+                packager.package_formal_input(self.source, self.output)
+
+        self.assertEqual(archive_path.read_bytes(), b"replacement-archive")
+        self.assertEqual(sorted(path.name for path in self.output.iterdir()), [ARCHIVE_NAME])
+
+    def test_publication_does_not_overwrite_a_racing_target(self):
+        """捕获并发写入者在门禁之后创建最终名时被覆盖。"""
+        self.output.mkdir()
+        archive_path = self.output / ARCHIVE_NAME
+        real_write = packager._write_archive
+
+        def racing_write(members, target):
+            """在归档写入后模拟另一进程抢占最终名。"""
+            real_write(members, target)
+            archive_path.write_bytes(b"racing-archive")
+
+        with patch.object(packager, "_write_archive", racing_write):
+            with self.assertRaises(FileExistsError):
+                packager.package_formal_input(self.source, self.output)
+
+        self.assertEqual(archive_path.read_bytes(), b"racing-archive")
+        self.assertEqual(sorted(path.name for path in self.output.iterdir()), [ARCHIVE_NAME])
+
     def test_write_failure_removes_temporary_files(self):
         """捕获写入中断后留下半成品归档、清单或临时文件。"""
         with patch.object(packager, "_write_archive", side_effect=RuntimeError("disk full")):
