@@ -1095,6 +1095,14 @@ if [ "$CH_INSTALL_MODE" = "rpm" ]; then
   esac
 
   # 2.3 写入临时回环覆盖再启动服务，验证回环与恢复后的配置状态，随后停止服务并删除临时覆盖文件。
+  # 临时验证状态的清理助手幂等：先停止服务再删除覆盖文件；失败路径调用后保留状态目录用于诊断。
+  cleanup_temporary_rpm_override() {
+    sudo systemctl stop clickhouse-server || true
+    if sudo test -f "$CH_RPM_OVERRIDE"; then
+      sudo rm -f -- "$CH_RPM_OVERRIDE"
+    fi
+  }
+
   require_rpm_override_path || exit 1
   sudo install -d -m 0755 "$(dirname "$CH_RPM_OVERRIDE")"
   sudo tee "$CH_RPM_OVERRIDE" >/dev/null <<'XML'
@@ -1104,14 +1112,22 @@ if [ "$CH_INSTALL_MODE" = "rpm" ]; then
     <tcp_port>19000</tcp_port>
 </clickhouse>
 XML
-  sudo systemctl start clickhouse-server
-  if ! sudo systemctl is-active --quiet clickhouse-server; then
-    printf 'clickhouse-server did not start with the restored configuration; stop here\n' >&2
+  if ! sudo systemctl start clickhouse-server; then
+    printf 'clickhouse-server failed to start with the restored configuration; stop here\n' >&2
+    cleanup_temporary_rpm_override
     exit 1
   fi
-  assert_ports_loopback_only || exit 1
-  sudo systemctl stop clickhouse-server || true
-  sudo rm -f -- "$CH_RPM_OVERRIDE"
+  if ! sudo systemctl is-active --quiet clickhouse-server; then
+    printf 'clickhouse-server did not start with the restored configuration; stop here\n' >&2
+    cleanup_temporary_rpm_override
+    exit 1
+  fi
+  if ! assert_ports_loopback_only; then
+    printf 'restored configuration is not loopback-only; stop here\n' >&2
+    cleanup_temporary_rpm_override
+    exit 1
+  fi
+  cleanup_temporary_rpm_override
   if sudo test -f "$CH_RPM_OVERRIDE"; then
     printf 'temporary loopback override still exists: %s\n' "$CH_RPM_OVERRIDE" >&2
     exit 1
