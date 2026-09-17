@@ -114,6 +114,25 @@ class ClickHouseAdapterUnitTest(unittest.TestCase):
                         ],
                     )
 
+    def test_merge_control_can_keep_asset_catalog_mutations_running(self):
+        """捕获 part control 无法只暂停 Asset 分析表。"""
+        with tempfile.TemporaryDirectory() as directory:
+            requests = []
+            adapter = clickhouse.ClickHouseAdapter(
+                "127.0.0.1", 18123, "unused", "jsons3_test", "asset_ref",
+                Path(directory), LocalAssetStore(Path(directory) / "assets"),
+            )
+            adapter.connect_worker = lambda: RecordingConnection(requests)
+
+            adapter.set_merges(False, ("events_analytics",))
+
+            self.assertEqual(
+                [request["body"].decode("utf-8") for request in requests],
+                [f"SYSTEM STOP MERGES {adapter.database}.events_analytics"],
+            )
+            with self.assertRaisesRegex(ValueError, "merge target"):
+                adapter.set_merges(False, ("unknown",))
+
     def test_batch_sql_binds_cohort_and_excludes_payloadless_rows(self):
         adapter = clickhouse.ClickHouseAdapter(
             "127.0.0.1", 18123, "unused", "jsons3_test", "same_table", Path("."),

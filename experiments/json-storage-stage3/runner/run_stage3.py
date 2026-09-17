@@ -1123,6 +1123,36 @@ def _gate_part_states(child, formal, layout, database):
                 raise RuntimeError("part-state table metrics are invalid")
         if not isinstance(state.get("active_merges"), list) or not isinstance(state.get("observations"), list):
             raise RuntimeError("part-state observations are invalid")
+        part_counts = {table: tables[table]["part_count"] for table in catalog.write_tables}
+        active_merges = state["active_merges"]
+        if expected_name == "fragmented":
+            predicate_valid = not active_merges and part_counts[catalog.list_source] >= 2
+        elif expected_name == "merging":
+            predicate_valid = any(
+                isinstance(merge, dict) and merge.get("table") == catalog.list_source
+                for merge in active_merges
+            )
+        elif expected_name == "stable":
+            tail = state["observations"][-3:]
+            observed_counts = [
+                observation.get("active_part_counts") if isinstance(observation, dict) else None
+                for observation in tail
+            ]
+            predicate_valid = (
+                not active_merges and len(tail) == 3
+                and all(
+                    isinstance(observation, dict) and not observation.get("active_merges")
+                    for observation in tail
+                )
+                and all(counts == part_counts for counts in observed_counts)
+            )
+        else:
+            predicate_valid = (
+                not active_merges and part_counts[catalog.list_source] == 1
+                and all(count <= 1 for count in part_counts.values())
+            )
+        if not predicate_valid:
+            raise RuntimeError("part-state predicate evidence is inconsistent")
         if layout == "asset_ref":
             asset_store = _require_part_object(state.get("asset_store"), "asset store")
             if any(not _is_int(asset_store.get(field)) for field in (
@@ -1134,9 +1164,10 @@ def _gate_part_states(child, formal, layout, database):
             raise RuntimeError("part-state optimized targets mismatch")
         _gate_part_state_samples(state, formal.main_queries, fixed["samples_per_query"])
     restoration = _require_part_object(manifest.get("restoration"), "restoration")
+    merge_targets = [catalog.list_source] if layout == "asset_ref" else list(catalog.write_tables)
     if (
         restoration.get("attempted") is not True or restoration.get("restored") is not True
-        or restoration.get("targets") != list(catalog.write_tables)
+        or restoration.get("targets") != merge_targets
     ):
         raise RuntimeError("part-state restoration evidence is invalid")
     cleanup = _require_part_object(manifest.get("cleanup"), "cleanup")

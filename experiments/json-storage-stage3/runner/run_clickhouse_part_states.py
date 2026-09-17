@@ -223,6 +223,8 @@ def run_part_states(adapter, blocks, query_cases, output: Path, *, samples_per_q
     catalog = build_layout_catalog(adapter.layout)
     targets = catalog.write_tables
     controlled = catalog.list_source
+    # Asset catalog 状态通过同步 mutation 发布；暂停其 merge 会阻塞 ingest。
+    merge_targets = (controlled,) if catalog.name == "asset_ref" else targets
     manifest = {
         "format": "agent-trace-json-storage-stage3-clickhouse-part-states",
         "format_version": 1,
@@ -240,7 +242,7 @@ def run_part_states(adapter, blocks, query_cases, output: Path, *, samples_per_q
     states = []
     errors = []
     restore_required = False
-    restoration = {"attempted": False, "restored": False, "targets": list(targets)}
+    restoration = {"attempted": False, "restored": False, "targets": list(merge_targets)}
     cleanup = {"namespace": getattr(adapter, "database", "unknown"), "removed": False}
 
     def prove_and_sample(state):
@@ -255,7 +257,7 @@ def run_part_states(adapter, blocks, query_cases, output: Path, *, samples_per_q
     try:
         manifest["layout_definition"] = adapter.create()
         restore_required = True
-        adapter.set_merges(False)
+        adapter.set_merges(False, merge_targets)
         for block in blocks:
             result = adapter.ingest_block(block)
             expected_watermark = int(block[-1]["ingest_seq"]) + 1
@@ -277,7 +279,7 @@ def run_part_states(adapter, blocks, query_cases, output: Path, *, samples_per_q
             timeout_seconds, clock, sleep, poll_interval,
         ))
 
-        adapter.set_merges(True)
+        adapter.set_merges(True, merge_targets)
         prove_and_sample(_wait_for_state(
             adapter, "merging",
             lambda state: any(merge.get("table") == controlled for merge in state.active_merges),
@@ -307,7 +309,7 @@ def run_part_states(adapter, blocks, query_cases, output: Path, *, samples_per_q
         restoration["attempted"] = restore_required
         if restore_required:
             try:
-                adapter.set_merges(True)
+                adapter.set_merges(True, merge_targets)
                 restoration["restored"] = True
             except Exception as exception:
                 restoration["error"] = str(exception) or type(exception).__name__

@@ -189,7 +189,9 @@ def valid_part_child(formal, layout, namespace):
                         "uncompressed_bytes": 0}
                 for table in catalog.write_tables
             },
-            "active_merges": [], "observations": [], "query_samples": samples,
+            "active_merges": (
+                [{"table": catalog.list_source}] if state_name == "merging" else []
+            ), "observations": [], "query_samples": samples,
             "query_plans": {query_id: "ReadFromMergeTree" for query_id in query_ids},
             "query_details": {
                 query_id: {"kind": sample["kind"], "statement": "SELECT 1",
@@ -208,6 +210,21 @@ def valid_part_child(formal, layout, namespace):
             ),
             "error": None,
         }
+        if state_name == "fragmented":
+            state["tables"][catalog.list_source]["part_count"] = 2
+        observation = {
+            "active_part_counts": {
+                table: values["part_count"] for table, values in state["tables"].items()
+            },
+            "active_merges": list(state["active_merges"]),
+        }
+        state["observations"] = [
+            {
+                "active_part_counts": dict(observation["active_part_counts"]),
+                "active_merges": list(observation["active_merges"]),
+            }
+            for _ in range(3 if state_name == "stable" else 1)
+        ]
         if layout == "asset_ref":
             state["asset_store"] = {
                 "available_object_count": 0, "available_bytes": 0,
@@ -222,8 +239,9 @@ def valid_part_child(formal, layout, namespace):
         "controlled_table": catalog.list_source,
         "state_order": ["fragmented", "merging", "stable", "single_part"],
         "samples_per_query": 30, "states": states,
-        "restoration": {"attempted": True, "restored": True,
-                        "targets": list(catalog.write_tables)},
+        "restoration": {"attempted": True, "restored": True, "targets": (
+            [catalog.list_source] if layout == "asset_ref" else list(catalog.write_tables)
+        )},
         "cleanup": {"namespace": namespace, "removed": True},
     }
 
@@ -922,6 +940,30 @@ class PartStateProductionTests(unittest.TestCase):
         for name, mutation in mutations.items():
             with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
                 with self.assertRaisesRegex(RuntimeError, "part-state"):
+                    self.run_part_states_cli(Path(directory), mutate=mutation)
+
+    def test_part_state_gate_recomputes_physical_state_predicates(self):
+        """捕获 child 自报 predicate_proven 掩盖不成立的物理状态。"""
+        mutations = {
+            "fragmented_part_count": lambda manifest: manifest["states"][0]["tables"][
+                "events"
+            ].update(part_count=1),
+            "fragmented_active_merge": lambda manifest: manifest["states"][0][
+                "active_merges"
+            ].append({"table": "events"}),
+            "merging_without_controlled_table": lambda manifest: manifest["states"][1].update(
+                active_merges=[{"table": "wrong"}],
+            ),
+            "unstable_observations": lambda manifest: manifest["states"][2]["observations"][
+                -1
+            ]["active_part_counts"].update(events=2),
+            "single_part_count": lambda manifest: manifest["states"][3]["tables"][
+                "events"
+            ].update(part_count=2),
+        }
+        for name, mutation in mutations.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as directory:
+                with self.assertRaisesRegex(RuntimeError, "part-state predicate"):
                     self.run_part_states_cli(Path(directory), mutate=mutation)
 
     def test_part_state_gate_requires_every_formal_query_in_each_state(self):

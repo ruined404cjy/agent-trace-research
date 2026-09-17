@@ -504,14 +504,21 @@ class ClickHouseAdapter:
             previous = current["parts"]
             time.sleep(0.1)
 
-    def set_merges(self, enabled):
-        """启停本布局所有 MergeTree 写目标，并跟踪恢复责任。"""
+    def set_merges(self, enabled, tables=None):
+        """启停指定 MergeTree 写目标；默认覆盖本布局全部写目标。"""
         if type(enabled) is not bool:
             raise ValueError("enabled must be boolean")
+        available = build_layout_catalog(self.layout).write_tables
+        selected = available if tables is None else tuple(tables)
+        if (
+            not selected or len(selected) != len(set(selected))
+            or any(table not in available for table in selected)
+        ):
+            raise ValueError("invalid merge target")
         action = "START" if enabled else "STOP"
         connection = self.connect_worker()
         try:
-            for table in build_layout_catalog(self.layout).write_tables:
+            for table in selected:
                 self._request(connection, f"SYSTEM {action} MERGES {self.database}.{table}")
                 if enabled:
                     self._merges_stopped.discard(table)

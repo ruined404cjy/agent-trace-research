@@ -57,6 +57,7 @@ class FakeClickHouse:
         self.omit_asset_store = omit_asset_store
         self.omit_query_details = omit_query_details
         self.events = []
+        self.merge_calls = []
         self.paused = set()
         self.merges_enabled = True
         self.forced = False
@@ -72,15 +73,17 @@ class FakeClickHouse:
         self.events.append("create")
         return {"database": "jsons3_fake", "ddl": "CREATE TABLE"}
 
-    def set_merges(self, enabled):
+    def set_merges(self, enabled, tables=None):
         self.events.append("merges:start" if enabled else "merges:stop")
+        selected = tuple(self.targets if tables is None else tables)
+        self.merge_calls.append((enabled, selected))
         if enabled and self.fail_restore and self.fail_query:
             raise RuntimeError("restore failed")
         self.merges_enabled = enabled
         if enabled:
-            self.paused.clear()
+            self.paused.difference_update(selected)
         else:
-            self.paused.update(self.targets)
+            self.paused.update(selected)
             self.current_state = "fragmented"
 
     def ingest_block(self, block):
@@ -285,6 +288,24 @@ class ClickHousePartStateTest(unittest.TestCase):
         self.assertEqual(set(state.tables), {"events_analytics", "assets"})
         self.assertIn("compressed_bytes", state.tables["assets"])
         self.assertEqual(state.asset_store.available_object_count, 2)
+
+    def test_asset_ref_keeps_catalog_merges_running_during_fragmented_ingest(self):
+        """捕获暂停 assets merge 后同步状态 mutation 等待至 HTTP 超时。"""
+        adapter = FakeClickHouse(layout="asset_ref")
+        clock = FakeClock()
+        with tempfile.TemporaryDirectory() as directory:
+            result = run_part_states(
+                adapter, blocks(), ((QUERY, TRUTH),), Path(directory),
+                clock=clock, sleep=clock.sleep, poll_interval=0.1,
+            )
+
+        self.assertEqual(
+            adapter.merge_calls[:2],
+            [(False, ("events_analytics",)), (True, ("events_analytics",))],
+        )
+        self.assertEqual(
+            result.manifest["restoration"]["targets"], ["events_analytics"],
+        )
 
     def test_asset_ref_rejects_missing_asset_store_evidence(self):
         """捕获 asset_ref 仅有两张表状态却缺少对象存储证据。"""
