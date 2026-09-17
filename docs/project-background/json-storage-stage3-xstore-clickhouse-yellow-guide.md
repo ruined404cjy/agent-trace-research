@@ -97,6 +97,7 @@ export CH_CONFIG="$CH_STATE/etc/config.xml"
 export CH_HTTP_PORT=18123
 export CH_TCP_PORT=19000
 export CH_INSTALL_MODE=tgz
+export CH_RPM_OVERRIDE=/etc/clickhouse-server/config.d/00-stage3-yellow.xml
 export CH_PIP_REQUIREMENT='psycopg[binary]==3.3.5'
 export PYTHON_BOOTSTRAP=python3
 export PYTHON="$YELLOW_STATE/venv/bin/python"
@@ -131,6 +132,62 @@ require_guide_path() {
     *) printf 'refusing to delete %s outside %s\n' "$target_path" "$root_path" >&2; return 1 ;;
   esac
   printf '%s\n' "$target_path"
+  return 0
+}
+
+require_rpm_override_path() {
+  # 只允许操作本指南创建的固定覆盖文件；父目录可由运维或测试显式改写，文件名固定。
+  local target="${CH_RPM_OVERRIDE:-}"
+  case "$target" in
+    */clickhouse-server/config.d/00-stage3-yellow.xml) ;;
+    *) printf 'refusing to touch unexpected override path %s\n' "$target" >&2; return 1 ;;
+  esac
+  return 0
+}
+
+listening_local_addresses() {
+  # 输出监听套接字的本地地址字段。ss 每行以对端地址结尾，端口判据不得锚定行尾。
+  if ss -ltnH >/dev/null 2>&1; then
+    ss -ltnH | awk 'NF >= 4 { print $4 }'
+  else
+    ss -ltn | awk 'NR > 1 && NF >= 4 { print $4 }'
+  fi
+}
+
+experiment_listeners() {
+  # 只保留实验端口的本地地址；无命中时输出为空。
+  listening_local_addresses | grep -E ":(${CH_HTTP_PORT}|${CH_TCP_PORT})$" || true
+}
+
+assert_ports_free() {
+  # 任一实验端口仍被监听时返回 1，并打印命中的监听地址。
+  local hits
+  hits=$(experiment_listeners)
+  if [ -n "$hits" ]; then
+    printf 'experiment ports are still listening:\n%s\n' "$hits" >&2
+    return 1
+  fi
+  return 0
+}
+
+assert_ports_loopback_only() {
+  # 两个实验端口都必须存在且只绑定 127.0.0.1；否则打印实际监听地址并返回 1。
+  local hits port
+  hits=$(experiment_listeners)
+  if [ -z "$hits" ]; then
+    printf 'no listener found on ports %s and %s\n' "$CH_HTTP_PORT" "$CH_TCP_PORT" >&2
+    return 1
+  fi
+  if printf '%s\n' "$hits" | grep -vqE '^127\.0\.0\.1:'; then
+    printf 'experiment ports are not loopback-only:\n%s\n' "$hits" >&2
+    return 1
+  fi
+  for port in "$CH_HTTP_PORT" "$CH_TCP_PORT"; do
+    if ! printf '%s\n' "$hits" | grep -qE ":$port$"; then
+      printf 'missing listener on port %s\n' "$port" >&2
+      return 1
+    fi
+  done
   return 0
 }
 ```
@@ -241,7 +298,6 @@ Stage 3 runner 需要 Python 3.10 及以上（adapter 契约使用 PEP 604 联�
 依赖来源限定为黄区策略批准的 PyPI 镜像；镜像不可用时在蓝区用同一解释器执行 pip download 生成 wheelhouse 并随交接材料传入，黄区用 --no-index --find-links 安装同一 pin 版本。系统 python3 只用于创建虚拟环境，不用于 loader 与 runner。
 
 ```bash
-cd "$YELLOW_REPO"
 "$PYTHON_BOOTSTRAP" -m venv "$YELLOW_STATE/venv"
 "$YELLOW_STATE/venv/bin/python" -m pip install --upgrade pip
 "$YELLOW_STATE/venv/bin/python" -m pip install "$CH_PIP_REQUIREMENT"
@@ -490,7 +546,7 @@ for attempt in $(seq 1 60); do
 done
 test "$ready" = 1
 
-ss -ltn | grep -E ':(18123|19000)$'
+assert_ports_loopback_only || exit 1
 sudo journalctl -u clickhouse-server --no-pager -n 100 | tee "$CH_STATE/log/journal.txt"
 if grep -En '<Error>|<Fatal>' "$CH_STATE/log/journal.txt"; then
   printf 'clickhouse journal contains <Error> or <Fatal>; stop here\n' >&2
@@ -500,17 +556,7 @@ fi
 
 服务验证判据：systemctl is-active 输出 active，curl 返回 25.12.11.4，18123 与 19000 只出现在 127.0.0.1 上，journal 中无 <Error> 或 <Fatal>。
 
-回滚：
-
-```bash
-sudo systemctl stop clickhouse-server || true
-sudo rm -f -- /etc/clickhouse-server/config.d/00-stage3-yellow.xml
-if [ "$(cat "$CH_STATE/backup/preexisting.txt")" = "yes" ]; then
-  sudo tar -xzf "$CH_STATE/backup/etc-clickhouse-server.tar.gz" -C /etc
-fi
-sudo systemctl start clickhouse-server
-sudo systemctl is-active clickhouse-server
-```
+回滚与清理：RPM 路径的回滚命令集中在 9.1 节，删除本指南创建的固定覆盖文件、按 preexisting 标记恢复备份、验证服务与配置状态，并断言覆盖文件不再存在。安装验证后需要立即回滚时执行同一段命令。
 
 包移除只在操作者明确决定该主机不再保留 ClickHouse 时执行，范围限定为三个包：
 
@@ -661,11 +707,8 @@ curl -sS "http://127.0.0.1:${CH_HTTP_PORT}/?query=SELECT%20version()"
 健康判据：curl 与客户端都返回 25.12.11.4，18123 与 19000 只出现在 127.0.0.1 上，启动日志不含 <Error> 或 <Fatal> 标记。启动失败、版本不一致或出现上述标记时保留日志并停止，不进入 adapter 与实验阶段。
 
 ```bash
-listeners=$(ss -ltn | awk 'NR>1 {print $4}' | grep -E ':(18123|19000)$' || true)
-printf '%s\n' "$listeners"
-loopback=$(printf '%s\n' "$listeners" | grep -c '^127\.0\.0\.1:' || true)
-total=$(printf '%s\n' "$listeners" | grep -c ':' || true)
-test "$loopback" = "$total"
+assert_ports_loopback_only || exit 1
+experiment_listeners
 
 grep -En '<Error>|<Fatal>' "$CH_STATE/log/server-console.log" \
   "$CH_STATE/log/clickhouse-server.log" | tee "$CH_STATE/log/error-scan.txt" || true
@@ -699,10 +742,7 @@ else
     done
   fi
 fi
-if ss -ltn | grep -E ':(18123|19000)$'; then
-  printf 'clickhouse ports are still listening; stop here\n' >&2
-  exit 1
-fi
+assert_ports_free || exit 1
 ```
 
 停止与确认完成后按第 9.1 节执行清理；清理片段可重复执行，已经缺失的目录按已清理处理。
@@ -871,10 +911,44 @@ python experiments/json-storage-stage3/runner/run_layout_matrix.py \
 # 1) XStore 侧：确认无运行中的查询与后台任务后删除 namespace 与对象目录，命令来自能力报告，
 #    删除后确认对象清单为空。
 
-# 2) ClickHouse 侧：先停止；RPM 路径再按 5.3 节回滚覆盖配置并恢复备份，读取备份前不删除状态目录。
-#    RPM 路径在执行第 3 步前先运行 5.3 节的回滚命令，删除覆盖文件并恢复备份。
+# 2) ClickHouse 侧：RPM 路径在本片段内完成系统级回滚；读取备份与覆盖文件前不删除状态目录。
 if [ "$CH_INSTALL_MODE" = "rpm" ]; then
   sudo systemctl stop clickhouse-server || true
+
+  # 2.1 删除本指南创建的固定覆盖文件，并断言其不再存在。
+  require_rpm_override_path || exit 1
+  if sudo test -f "$CH_RPM_OVERRIDE"; then
+    sudo rm -f -- "$CH_RPM_OVERRIDE"
+  fi
+  if sudo test -f "$CH_RPM_OVERRIDE"; then
+    printf 'guide-owned override still exists: %s\n' "$CH_RPM_OVERRIDE" >&2
+    exit 1
+  fi
+
+  # 2.2 preexisting=yes 时按记录的备份恢复包默认配置；校验失败即停止，不删除状态目录。
+  if [ -f "$CH_STATE/backup/etc-clickhouse-server.sha256" ]; then
+    if ! sha256sum -c "$CH_STATE/backup/etc-clickhouse-server.sha256" >&2; then
+      printf 'configuration backup checksum verification failed; stop here\n' >&2
+      exit 1
+    fi
+  fi
+  if [ "$(cat "$CH_STATE/backup/preexisting.txt" 2>/dev/null || echo unknown)" = "yes" ]; then
+    sudo tar -xzf "$CH_STATE/backup/etc-clickhouse-server.tar.gz" -C /etc
+  else
+    printf 'no pre-existing configuration backup to restore\n'
+  fi
+
+  # 2.3 验证恢复后的服务状态与覆盖文件状态，再停止服务。
+  sudo systemctl start clickhouse-server
+  if ! sudo systemctl is-active --quiet clickhouse-server; then
+    printf 'clickhouse-server did not start with the restored configuration; stop here\n' >&2
+    exit 1
+  fi
+  sudo systemctl stop clickhouse-server || true
+  if sudo test -f "$CH_RPM_OVERRIDE"; then
+    printf 'guide-owned override reappeared: %s\n' "$CH_RPM_OVERRIDE" >&2
+    exit 1
+  fi
 elif [ -f "$CH_STATE/run/clickhouse.pid" ]; then
   kill "$(cat "$CH_STATE/run/clickhouse.pid")" 2>/dev/null || true
 fi
@@ -889,17 +963,18 @@ for target in "$YELLOW_STATE/clickhouse" "$YELLOW_STATE/runs/xstore-assets" "$YE
   fi
 done
 
-# 4) 最终断言始终执行。
-test ! -d "$YELLOW_STATE/clickhouse"
-test ! -d "$YELLOW_STATE/runs/xstore-assets"
-if ss -ltn | grep -E ':(18123|19000)$'; then
-  printf 'experiment ports are still listening; stop here\n' >&2
-  exit 1
-fi
+# 4) 最终断言覆盖本片段删除的每个目录，任一不满足即失败退出。
+for target in "$YELLOW_STATE/clickhouse" "$YELLOW_STATE/runs/xstore-assets" "$YELLOW_STATE/runs/xstore-main"; do
+  if [ -d "$target" ]; then
+    printf 'cleanup assertion failed, directory remains: %s\n' "$target" >&2
+    exit 1
+  fi
+done
+assert_ports_free || exit 1
 printf 'cleanup complete: %s\n' "$YELLOW_STATE"
 ```
 
-删除范围限定为指南创建的状态目录；RPM 路径的系统覆盖文件按 5.3 节的固定字面路径删除，包创建的 /var/lib/clickhouse 与 /var/log/clickhouse-server 不在自动清理范围内。对象目录、后台任务或临时配置无法清理时停止后续运行，并记录未清理对象清单。
+删除范围限定为指南创建的状态目录；RPM 路径只删除本指南创建的固定覆盖文件 /etc/clickhouse-server/config.d/00-stage3-yellow.xml，包创建的 /var/lib/clickhouse 与 /var/log/clickhouse-server 不在自动清理范围内。恢复包默认配置、验证服务与断言覆盖文件消失都需要 root 权限，缺少权限时停止。对象目录、后台任务或临时配置无法清理时停止后续运行，并记录未清理对象清单。
 
 ### 9.2 回传材料
 
