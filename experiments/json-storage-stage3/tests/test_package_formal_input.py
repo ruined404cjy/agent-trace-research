@@ -289,7 +289,7 @@ class PackageFormalInputTest(unittest.TestCase):
         self.assertEqual(sorted(path.name for path in self.output.iterdir()), [CHECKSUM_NAME])
 
     def test_success_leaves_only_archive_and_checksum(self):
-        """捕获临时文件残留或被重命名进输出目录。"""
+        """捕获临时文件残留或被发布进输出目录。"""
         packager.package_formal_input(self.source, self.output)
 
         self.assertEqual(
@@ -404,7 +404,7 @@ class PackageFormalInputTest(unittest.TestCase):
         self.assertEqual(sorted(path.name for path in self.output.iterdir()), [ARCHIVE_NAME])
 
     def test_replaced_final_path_in_the_ownership_window_is_not_removed(self):
-        """捕获失败恢复删除归属检查与删除之间被并发写入者替换的最终名。"""
+        """捕获失败路径在发布窗口内删除并发写入者已写入的最终名。"""
         self.output.mkdir()
         archive_path = self.output / ARCHIVE_NAME
         checksum_path = self.output / CHECKSUM_NAME
@@ -415,13 +415,13 @@ class PackageFormalInputTest(unittest.TestCase):
         removed_finals = []
 
         def failing_publish(temporary, final):
-            """只让清单发布失败，触发归档回滚。"""
+            """只让清单发布失败，进入不删除任何最终名的失败路径。"""
             if Path(final) == checksum_path:
                 raise OSError("checksum publication failed")
             return real_publish(temporary, final)
 
         def racing_unlink(path, *args, **kwargs):
-            """删除最终名前模拟并发写入者已用同名文件完成替换。"""
+            """任一最终名进入删除路径时，模拟并发写入者已用同名文件完成替换。"""
             if path in (archive_path, checksum_path):
                 os.rename(replacement, path)
                 removed_finals.append(path)

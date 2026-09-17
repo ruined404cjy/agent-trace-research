@@ -100,7 +100,7 @@ export CH_HTTP_PORT=18123
 export CH_TCP_PORT=19000
 unset CH_INSTALL_MODE
 export CH_ETC_ROOT=${CH_ETC_ROOT:-/etc}
-export CH_RPM_OVERRIDE=/etc/clickhouse-server/config.d/00-stage3-yellow.xml
+export CH_RPM_OVERRIDE="$CH_ETC_ROOT/clickhouse-server/config.d/00-stage3-yellow.xml"
 export CH_PIP_REQUIREMENT='psycopg[binary]==3.3.5'
 export PYTHON_BOOTSTRAP=python3
 export PYTHON="$YELLOW_STATE/venv/bin/python"
@@ -160,7 +160,7 @@ require_asset_workspace_path() {
 }
 
 require_rpm_override_path() {
-  # 只允许操作本指南创建的固定覆盖文件；父目录可由运维或测试显式改写，文件名固定。
+  # 只允许操作本指南创建的固定覆盖文件；父目录由 CH_ETC_ROOT 派生，文件名固定。
   local target="${CH_RPM_OVERRIDE:-}"
   case "$target" in
     */clickhouse-server/config.d/00-stage3-yellow.xml) ;;
@@ -585,18 +585,18 @@ RPM 路径写入系统位置。按 rpm -qlp 核对，clickhouse-server-25.12.11.
 
 | 路径 | 归属 |
 |---|---|
-| /etc/clickhouse-server/config.xml、/etc/clickhouse-server/users.xml | 包默认配置 |
+| /etc/clickhouse-server/config.xml、/etc/clickhouse-server/users.xml | 包安装的默认配置 |
 | /etc/clickhouse-server/config.d/00-stage3-yellow.xml | 本指南创建的回环与端口覆盖 |
 | /lib/systemd/system/clickhouse-server.service | systemd 单元 |
 | /usr/bin/clickhouse、/usr/bin/clickhouse-server、/usr/bin/clickhouse-client | 多调用二进制与符号链接 |
 | /var/lib/clickhouse、/var/log/clickhouse-server | 包创建的数据与日志目录 |
 
-回滚范围覆盖指南创建项与包默认配置：停止服务、删除覆盖文件、恢复备份的 /etc/clickhouse-server、重新启动并验证。包创建的数据目录保留，实验数据由 runner 的按 namespace DROP DATABASE 清理；只有在操作者明确决定该主机不再保留 ClickHouse 时，才执行包移除与数据目录处理。
+回滚范围覆盖指南创建项与既有系统配置：停止服务、删除覆盖文件、在安装前已有既有配置时恢复备份的 $CH_ETC_ROOT/clickhouse-server、重新启动并验证。包创建的数据目录保留，实验数据由 runner 的按 namespace DROP DATABASE 清理；只有在操作者明确决定该主机不再保留 ClickHouse 时，才执行包移除与数据目录处理。
 
-备份包默认配置。preexisting=yes 时归档与校验清单必须同时产生：清单缺失时第 9.1 节停止，不执行恢复，也不删除状态目录。
+备份既有系统配置。备份在包安装前执行，归档的是 $CH_ETC_ROOT/clickhouse-server 中安装前已有的内容；该目录在安装前不存在时只记录 preexisting=no，不产生归档。恢复只适用于 preexisting=yes：归档与校验清单必须同时存在，清单缺失时第 9.1 节停止，不执行恢复，也不删除状态目录。
 
 ```bash
-# 5.3 备份包默认配置
+# 5.3 备份既有系统配置
 export CH_INSTALL_MODE=rpm
 mkdir -p "$CH_STATE/backup"
 if [ -d "$CH_ETC_ROOT/clickhouse-server" ]; then
@@ -638,15 +638,15 @@ RPM 资产没有随 Release 提供 SHA-512 摘要，该路径记录包 SHA-256 �
 回环覆盖与服务验证：
 
 ```bash
-sudo install -d -m 0755 /etc/clickhouse-server/config.d
-sudo tee /etc/clickhouse-server/config.d/00-stage3-yellow.xml >/dev/null <<'XML'
+sudo install -d -m 0755 "$(dirname "$CH_RPM_OVERRIDE")"
+sudo tee "$CH_RPM_OVERRIDE" >/dev/null <<'XML'
 <clickhouse>
     <listen_host>127.0.0.1</listen_host>
     <http_port>18123</http_port>
     <tcp_port>19000</tcp_port>
 </clickhouse>
 XML
-sudo sha256sum /etc/clickhouse-server/config.d/00-stage3-yellow.xml \
+sudo sha256sum "$CH_RPM_OVERRIDE" \
   | tee "$CH_STATE/backup/override.sha256"
 
 sudo systemctl start clickhouse-server
@@ -673,7 +673,7 @@ fi
 
 服务验证判据：systemctl is-active 输出 active，curl 返回 25.12.11.4，18123 与 19000 只出现在 127.0.0.1 上，journal 中无 <Error> 或 <Fatal>。
 
-回滚与清理：RPM 路径的回滚命令集中在 9.1 节，删除本指南创建的固定覆盖文件、按 preexisting 标记恢复备份、验证服务与配置状态，并断言覆盖文件不再存在。安装验证后需要立即回滚时执行同一段命令。
+回滚与清理：RPM 路径的回滚命令集中在 9.1 节，删除本指南创建的固定覆盖文件、按 preexisting 标记恢复既有系统配置、验证服务与配置状态，并断言覆盖文件不再存在。安装验证后需要立即回滚时执行同一段命令。
 
 包移除只在操作者明确决定该主机不再保留 ClickHouse 时执行，范围限定为三个包：
 
@@ -1041,7 +1041,7 @@ python experiments/json-storage-stage3/runner/run_layout_matrix.py \
 
 ### 9.1 清理顺序
 
-清理保持幂等：已经缺失的目录按已清理处理，最终断言始终执行。顺序为校验 CH_INSTALL_MODE，停止 XStore 侧查询与后台任务，删除 XStore namespace 与对象目录，停止 ClickHouse，按安装路径回滚 ClickHouse 配置，删除指南创建的运行输出根与状态目录，确认端口不再监听。
+清理保持幂等：已经缺失的目录按已清理处理，最终断言始终执行。顺序为校验 CH_INSTALL_MODE，停止 XStore 侧查询与后台任务，删除 XStore namespace 与对象目录，停止 ClickHouse，按安装路径回滚 ClickHouse 配置，删除 $YELLOW_OUTPUT 下的 clickhouse-main 与 xstore-main 两个主矩阵输出根及 $YELLOW_STATE/clickhouse，确认端口不再监听。$YELLOW_STATE 下的 venv、冻结输入、Release 资产与后续控制运行的证据不在本片段的删除范围内。
 
 ```bash
 # 1) XStore 侧：确认无运行中的查询与后台任务后删除 namespace 与对象目录，命令来自能力报告，
@@ -1071,7 +1071,7 @@ if [ "$CH_INSTALL_MODE" = "rpm" ]; then
     exit 1
   fi
 
-# 2.2 按 preexisting 标记恢复包默认配置；yes 必须先有归档与校验清单，标记缺失或取值非法时停止。
+# 2.2 仅在 preexisting=yes 时按标记恢复既有系统配置；yes 必须先有归档与校验清单，标记缺失或取值非法时停止。
   case "$(cat "$CH_STATE/backup/preexisting.txt" 2>/dev/null)" in
     preexisting=yes)
       if [ ! -f "$CH_STATE/backup/etc-clickhouse-server.tar.gz" ] \
@@ -1211,7 +1211,7 @@ assert_ports_free || exit 1
 printf 'cleanup complete: %s\n' "$YELLOW_STATE"
 ```
 
-删除范围限定为指南创建的路径：$YELLOW_OUTPUT 下的 clickhouse-main 与 xstore-main 两个主矩阵输出根、$YELLOW_STATE/clickhouse，以及各 target 的 run-manifest.json 在 global_cleanup.asset_workspace 中记录的后续控制运行 Asset 工作树。runner 为每个布局轮次在输出根下创建 .asset-work/engine/layout/workload/round-N，矩阵结束时按空目录清理；非空残留会被 runner 记为 global_cleanup.removed=false。本片段读取该证据，只接受 $YELLOW_OUTPUT 内以 .asset-work 结尾的路径，对每个路径执行删除守卫并断言消失；后续控制运行的其余证据目录保持不变。RPM 路径只删除本指南创建的固定覆盖文件 /etc/clickhouse-server/config.d/00-stage3-yellow.xml，包创建的 /var/lib/clickhouse 与 /var/log/clickhouse-server 不在自动清理范围内。恢复包默认配置、验证服务与断言覆盖文件消失都需要 root 权限，缺少权限时停止。对象目录、后台任务或临时配置无法清理时停止后续运行，并记录未清理对象清单。
+删除范围限定为指南创建的路径：$YELLOW_OUTPUT 下的 clickhouse-main 与 xstore-main 两个主矩阵输出根、$YELLOW_STATE/clickhouse，以及各 target 的 run-manifest.json 在 global_cleanup.asset_workspace 中记录的后续控制运行 Asset 工作树。runner 为每个布局轮次在输出根下创建 .asset-work/engine/layout/workload/round-N，矩阵结束时按空目录清理；非空残留会被 runner 记为 global_cleanup.removed=false。本片段读取该证据，只接受 $YELLOW_OUTPUT 内以 .asset-work 结尾的路径，对每个路径执行删除守卫并断言消失；后续控制运行的其余证据目录保持不变。RPM 路径只删除本指南创建的固定覆盖文件 $CH_RPM_OVERRIDE（默认 /etc/clickhouse-server/config.d/00-stage3-yellow.xml），包创建的 /var/lib/clickhouse 与 /var/log/clickhouse-server 不在自动清理范围内。恢复既有系统配置、验证服务与断言覆盖文件消失都需要 root 权限，缺少权限时停止。对象目录、后台任务或临时配置无法清理时停止后续运行，并记录未清理对象清单。
 
 ### 9.2 回传材料
 
