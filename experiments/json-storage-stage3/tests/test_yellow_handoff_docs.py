@@ -154,7 +154,7 @@ STALE_ASSET_PATH = "runs/xstore-assets"
 # 每条可执行片段都要求安装模式已经确定为 rpm 或 tgz。
 INSTALL_MODE_ERROR = "CH_INSTALL_MODE must be rpm or tgz"
 STOP_FENCE_MARKER = "# 5.7 停止服务"
-BACKUP_FENCE_MARKER = "# 5.3 备份包默认配置"
+BACKUP_FENCE_MARKER = "# 5.3 备份既有系统配置"
 
 # §7.1 阶段表在正式矩阵之后必须覆盖 part-state、混合负载与 Asset 故障恢复。
 CONTROL_STAGE_MARKERS = (
@@ -191,7 +191,7 @@ FENCE_OPEN = re.compile(r"^(?P<fence>(?:`{3,}|~{3,}))\s*(?P<info>[^\n]*?)\s*$")
 RECURSIVE_DELETION = re.compile(r"\brm\s+-[A-Za-z]*[rR]")
 ANY_DELETION = re.compile(r"\brm\s+-")
 DELETION_GUARD = "require_guide_path"
-# RPM 路径只删除本指南创建的固定覆盖文件，路径为字面常量。
+# RPM 路径只删除本指南创建的固定覆盖文件；默认根为 /etc，实际路径由 CH_ETC_ROOT 派生。
 FIXED_RPM_OVERRIDE = "/etc/clickhouse-server/config.d/00-stage3-yellow.xml"
 ALL_WORKLOADS_ARGUMENT = (
     "--workloads main,equal_total_few_large,equal_total_many_medium,correctness_only"
@@ -797,6 +797,30 @@ class YellowGuideContractTest(unittest.TestCase):
         self.assertIn(ASSET_WORKSPACE_NAME, cleanup, "清理必须覆盖输出根下的 .asset-work")
         self.assertIn(DELETION_GUARD, cleanup, "清理中的递归删除必须带路径守卫")
 
+    def test_guide_cleanup_overview_states_the_exact_deletion_scope(self):
+        """9.1 概述只声明两个主矩阵输出根与 $YELLOW_STATE/clickhouse，并列出保留项。"""
+        content = self.read_guide()
+        section = content[content.index("### 9.1"):content.index("### 9.2")]
+        self.assertNotIn(
+            "删除指南创建的运行输出根与状态目录", section,
+            "概述不得把删除范围写成整个状态目录",
+        )
+        self.assertIn(
+            "$YELLOW_OUTPUT 下的 clickhouse-main 与 xstore-main 两个主矩阵输出根及 $YELLOW_STATE/clickhouse",
+            section, "概述必须声明删除的确切范围",
+        )
+        for retained in ("venv", "冻结输入", "Release 资产", "后续控制运行的证据"):
+            self.assertIn(retained, section, f"概述必须说明保留 {retained}")
+
+    def test_guide_backup_covers_preexisting_system_configuration(self):
+        """5.3 备份在包安装前执行，恢复只在 preexisting=yes 时适用。"""
+        content = self.read_guide()
+        section = content[content.index("### 5.3"):content.index("### 5.4")]
+        self.assertIn("备份既有系统配置", section, "5.3 必须把备份对象写成既有系统配置")
+        self.assertNotIn("备份包默认配置", section, "5.3 不得把备份对象写成包默认配置")
+        self.assertIn("备份在包安装前执行", section, "必须说明备份发生在包安装前")
+        self.assertIn("恢复只适用于 preexisting=yes", section, "必须说明恢复只在 preexisting=yes 时适用")
+
     def test_guide_defines_python_environment_and_preflight(self):
         """指南给出可复现虚拟环境与依赖来源，并在 loader 前做版本与导入检查。"""
         content = self.read_guide()
@@ -949,9 +973,8 @@ class YellowGuideContractTest(unittest.TestCase):
         self.assertIn("require_rpm_override_path", cleanup, "覆盖文件删除前必须校验路径形状")
         with tempfile.TemporaryDirectory() as root:
             state = Path(root) / "state"
-            override = (
-                Path(root) / "etc" / "clickhouse-server" / "config.d" / "00-stage3-yellow.xml"
-            )
+            etc_root = Path(root) / "etc"
+            override = etc_root / "clickhouse-server" / "config.d" / "00-stage3-yellow.xml"
             override.parent.mkdir(parents=True)
             override.write_text("<clickhouse></clickhouse>\n", encoding="utf-8")
             (state / "clickhouse" / "backup").mkdir(parents=True)
@@ -963,12 +986,11 @@ class YellowGuideContractTest(unittest.TestCase):
                 (state / "runs" / name / ASSET_WORKSPACE_NAME / "engine" / "same_table").mkdir(parents=True)
             completed = self.run_guide_fragment(cleanup, state, extra_lines=(
                 f"export YELLOW_OUTPUT={shlex.quote(str(state / 'runs'))}",
-                f"export CH_RPM_OVERRIDE={shlex.quote(str(override))}",
                 "export CH_INSTALL_MODE=rpm",
-                'sudo() { "$@"; }',
+                self.sandbox_sudo_stub(),
                 self.loopback_systemctl_stub(Path(root) / "observed-start.txt"),
                 self.loopback_ss_stub(),
-            ))
+            ), env_overrides={"CH_ETC_ROOT": str(etc_root)})
             self.assertFalse(override.exists(), "指南创建的覆盖文件必须被删除")
             self.assertFalse((state / "clickhouse").exists(), "状态目录必须删除")
             for name in GUIDE_OUTPUT_ROOTS:
@@ -980,8 +1002,11 @@ class YellowGuideContractTest(unittest.TestCase):
             )
         self.assertIn("cleanup complete", completed.stdout, "清理必须输出完成标记")
 
-    def run_guide_fragment(self, fragment, state, extra_lines=()):
-        """在受控临时状态目录与指南变量块下执行片段，返回子进程结果。"""
+    def run_guide_fragment(self, fragment, state, extra_lines=(), env_overrides=None):
+        """在受控临时状态目录与指南变量块下执行片段，返回子进程结果。
+
+        env_overrides 在 bash 启动前生效，与操作者先设置环境变量再 source 变量块一致。
+        """
         fences = extract_code_fences(self.read_guide())
         script = "\n".join((
             shell_preamble(fences),
@@ -990,7 +1015,10 @@ class YellowGuideContractTest(unittest.TestCase):
             *extra_lines,
             fragment,
         ))
-        return subprocess.run(["bash", "-c", script], text=True, capture_output=True, check=False)
+        return subprocess.run(
+            ["bash", "-c", script], text=True, capture_output=True, check=False,
+            env={**os.environ, **(env_overrides or {})},
+        )
 
     def run_rpm_restore_failure(self, root, systemctl_stub, ss_stub):
         """构造 RPM 恢复验证的前置状态并执行清理片段，返回结果与关键路径。"""
@@ -999,23 +1027,36 @@ class YellowGuideContractTest(unittest.TestCase):
         backup.mkdir(parents=True)
         (backup / "preexisting.txt").write_text("preexisting=no\n", encoding="utf-8")
         (state / "clickhouse" / "run").mkdir(parents=True)
-        override = Path(root) / "etc" / "clickhouse-server" / "config.d" / "00-stage3-yellow.xml"
+        etc_root = Path(root) / "etc"
+        override = etc_root / "clickhouse-server" / "config.d" / "00-stage3-yellow.xml"
         override.parent.mkdir(parents=True)
         override.write_text("<clickhouse></clickhouse>\n", encoding="utf-8")
         observed = Path(root) / "observed-systemctl.txt"
         cleanup = fence_with(extract_code_fences(self.read_guide()), "cleanup assertion failed")["body"]
         result = self.run_guide_fragment(cleanup, state, extra_lines=(
-            f"export CH_RPM_OVERRIDE={shlex.quote(str(override))}",
             "export CH_INSTALL_MODE=rpm",
-            'sudo() { "$@"; }',
+            self.sandbox_sudo_stub(),
             systemctl_stub(observed),
             ss_stub(),
-        ))
+        ), env_overrides={"CH_ETC_ROOT": str(etc_root)})
         return result, state, override, observed
 
     def parse_probe(self, stdout):
         """把 key=value 探针输出解析为字典。"""
         return dict(line.split("=", 1) for line in stdout.splitlines() if "=" in line)
+
+    def sandbox_sudo_stub(self):
+        """模拟 sudo：在测试目录内直接执行，拒绝任何真实 /etc 路径的操作。"""
+        return "\n".join((
+            "sudo() {",
+            "  for argument in \"$@\"; do",
+            "    case \"$argument\" in",
+            "      /etc|/etc/*) printf 'refusing real system path: %s\\n' \"$argument\" >&2; return 1 ;;",
+            "    esac",
+            "  done",
+            "  \"$@\"",
+            "}",
+        ))
 
     def loopback_systemctl_stub(self, observed):
         """模拟 systemd：start 时记录覆盖文件状态并标记监听，stop 时清除标记。"""
@@ -1307,6 +1348,39 @@ class YellowGuideContractTest(unittest.TestCase):
             self.assertNotEqual(0, duplicated.returncode, "锚点重复必须失败")
             self.assertIn("config anchor duplicated", duplicated.stderr, "锚点重复必须给出重复原因")
 
+    def test_guide_rpm_override_paths_follow_ch_etc_root(self):
+        """5.3 的覆盖目录、文件写入与校验都使用 CH_ETC_ROOT 派生的 CH_RPM_OVERRIDE。"""
+        fences = extract_code_fences(self.read_guide())
+        self.assertIn(
+            'export CH_RPM_OVERRIDE="$CH_ETC_ROOT/clickhouse-server/config.d/00-stage3-yellow.xml"',
+            shell_preamble(fences),
+            "变量块必须由 CH_ETC_ROOT 派生 CH_RPM_OVERRIDE",
+        )
+        override_fragment = fence_with(fences, "override.sha256")["body"]
+        with tempfile.TemporaryDirectory() as root:
+            etc_root = Path(root) / "etc"
+            state = Path(root) / "state"
+            (state / "clickhouse" / "backup").mkdir(parents=True)
+            (state / "clickhouse" / "log").mkdir(parents=True)
+            completed = self.run_guide_fragment(override_fragment, state, extra_lines=(
+                self.sandbox_sudo_stub(),
+                self.loopback_systemctl_stub(Path(root) / "observed-start.txt"),
+                self.loopback_ss_stub(),
+                "curl() { printf '%s' \"$CH_VERSION\"; }",
+                "journalctl() { return 0; }",
+            ), env_overrides={"CH_ETC_ROOT": str(etc_root)})
+            self.assertEqual(
+                0, completed.returncode, f"5.3 覆盖片段执行失败：{completed.stderr.strip()}",
+            )
+            override = etc_root / "clickhouse-server" / "config.d" / "00-stage3-yellow.xml"
+            self.assertTrue(override.is_file(), "覆盖文件必须写入 CH_ETC_ROOT 派生路径")
+            self.assertIn(
+                "<listen_host>127.0.0.1</listen_host>", override.read_text(encoding="utf-8"),
+                "覆盖文件内容必须与指南给出的回环配置一致",
+            )
+            checksum = (state / "clickhouse" / "backup" / "override.sha256").read_text(encoding="utf-8")
+            self.assertIn(str(override), checksum, "覆盖校验清单必须记录派生路径")
+
     def test_guide_rpm_backup_and_restore_round_trips_real_bytes(self):
         """preexisting=yes 必须先有校验清单，恢复片段真实还原备份字节。"""
         fences = extract_code_fences(self.read_guide())
@@ -1324,14 +1398,15 @@ class YellowGuideContractTest(unittest.TestCase):
             state = Path(root) / "state"
             (state / "clickhouse" / "run").mkdir(parents=True)
             extra = (
-                f"export CH_ETC_ROOT={shlex.quote(str(etc_root))}",
-                f"export CH_RPM_OVERRIDE={shlex.quote(str(etc_root / 'clickhouse-server' / 'config.d' / '00-stage3-yellow.xml'))}",
                 "export CH_INSTALL_MODE=rpm",
-                'sudo() { "$@"; }',
+                self.sandbox_sudo_stub(),
                 self.loopback_systemctl_stub(Path(root) / "observed-start.txt"),
                 self.loopback_ss_stub(),
             )
-            prepared = self.run_guide_fragment(backup, state, extra_lines=extra)
+            etc_environment = {"CH_ETC_ROOT": str(etc_root)}
+            prepared = self.run_guide_fragment(
+                backup, state, extra_lines=extra, env_overrides=etc_environment,
+            )
             self.assertEqual(0, prepared.returncode, f"备份片段执行失败：{prepared.stderr.strip()}")
             backup_dir = state / "clickhouse" / "backup"
             self.assertTrue((backup_dir / "etc-clickhouse-server.tar.gz").is_file(), "preexisting=yes 缺少备份归档")
@@ -1341,15 +1416,23 @@ class YellowGuideContractTest(unittest.TestCase):
             )
 
             (etc_root / "clickhouse-server" / "config.xml").write_bytes(b"<clickhouse>installed</clickhouse>\n")
-            restored = self.run_guide_fragment(cleanup, state, extra_lines=extra)
+            restored = self.run_guide_fragment(
+                cleanup, state, extra_lines=extra, env_overrides=etc_environment,
+            )
             self.assertEqual(0, restored.returncode, f"恢复片段执行失败：{restored.stderr.strip()}")
             self.assertEqual(
                 original, (etc_root / "clickhouse-server" / "config.xml").read_bytes(),
                 "恢复未还原备份字节",
             )
+            self.assertFalse(
+                (etc_root / "clickhouse-server" / "config.d" / "00-stage3-yellow.xml").exists(),
+                "恢复验证的临时覆盖文件必须由 CH_ETC_ROOT 派生路径删除",
+            )
 
         with tempfile.TemporaryDirectory() as root:
             state = Path(root) / "state"
+            etc_root = Path(root) / "etc"
+            (etc_root / "clickhouse-server" / "config.d").mkdir(parents=True)
             backup_dir = state / "clickhouse" / "backup"
             backup_dir.mkdir(parents=True)
             (backup_dir / "preexisting.txt").write_text("preexisting=yes\n", encoding="utf-8")
@@ -1357,10 +1440,10 @@ class YellowGuideContractTest(unittest.TestCase):
             (state / "clickhouse" / "run").mkdir(parents=True)
             incomplete = self.run_guide_fragment(cleanup, state, extra_lines=(
                 "export CH_INSTALL_MODE=rpm",
-                'sudo() { "$@"; }',
+                self.sandbox_sudo_stub(),
                 self.loopback_systemctl_stub(Path(root) / "observed-start.txt"),
                 self.loopback_ss_stub(),
-            ))
+            ), env_overrides={"CH_ETC_ROOT": str(etc_root)})
             self.assertNotEqual(0, incomplete.returncode, "preexisting=yes 缺少校验清单时必须停止")
             self.assertTrue((state / "clickhouse").is_dir(), "缺少校验清单时不得删除状态目录")
 
@@ -1384,16 +1467,16 @@ class YellowGuideContractTest(unittest.TestCase):
             )
             (state / "clickhouse" / "run").mkdir(parents=True)
             observed = Path(root) / "observed-start.txt"
-            override = Path(root) / "etc" / "clickhouse-server" / "config.d" / "00-stage3-yellow.xml"
+            etc_root = Path(root) / "etc"
+            override = etc_root / "clickhouse-server" / "config.d" / "00-stage3-yellow.xml"
             override.parent.mkdir(parents=True)
             override.write_text("<clickhouse></clickhouse>\n", encoding="utf-8")
             completed = self.run_guide_fragment(cleanup, state, extra_lines=(
-                f"export CH_RPM_OVERRIDE={shlex.quote(str(override))}",
                 "export CH_INSTALL_MODE=rpm",
-                'sudo() { "$@"; }',
+                self.sandbox_sudo_stub(),
                 self.loopback_systemctl_stub(observed),
                 self.loopback_ss_stub(),
-            ))
+            ), env_overrides={"CH_ETC_ROOT": str(etc_root)})
             self.assertEqual(0, completed.returncode, f"RPM 恢复验证失败：{completed.stderr.strip()}")
             self.assertEqual(
                 "override-present\n", observed.read_text(encoding="utf-8"),

@@ -1,9 +1,10 @@
 """确定性打包阶段三正式输入，生成可校验的 tar.gz 归档与 SHA-256 清单。
 
-两项产物都以硬链接原子发布，已存在的最终名不会被覆盖。归档最终名是本次两项产物发布完成的提交标记：
+两项产物都以硬链接原子发布，已存在的最终名不会被覆盖。由本工具发布的归档最终名标记一对完整产物：
 先发布清单，最后发布归档；发布中断只可能留下清单，该状态可见且会阻止后续自动覆盖。
 边界：输入源在门禁校验与归档写入之间被修改时，归档记录的是写入时刻读到的字节，本工具不锁定源目录，
-因此不消除该竞态。
+因此不消除该竞态。外来写入者在发布窗口内抢先写入归档最终名时，本次清单已经落盘，两者可以共存；
+摘要不匹配会暴露该状态，归档发布同时抛出错误。
 """
 
 import argparse
@@ -122,7 +123,7 @@ def _sha256(path: Path) -> str:
 
 
 def _temporary_file(output: Path) -> tuple[int, Path]:
-    """在输出目录内创建临时文件，保证重命名不跨文件系统。"""
+    """在输出目录内创建临时文件，保证硬链接发布不跨文件系统。"""
     descriptor, name = tempfile.mkstemp(dir=output, prefix=".package-formal-input-")
     return descriptor, Path(name)
 
@@ -162,9 +163,10 @@ def package_formal_input(input_root: Path, output_dir: Path) -> tuple[Path, Path
         digest = _sha256(archive_temp)
         with checksum_temp.open("wb") as handle:
             handle.write(f"{digest}  {ARCHIVE_NAME}\n".encode("ascii"))
-        # 两项产物都落盘后再发布。归档最终名是提交标记：先发布清单，最后发布归档，
-        # 因此存在归档即表示两项产物都已发布完整。失败恢复不删除任何最终名，
-        # 避免删除并发写入者在本工具归属检查之后替换的文件；中断只留下清单，该状态可见。
+        # 两项产物都落盘后再发布。归档最终名是本工具发布的提交标记：先发布清单，最后发布归档，
+        # 因此本工具的归档存在即表示两项产物都已发布完整，中断只留下清单。失败恢复不删除任何
+        # 最终名，避免删除并发写入者在发布窗口内写入的文件；外来归档与本次清单共存时，
+        # 摘要不匹配会暴露该状态，归档发布同时抛出错误。
         _publish(checksum_temp, checksum_path)
         _publish(archive_temp, archive_path)
     finally:
