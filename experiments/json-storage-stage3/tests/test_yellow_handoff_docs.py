@@ -992,6 +992,27 @@ class YellowGuideContractTest(unittest.TestCase):
         ))
         return subprocess.run(["bash", "-c", script], text=True, capture_output=True, check=False)
 
+    def run_rpm_restore_failure(self, root, systemctl_stub, ss_stub):
+        """构造 RPM 恢复验证的前置状态并执行清理片段，返回结果与关键路径。"""
+        state = Path(root) / "state"
+        backup = state / "clickhouse" / "backup"
+        backup.mkdir(parents=True)
+        (backup / "preexisting.txt").write_text("preexisting=no\n", encoding="utf-8")
+        (state / "clickhouse" / "run").mkdir(parents=True)
+        override = Path(root) / "etc" / "clickhouse-server" / "config.d" / "00-stage3-yellow.xml"
+        override.parent.mkdir(parents=True)
+        override.write_text("<clickhouse></clickhouse>\n", encoding="utf-8")
+        observed = Path(root) / "observed-systemctl.txt"
+        cleanup = fence_with(extract_code_fences(self.read_guide()), "cleanup assertion failed")["body"]
+        result = self.run_guide_fragment(cleanup, state, extra_lines=(
+            f"export CH_RPM_OVERRIDE={shlex.quote(str(override))}",
+            "export CH_INSTALL_MODE=rpm",
+            'sudo() { "$@"; }',
+            systemctl_stub(observed),
+            ss_stub(),
+        ))
+        return result, state, override, observed
+
     def parse_probe(self, stdout):
         """把 key=value 探针输出解析为字典。"""
         return dict(line.split("=", 1) for line in stdout.splitlines() if "=" in line)
@@ -1023,6 +1044,46 @@ class YellowGuideContractTest(unittest.TestCase):
             "    printf '%s\\n' 'LISTEN 0 4096 127.0.0.1:18123 0.0.0.0:*'",
             "    printf '%s\\n' 'LISTEN 0 4096 127.0.0.1:19000 0.0.0.0:*'",
             "  fi",
+            "}",
+        ))
+
+    def recording_systemctl_stub(self, start_status, active_status):
+        """返回 systemctl 模拟函数：把 start 与 stop 调用追加到记录文件，按给定状态返回。"""
+        def stub(observed):
+            return "\n".join((
+                "systemctl() {",
+                "  case \"$1\" in",
+                f"    start) printf 'start\\n' >> {shlex.quote(str(observed))}; return {start_status} ;;",
+                f"    stop) printf 'stop\\n' >> {shlex.quote(str(observed))}; return 0 ;;",
+                f"    is-active) return {active_status} ;;",
+                "  esac",
+                "  return 0",
+                "}",
+            ))
+        return stub
+
+    def recorded_systemctl_calls(self, observed):
+        """返回 systemctl 模拟记录的调用序列；没有记录文件时返回空列表。"""
+        if not observed.is_file():
+            return []
+        return observed.read_text(encoding="utf-8").split()
+
+    def assert_systemctl_stopped_after_start(self, observed, label):
+        """断言记录序列中 start 之后出现 stop，即失败路径确实停止了 clickhouse-server。"""
+        calls = self.recorded_systemctl_calls(observed)
+        self.assertIn("start", calls, f"{label} 必须先启动 clickhouse-server")
+        self.assertIn(
+            "stop", calls[calls.index("start"):],
+            f"{label} 失败后必须停止 clickhouse-server",
+        )
+
+    def any_address_ss_stub(self):
+        """模拟 ss：两个实验端口绑定 0.0.0.0，用于回环断言失败的清理路径。"""
+        return "\n".join((
+            "ss() {",
+            "  printf '%s\\n' 'State Recv-Q Send-Q Local Address:Port Peer Address:Port'",
+            "  printf '%s\\n' 'LISTEN 0 4096 0.0.0.0:18123 0.0.0.0:*'",
+            "  printf '%s\\n' 'LISTEN 0 4096 0.0.0.0:19000 0.0.0.0:*'",
             "}",
         ))
 
@@ -1309,7 +1370,11 @@ class YellowGuideContractTest(unittest.TestCase):
         cleanup = fence_with(fences, "cleanup assertion failed")["body"]
         segment = cleanup[cleanup.index("# 2.3"):]
         self.assertLess(segment.index("systemctl start"), segment.index("assert_ports_loopback_only"), "先启动再验证回环")
-        self.assertLess(segment.index("assert_ports_loopback_only"), segment.index("systemctl stop"), "验证回环后再停止服务")
+        loopback = segment.index("assert_ports_loopback_only")
+        self.assertLess(
+            loopback, segment.index("cleanup_temporary_rpm_override", loopback),
+            "验证回环后调用清理助手停止服务",
+        )
         self.assertLess(segment.index("systemctl stop"), segment.index('rm -f -- "$CH_RPM_OVERRIDE"'), "停止后删除临时覆盖文件")
         with tempfile.TemporaryDirectory() as root:
             state = Path(root) / "state"
@@ -1336,6 +1401,34 @@ class YellowGuideContractTest(unittest.TestCase):
             )
             self.assertFalse(override.exists(), "临时回环覆盖文件必须在验证后删除")
             self.assertFalse((state / "clickhouse").exists(), "状态目录必须删除")
+
+    def test_guide_rpm_restore_verification_cleans_up_when_service_fails(self):
+        """start 或 is-active 失败时必须停服、删除临时覆盖文件，并保留状态目录与失败状态。"""
+        cases = {
+            "start": self.recording_systemctl_stub(start_status=1, active_status=1),
+            "is-active": self.recording_systemctl_stub(start_status=0, active_status=1),
+        }
+        for label, systemctl_stub in cases.items():
+            with self.subTest(service_failure=label), tempfile.TemporaryDirectory() as root:
+                result, state, override, observed = self.run_rpm_restore_failure(
+                    root, systemctl_stub, self.loopback_ss_stub,
+                )
+                self.assertNotEqual(0, result.returncode, f"{label} 失败必须保留非零退出状态")
+                self.assert_systemctl_stopped_after_start(observed, label)
+                self.assertFalse(override.exists(), f"{label} 失败必须删除临时覆盖文件")
+                self.assertTrue((state / "clickhouse").is_dir(), f"{label} 失败必须保留状态目录")
+
+    def test_guide_rpm_restore_verification_cleans_up_when_loopback_fails(self):
+        """回环断言失败时必须停服、删除临时覆盖文件，并保留状态目录与失败状态。"""
+        with tempfile.TemporaryDirectory() as root:
+            result, state, override, observed = self.run_rpm_restore_failure(
+                root, self.recording_systemctl_stub(start_status=0, active_status=0),
+                self.any_address_ss_stub,
+            )
+            self.assertNotEqual(0, result.returncode, "回环断言失败必须保留非零退出状态")
+            self.assert_systemctl_stopped_after_start(observed, "回环断言")
+            self.assertFalse(override.exists(), "回环断言失败必须删除临时覆盖文件")
+            self.assertTrue((state / "clickhouse").is_dir(), "回环断言失败必须保留状态目录")
 
     def test_plan_references_existing_experiment_paths(self):
         """实施计划引用的 Stage 3 路径都必须存在。"""
