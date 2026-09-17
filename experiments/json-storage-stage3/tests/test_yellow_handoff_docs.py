@@ -172,6 +172,25 @@ ALL_WORKLOADS_ARGUMENT = (
     "--workloads main,equal_total_few_large,equal_total_many_medium,correctness_only"
 )
 
+# 代表性 ss 输出：真实 ss 行以对端地址结尾，端口判据必须读取本地地址字段。
+LISTEN_HEADER = "State  Recv-Q Send-Q Local Address:Port  Peer Address:Port Process"
+LISTEN_TABLE_ONLY = LISTEN_HEADER + "\n"
+LISTEN_OCCUPIED = (
+    LISTEN_HEADER + "\n"
+    "LISTEN 0      4096          127.0.0.1:18123       0.0.0.0:*     users:((\"clickhouse\",pid=4242,fd=57))\n"
+    "LISTEN 0      4096             [::1]:19000          [::]:*      users:((\"clickhouse\",pid=4242,fd=58))\n"
+)
+LISTEN_LOOPBACK_ONLY = (
+    LISTEN_HEADER + "\n"
+    "LISTEN 0      4096          127.0.0.1:18123       0.0.0.0:*     users:((\"clickhouse\",pid=4242,fd=57))\n"
+    "LISTEN 0      4096          127.0.0.1:19000       0.0.0.0:*     users:((\"clickhouse\",pid=4242,fd=58))\n"
+)
+LISTEN_ANY_ADDRESS = (
+    LISTEN_HEADER + "\n"
+    "LISTEN 0      4096            0.0.0.0:18123       0.0.0.0:*     users:((\"clickhouse\",pid=4242,fd=57))\n"
+    "LISTEN 0      4096            0.0.0.0:19000       0.0.0.0:*     users:((\"clickhouse\",pid=4242,fd=58))\n"
+)
+
 # 与包内 config.xml 同形的测试模板，用于执行指南的配置改写脚本。
 CONFIG_TEMPLATE = """<clickhouse>
     <logger>
@@ -688,6 +707,7 @@ class YellowGuideContractTest(unittest.TestCase):
             self.assertIn("already clean", second.stdout, "重复执行必须按已清理处理")
             self.assertFalse((state / "clickhouse").exists(), "状态目录未删除")
             self.assertFalse((state / "runs" / "xstore-assets").exists(), "对象目录未删除")
+            self.assertFalse((state / "runs" / "xstore-main").exists(), "XStore 运行目录未删除")
             self.assertTrue((keep / "keep.txt").is_file(), "清理不得触碰指南目录外路径")
 
     def test_guide_defines_python_environment_and_preflight(self):
@@ -756,6 +776,124 @@ class YellowGuideContractTest(unittest.TestCase):
                 "exit 1", fence["body"],
                 f"第 {fence['line']} 行未在发现 ERROR/FATAL 时停止",
             )
+
+
+    def test_guide_uses_address_field_extraction_for_port_gates(self):
+        """端口门禁读取本地地址字段，不使用行尾锚定的 ss 匹配，三处门禁统一调用辅助函数。"""
+        content = self.read_guide()
+        self.assertNotIn(
+            "grep -E ':(18123|19000)$'", content,
+            "ss 输出以对端地址结尾，锚定行尾的端口匹配会失效",
+        )
+        for name in (
+            "listening_local_addresses", "experiment_listeners",
+            "assert_ports_free", "assert_ports_loopback_only",
+        ):
+            self.assertIn(name, content, f"指南缺少端口辅助函数：{name}")
+        fences = extract_code_fences(content)
+        gates = [
+            fence for fence in fences
+            if "assert_ports_free || exit 1" in fence["body"]
+            or "assert_ports_loopback_only || exit 1" in fence["body"]
+        ]
+        self.assertGreaterEqual(
+            len(gates), 3, "占用检查、回环检查与清理确认都必须调用端口辅助函数",
+        )
+
+    def test_guide_port_helpers_detect_listeners_and_accept_free_ports(self):
+        """占用端口被识别，非回环监听被拒绝，只有表头时视为空闲。"""
+        fences = extract_code_fences(self.read_guide())
+        preamble = shell_preamble(fences)
+        samples = {
+            "free": LISTEN_TABLE_ONLY,
+            "occupied": LISTEN_OCCUPIED,
+            "loopback": LISTEN_LOOPBACK_ONLY,
+            "any": LISTEN_ANY_ADDRESS,
+        }
+        for name, sample in samples.items():
+            script = "\n".join((
+                preamble,
+                "ss() { cat <<'SSOUT'",
+                sample.rstrip("\n"),
+                "SSOUT",
+                "}",
+                "assert_ports_free >/dev/null 2>&1; echo \"free=$?\"",
+                "assert_ports_loopback_only >/dev/null 2>&1; echo \"loop=$?\"",
+            ))
+            completed = subprocess.run(
+                ["bash", "-c", script], text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(0, completed.returncode, f"{name} 探针失败：{completed.stderr.strip()}")
+            values = dict(line.split("=") for line in completed.stdout.splitlines() if "=" in line)
+            if name == "free":
+                self.assertEqual("0", values["free"], "只有表头时必须视为端口空闲")
+            else:
+                self.assertEqual("1", values["free"], f"{name} 的占用端口未被识别")
+            if name == "loopback":
+                self.assertEqual("0", values["loop"], "回环双端口监听必须通过回环判据")
+            else:
+                self.assertEqual("1", values["loop"], f"{name} 不应通过回环判据")
+        message_script = "\n".join((
+            preamble,
+            "ss() { cat <<'SSOUT'",
+            LISTEN_OCCUPIED.rstrip("\n"),
+            "SSOUT",
+            "}",
+            "assert_ports_free 2>&1 >/dev/null || true",
+        ))
+        message = subprocess.run(
+            ["bash", "-c", message_script], text=True, capture_output=True, check=False,
+        )
+        self.assertIn("18123", message.stdout, "占用端口必须出现在拒绝信息中")
+
+    def test_guide_cleanup_rpm_branch_rolls_back_guide_owned_override(self):
+        """RPM 清理分支可执行：删除指南覆盖文件、按备份状态恢复、断言覆盖文件消失。"""
+        fences = extract_code_fences(self.read_guide())
+        cleanup = fence_with(fences, "cleanup assertion failed")["body"]
+        self.assertLess(
+            cleanup.index("sha256sum -c"), cleanup.index("tar -xzf"),
+            "备份校验必须先于配置恢复",
+        )
+        self.assertLess(
+            cleanup.index("preexisting.txt"), cleanup.index("tar -xzf"),
+            "配置恢复必须排在 preexisting 判定之后",
+        )
+        self.assertIn("is-active", cleanup, "恢复后必须验证服务状态")
+        self.assertIn("require_rpm_override_path", cleanup, "覆盖文件删除前必须校验路径形状")
+        with tempfile.TemporaryDirectory() as root:
+            state = Path(root) / "state"
+            override = (
+                Path(root) / "etc" / "clickhouse-server" / "config.d" / "00-stage3-yellow.xml"
+            )
+            override.parent.mkdir(parents=True)
+            override.write_text("<clickhouse></clickhouse>\n", encoding="utf-8")
+            (state / "backup").mkdir(parents=True)
+            (state / "backup" / "preexisting.txt").write_text("no\n", encoding="utf-8")
+            (state / "clickhouse" / "log").mkdir(parents=True)
+            (state / "runs" / "xstore-assets").mkdir(parents=True)
+            (state / "runs" / "xstore-main").mkdir(parents=True)
+            script = "\n".join((
+                shell_preamble(fences),
+                f"export YELLOW_STATE={shlex.quote(str(state))}",
+                f"export CH_STATE={shlex.quote(str(state / Path('clickhouse')))}",
+                f"export CH_RPM_OVERRIDE={shlex.quote(str(override))}",
+                "export CH_INSTALL_MODE=rpm",
+                'sudo() { "$@"; }',
+                "systemctl() { return 0; }",
+                "ss() { echo 'State Recv-Q Send-Q Local Address:Port Peer Address:Port'; }",
+                cleanup,
+            ))
+            completed = assert_bash_ok(self, script, "RPM 清理分支")
+            self.assertFalse(override.exists(), "指南创建的覆盖文件必须被删除")
+            self.assertFalse((state / "clickhouse").exists(), "状态目录必须删除")
+            self.assertFalse((state / "runs" / "xstore-assets").exists(), "对象目录必须删除")
+            self.assertFalse((state / "runs" / "xstore-main").exists(), "XStore 运行目录必须删除")
+            self.assertTrue((Path(root) / "etc").is_dir(), "不得删除覆盖文件之外的系统路径")
+            self.assertTrue(
+                (Path(root) / "etc" / "clickhouse-server" / "config.d").is_dir(),
+                "覆盖文件所在目录保持不变",
+            )
+        self.assertIn("cleanup complete", completed.stdout, "清理必须输出完成标记")
 
 
 if __name__ == "__main__":
