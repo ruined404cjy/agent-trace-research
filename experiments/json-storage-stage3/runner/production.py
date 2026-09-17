@@ -240,7 +240,7 @@ def candidate_config(formal: FormalInput, output: Path, asset_root: Path,
         input_root=formal.root, output=Path(output), engine="clickhouse", layout="asset_ref",
         round_index=0, round_order=latin_square()[0], measurements=30,
         batch_measurements=5, input_identity=_thaw(formal.identity), command=tuple(command),
-        asset_root=Path(asset_root).resolve(), verified_events=_thaw(formal.main_events), workload="main",
+        asset_root=Path(asset_root).resolve(), verified_events=_thaw(formal.events), workload="main",
     )
 
 

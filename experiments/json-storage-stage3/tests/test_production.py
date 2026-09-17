@@ -50,7 +50,7 @@ def formal_generation(**changes):
     return value
 
 
-def formal_fixture(root):
+def formal_fixture(root, include_control=False):
     """构造读取边界替身所需的完整正式 identity、truth 与事件序列。"""
     root.mkdir(parents=True, exist_ok=True)
     payload_root = root / "payloads"
@@ -72,6 +72,9 @@ def formal_fixture(root):
     for index in range(48_534):
         profile = payload_profiles.get(index)
         cohort = "main" if profile is not None else None
+        if include_control and index == 48_000:
+            profile = "text_64k"
+            cohort = "equal_total_control"
         payload = None
         if profile is not None:
             payload = (f'{{"event":{index}}}').encode()
@@ -122,9 +125,9 @@ def formal_fixture(root):
     }
 
 
-def load_fixture_formal(root):
+def load_fixture_formal(root, include_control=False):
     """经正式 loader 返回测试所需的已验证输入快照。"""
-    truth, events, identity = formal_fixture(root)
+    truth, events, identity = formal_fixture(root, include_control=include_control)
     (root / "generation-manifest.json").write_text(json.dumps(formal_generation()))
     with patch.object(production, "load_run_input", return_value=(truth, events, identity)):
         return production.load_formal_input(root)
@@ -673,8 +676,22 @@ class ProductionFactoryTest(unittest.TestCase):
         self.assertEqual((config.engine, config.layout, config.workload), ("clickhouse", "asset_ref", "main"))
         self.assertEqual((config.round_index, config.round_order), (0, ("same_table", "separate", "full_core", "asset_ref")))
         self.assertEqual((config.measurements, config.batch_measurements), (30, 5))
-        self.assertEqual(config.verified_events, formal.main_events)
+        self.assertEqual(config.verified_events, formal.events)
         self.assertEqual(production.part_state_inputs(formal), (formal.main_blocks, formal.main_queries))
+
+    def test_candidate_config_keeps_control_payload_for_full_input_preflight(self):
+        """捕获 candidate 在完整 truth 校验前提前投影 main workload。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            formal = load_fixture_formal(root / "formal", include_control=True)
+            config = production.candidate_config(
+                formal, root / "out", root / "assets", ("runner",),
+            )
+
+        self.assertEqual(formal.events[48_000]["cohort"], "equal_total_control")
+        self.assertIsNone(formal.main_events[48_000]["cohort"])
+        self.assertEqual(config.verified_events[48_000], formal.events[48_000])
+        self.assertEqual(config.workload, "main")
 
     def test_factories_reject_handmade_formal_input_without_loader_validation(self):
         """捕获调用方以同类型对象绕过正式 input loader。"""
@@ -1017,7 +1034,7 @@ class ProductionFactoryTest(unittest.TestCase):
         config.input_identity["kind"] = "smoke"
         config.verified_events[0]["event_id"] = "changed"
         self.assertEqual(formal.identity["kind"], "formal")
-        self.assertEqual(formal.main_events[0]["event_id"], "event-00000")
+        self.assertEqual(formal.events[0]["event_id"], "event-00000")
 
     def test_endpoints_reject_whitespace_and_out_of_range_ports(self):
         """捕获不可用的连接身份或端口仍进入 adapter 工厂。"""
