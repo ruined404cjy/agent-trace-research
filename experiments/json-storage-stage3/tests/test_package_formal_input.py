@@ -307,11 +307,14 @@ class PackageFormalInputTest(unittest.TestCase):
         self.assertEqual(self.inventory(self.source), before)
         self.assertFalse((self.source / "out").exists())
 
-    def test_checksum_publication_failure_rolls_back_archive(self):
-        """捕获第二次发布失败后留下没有清单的归档。"""
+    def test_checksum_publication_failure_leaves_no_commit_marker(self):
+        """捕获清单发布失败后留下归档提交标记，或失败恢复删除最终输出路径。"""
         self.output.mkdir()
+        archive_path = self.output / ARCHIVE_NAME
         checksum_path = self.output / CHECKSUM_NAME
         real_publish = packager._publish
+        real_unlink = Path.unlink
+        removed = []
 
         def failing_publish(temporary, final):
             """只让清单发布失败，归档发布保持原行为。"""
@@ -319,23 +322,76 @@ class PackageFormalInputTest(unittest.TestCase):
                 raise OSError("checksum publication failed")
             return real_publish(temporary, final)
 
-        with patch.object(packager, "_publish", failing_publish):
+        def recording_unlink(path, *args, **kwargs):
+            """记录清理与失败恢复阶段删除的最终输出路径。"""
+            if path in (archive_path, checksum_path):
+                removed.append(path)
+            return real_unlink(path, *args, **kwargs)
+
+        with patch.object(packager, "_publish", failing_publish), \
+                patch.object(Path, "unlink", recording_unlink):
             with self.assertRaisesRegex(OSError, "checksum publication failed"):
                 packager.package_formal_input(self.source, self.output)
 
+        self.assertEqual(removed, [])
+        self.assertFalse(archive_path.exists())
+        self.assertFalse(checksum_path.exists())
         self.assert_no_output()
 
+    def test_interrupted_archive_publication_leaves_only_the_checksum(self):
+        """捕获归档最终名发布中断时缺少可见清单、摘要不匹配或删除最终输出路径。"""
+        self.output.mkdir()
+        archive_path = self.output / ARCHIVE_NAME
+        checksum_path = self.output / CHECKSUM_NAME
+        real_publish = packager._publish
+        real_sha256 = packager._sha256
+        real_unlink = Path.unlink
+        digests = []
+        removed = []
+
+        def recording_sha256(path):
+            """记录本次归档的摘要，用于核对清单内容。"""
+            digest = real_sha256(path)
+            digests.append(digest)
+            return digest
+
+        def failing_publish(temporary, final):
+            """只让归档最终名发布失败，清单发布保持原行为。"""
+            if Path(final) == archive_path:
+                raise OSError("archive publication failed")
+            return real_publish(temporary, final)
+
+        def recording_unlink(path, *args, **kwargs):
+            """记录清理与失败恢复阶段删除的最终输出路径。"""
+            if path in (archive_path, checksum_path):
+                removed.append(path)
+            return real_unlink(path, *args, **kwargs)
+
+        with patch.object(packager, "_sha256", recording_sha256), \
+                patch.object(packager, "_publish", failing_publish), \
+                patch.object(Path, "unlink", recording_unlink):
+            with self.assertRaisesRegex(OSError, "archive publication failed"):
+                packager.package_formal_input(self.source, self.output)
+
+        self.assertEqual(removed, [])
+        self.assertFalse(archive_path.exists())
+        self.assertEqual(
+            checksum_path.read_bytes(), f"{digests[-1]}  {ARCHIVE_NAME}\n".encode(),
+        )
+        self.assertEqual(sorted(path.name for path in self.output.iterdir()), [CHECKSUM_NAME])
+
     def test_checksum_failure_does_not_remove_replaced_archive(self):
-        """捕获回滚误删清单发布期间被其他写入者替换的归档。"""
+        """捕获清单发布失败时误删其他写入者已写入的归档最终名。"""
         self.output.mkdir()
         archive_path = self.output / ARCHIVE_NAME
         checksum_path = self.output / CHECKSUM_NAME
         real_publish = packager._publish
 
         def racing_publish(temporary, final):
-            """发布归档后，在清单失败前模拟其他写入者替换最终名。"""
+            """清单发布失败前，模拟其他写入者写入自己的归档最终名。"""
             if Path(final) == checksum_path:
-                archive_path.unlink()
+                if archive_path.exists():
+                    archive_path.unlink()
                 archive_path.write_bytes(b"replacement-archive")
                 raise OSError("checksum publication failed after replacement")
             return real_publish(temporary, final)
@@ -347,10 +403,43 @@ class PackageFormalInputTest(unittest.TestCase):
         self.assertEqual(archive_path.read_bytes(), b"replacement-archive")
         self.assertEqual(sorted(path.name for path in self.output.iterdir()), [ARCHIVE_NAME])
 
-    def test_publication_does_not_overwrite_a_racing_target(self):
-        """捕获并发写入者在门禁之后创建最终名时被覆盖。"""
+    def test_replaced_final_path_in_the_ownership_window_is_not_removed(self):
+        """捕获失败恢复删除归属检查与删除之间被并发写入者替换的最终名。"""
         self.output.mkdir()
         archive_path = self.output / ARCHIVE_NAME
+        checksum_path = self.output / CHECKSUM_NAME
+        replacement = self.workspace / "replacement-archive.tar.gz"
+        replacement.write_bytes(b"replacement-archive")
+        real_publish = packager._publish
+        real_unlink = Path.unlink
+        removed_finals = []
+
+        def failing_publish(temporary, final):
+            """只让清单发布失败，触发归档回滚。"""
+            if Path(final) == checksum_path:
+                raise OSError("checksum publication failed")
+            return real_publish(temporary, final)
+
+        def racing_unlink(path, *args, **kwargs):
+            """删除最终名前模拟并发写入者已用同名文件完成替换。"""
+            if path in (archive_path, checksum_path):
+                os.rename(replacement, path)
+                removed_finals.append(path)
+            return real_unlink(path, *args, **kwargs)
+
+        with patch.object(packager, "_publish", failing_publish), \
+                patch.object(Path, "unlink", racing_unlink):
+            with self.assertRaisesRegex(OSError, "checksum publication failed"):
+                packager.package_formal_input(self.source, self.output)
+
+        self.assertEqual(removed_finals, [])
+        self.assertEqual(replacement.read_bytes(), b"replacement-archive")
+
+    def test_publication_does_not_overwrite_a_racing_target(self):
+        """捕获并发写入者在门禁之后创建最终名时被覆盖，或未留下可见的中断状态。"""
+        self.output.mkdir()
+        archive_path = self.output / ARCHIVE_NAME
+        checksum_path = self.output / CHECKSUM_NAME
         real_write = packager._write_archive
 
         def racing_write(members, target):
@@ -363,7 +452,10 @@ class PackageFormalInputTest(unittest.TestCase):
                 packager.package_formal_input(self.source, self.output)
 
         self.assertEqual(archive_path.read_bytes(), b"racing-archive")
-        self.assertEqual(sorted(path.name for path in self.output.iterdir()), [ARCHIVE_NAME])
+        self.assertEqual(sorted(path.name for path in self.output.iterdir()), [ARCHIVE_NAME, CHECKSUM_NAME])
+        self.assertIsNotNone(
+            re.fullmatch(rf"[0-9a-f]{{64}}  {re.escape(ARCHIVE_NAME)}\n", checksum_path.read_text()),
+        )
 
     def test_write_failure_removes_temporary_files(self):
         """捕获写入中断后留下半成品归档、清单或临时文件。"""
