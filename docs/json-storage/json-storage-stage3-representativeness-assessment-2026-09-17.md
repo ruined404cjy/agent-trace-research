@@ -33,7 +33,7 @@
 | 引擎 | openGauss 6.0.0；ClickHouse 25.12.11.4 | 容器 `agent-trace-opengauss-v6`、`agent-trace-clickhouse-25-12` |
 | 主机 | x86_64、8 CPU、16,291,952 KiB、WSL2 内核 6.6.114.1 | 八 target 同机串行执行 |
 
-该切片缺少 `equal_total_few_large`、`equal_total_many_medium` 与 `correctness_only` 工作负载，尚未通过汇总器的完整 workload 与 provenance 门禁。以切片目录直接调用 `report/summarize.py` 的 `summarize()`，结果为 `ValueError: provenance evidence is incomplete`，因此本评估的数值全部来自各 target 的轮次产物重算，不由汇总器输出。
+该切片缺少 `equal_total_few_large`、`equal_total_many_medium` 与 `correctness_only` 工作负载，尚未通过汇总器的完整 workload 与 provenance 门禁。`report/summarize.py` 的 `summarize()` 接收 target 目录列表，以单个 target 目录（main-matrix-attempt-1/opengauss/same_table）调用它时结果为 `ValueError: provenance evidence is incomplete`，因此本评估的数值全部来自各 target 的轮次产物重算，不由汇总器输出。
 
 本切片不执行新的数据库实验，也不包含 Stage 3 candidate、part-state、混合负载和 Asset 故障实验。
 
@@ -64,7 +64,7 @@
 
 ## 3. 部分切片中的观测区分度
 
-统计口径：先在同一轮内对样本取中位数，再对四轮取中位数，与 `report/summarize.py` 的 `round-first-four-round-median` 一致。下表数值来自 `main-matrix-attempt-1` 的轮次 `result.json` 与轮次 `run-manifest.json`。
+统计口径：先在同一轮内对样本取中位数，再对四轮取中位数，与 `report/summarize.py` 的 `round-first-four-round-median` 一致。下表数值来自 `main-matrix-attempt-1` 的轮次 `result.json` 与轮次 `run-manifest.json`；列表、详情与批量三列是轮次 `result.json` 中 `latency_ms` 统计量的中位数，而 `latency_ms` 是样本 `application_ready_ms` 的分布，应用可用时间覆盖数据库查询、结果恢复与客户端校验。
 
 openGauss（部分正式切片，四轮中位数，单位 ms）：
 
@@ -110,9 +110,9 @@ ClickHouse `detail:text_2m` 的单次查询扫描量在轮次间为常量：
 
 ### 3.3 可以解释的信号
 
-**openGauss `asset_ref` 的批量恢复与写入劣势。** 批量恢复中位数 2,502.9 ms，其余三布局为 934.1–948.1 ms。分项显示该差距来自检索路径切换：`asset_ref` 的数据库查询中位数降到 8.4 ms（其余布局 408.5–423.3 ms），批量恢复总耗时 `recovery_ms` 升到 1,984.5 ms（其余布局 15.9–16.5 ms），其中逐行文件读取 `resolver.read_ms` 中位数约 384 ms，其余布局为 0。写入 wall 14,285.4 ms 高于 9,277.7–11,938.3 ms，其中 `asset_publish_ms` 中位数约 1.05 s。
+**openGauss `asset_ref` 的批量恢复与写入劣势。** 批量恢复到应用可用的中位数（`application_ready_ms`）为 2,502.9 ms，其余三布局为 934.1–948.1 ms。分项显示该差距来自检索路径切换：`asset_ref` 的数据库查询中位数降到 8.4 ms（其余布局 408.5–423.3 ms），查询后结果恢复阶段 `recovery_ms` 升到 1,984.5 ms（其余布局 15.9–16.5 ms），其中逐行文件读取 `resolver.read_ms` 中位数约 384 ms，其余布局为 0。写入 wall 14,285.4 ms 高于 9,277.7–11,938.3 ms，其中 `asset_publish_ms` 中位数约 1.05 s。
 
-**ClickHouse 的布局相关扫描字节与详情中位数。** 详情扫描字节如上表；对应的详情中位数为 `asset_ref` 25.092 ms、其余布局 34.288–35.371 ms。批量恢复中 `asset_ref` 的数据库查询中位数降到 13.3 ms，批量恢复总耗时 `recovery_ms` 升到 1,284.1 ms（其中逐行文件读取 `resolver.read_ms` 中位数约 392 ms），总量 1,795.8 ms 与其余布局 1,678.4–1,779.9 ms 接近。该差异在单主机、串行、无并发条件下取得，作为机制方向性证据。
+**ClickHouse 的布局相关扫描字节与详情中位数。** 详情扫描字节如上表；对应的详情 `application_ready_ms` 中位数为 `asset_ref` 25.092 ms、其余布局 34.288–35.371 ms。批量恢复中 `asset_ref` 的数据库查询中位数降到 13.3 ms，查询后结果恢复阶段 `recovery_ms` 升到 1,284.1 ms（其中逐行文件读取 `resolver.read_ms` 中位数约 392 ms），应用可用总量 1,795.8 ms 与其余布局 1,678.4–1,779.9 ms 接近。该差异在单主机、串行、无并发条件下取得，作为机制方向性证据。
 
 **写入成本粗排序。** 两引擎一致：`same_table` < `separate` < `full_core` < `asset_ref`。openGauss 9,277.7 / 11,470.1 / 11,938.3 / 14,285.4 ms，ClickHouse 5,307.1 / 7,936.6 / 8,476.7 / 9,979.8 ms。`full_core` 与 `separate` 的差距小于各自到 `same_table` 的差距，该排序只作为方案级先后顺序。
 

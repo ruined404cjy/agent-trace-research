@@ -1,4 +1,9 @@
-"""确定性打包阶段三正式输入，生成可校验的 tar.gz 归档与 SHA-256 清单。"""
+"""确定性打包阶段三正式输入，生成可校验的 tar.gz 归档与 SHA-256 清单。
+
+两项产物都以硬链接原子发布，已存在的最终名不会被覆盖；清单发布失败时只撤回仍属于本次写入的归档。
+边界：输入源在门禁校验与归档写入之间被修改时，归档记录的是写入时刻读到的字节，本工具不锁定源目录，
+因此不消除该竞态。
+"""
 
 import argparse
 import gzip
@@ -121,13 +126,32 @@ def _temporary_file(output: Path) -> tuple[int, Path]:
     return descriptor, Path(name)
 
 
+def _publish(temporary: Path, final: Path):
+    """以硬链接发布最终名；目标已存在时抛 FileExistsError 且不覆盖。"""
+    try:
+        os.link(temporary, final)
+    except FileExistsError:
+        raise FileExistsError(f"refusing to overwrite {final}") from None
+
+
+def _rollback_owned_publish(temporary: Path, final: Path):
+    """仅在最终名仍链接本次临时文件时撤回发布，保留并发替换的文件。"""
+    try:
+        if temporary.exists() and final.exists() and os.path.samefile(temporary, final):
+            final.unlink()
+    except FileNotFoundError:
+        return
+
+
 def package_formal_input(input_root: Path, output_dir: Path) -> tuple[Path, Path]:
     """Validate and package the frozen Stage 3 input reproducibly."""
     root = Path(input_root).resolve()
+    output = Path(output_dir).resolve()
+    if output == root or output.is_relative_to(root):
+        raise ValueError(f"output directory must be outside the input root: {output}")
     production.load_formal_input(root)
     members = _archive_members(root)
 
-    output = Path(output_dir)
     output.mkdir(parents=True, exist_ok=True)
     archive_path = output / ARCHIVE_NAME
     checksum_path = output / CHECKSUM_NAME
@@ -146,10 +170,13 @@ def package_formal_input(input_root: Path, output_dir: Path) -> tuple[Path, Path
         digest = _sha256(archive_temp)
         with checksum_temp.open("wb") as handle:
             handle.write(f"{digest}  {ARCHIVE_NAME}\n".encode("ascii"))
-        # 两项产物都落盘后再重命名，失败路径只留临时文件供清理。
-        archive_temp.replace(archive_path)
-        checksum_temp.replace(checksum_path)
-        temporary.clear()
+        # 两项产物都落盘后再发布；清单发布失败时撤回已发布的归档，避免留下无清单的归档。
+        _publish(archive_temp, archive_path)
+        try:
+            _publish(checksum_temp, checksum_path)
+        except BaseException:
+            _rollback_owned_publish(archive_temp, archive_path)
+            raise
     finally:
         for path in temporary:
             path.unlink(missing_ok=True)
