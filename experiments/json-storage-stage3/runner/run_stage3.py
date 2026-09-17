@@ -953,7 +953,7 @@ def _gate_candidate(child, formal, namespace):
         raise RuntimeError("candidate maintenance evidence mismatch")
     cleanup = _require_object(manifest, "cleanup")
     if (
-        cleanup.get("namespace") != namespace
+        cleanup.get("namespace") != clickhouse.database_name(namespace, "asset_ref")
         or cleanup.get("removed") is not True
         or cleanup.get("asset_directory_removed") is not True
     ):

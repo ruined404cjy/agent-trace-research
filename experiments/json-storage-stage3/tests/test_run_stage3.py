@@ -135,7 +135,11 @@ def valid_child(formal, namespace="jsons3_candidate_0123456789"):
             "completed": True, "natural_stable_parts": True, "optimize_final": False,
             "watermarks": {"assets": 48_534, "events_analytics": 48_534},
         },
-        "cleanup": {"namespace": namespace, "removed": True, "asset_directory_removed": True},
+        "cleanup": {
+            "namespace": namespace + "_asset_ref",
+            "removed": True,
+            "asset_directory_removed": True,
+        },
         "code": {
             role: {"path": f"/{role}.py", "bytes": 1, "sha256": "c" * 64}
             for role in ("runner", "common", "assets", "adapter")
@@ -558,6 +562,23 @@ class CandidateTests(unittest.TestCase):
             self.assertEqual(envelope["query_catalog_sha256"], query_digest(formal))
             self.assertEqual(envelope["runtime"]["endpoint"], {"host": "127.0.0.1", "port": 18123})
             self.assertEqual(envelope["child"]["path"], "child/run-manifest.json")
+
+    def test_candidate_gate_accepts_physical_cleanup_database(self):
+        """捕获 candidate gate 把 base namespace 当作 ClickHouse 物理数据库。"""
+        with tempfile.TemporaryDirectory() as directory:
+            try:
+                result, output, _ = self.run_candidate(Path(directory))
+            except RuntimeError as error:
+                self.fail(f"valid physical cleanup database was rejected: {error}")
+            envelope = json.loads((output / "run-manifest.json").read_text())
+
+        self.assertEqual(result, 0)
+        self.assertEqual(
+            envelope["namespace_policy"]["namespace"], "jsons3_candidate_0123456789",
+        )
+        self.assertEqual(
+            envelope["cleanup"]["namespace"], "jsons3_candidate_0123456789_asset_ref",
+        )
 
     def test_candidate_failure_preserves_identities_and_namespace_when_available(self):
         """捕获 create/run/gate 故障丢失已验证 formal 身份或本次 namespace。"""
