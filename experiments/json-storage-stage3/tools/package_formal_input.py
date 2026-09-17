@@ -1,6 +1,7 @@
 """确定性打包阶段三正式输入，生成可校验的 tar.gz 归档与 SHA-256 清单。
 
-两项产物都以硬链接原子发布，已存在的最终名不会被覆盖；清单发布失败时只撤回仍属于本次写入的归档。
+两项产物都以硬链接原子发布，已存在的最终名不会被覆盖。归档最终名是本次两项产物发布完成的提交标记：
+先发布清单，最后发布归档；发布中断只可能留下清单，该状态可见且会阻止后续自动覆盖。
 边界：输入源在门禁校验与归档写入之间被修改时，归档记录的是写入时刻读到的字节，本工具不锁定源目录，
 因此不消除该竞态。
 """
@@ -134,15 +135,6 @@ def _publish(temporary: Path, final: Path):
         raise FileExistsError(f"refusing to overwrite {final}") from None
 
 
-def _rollback_owned_publish(temporary: Path, final: Path):
-    """仅在最终名仍链接本次临时文件时撤回发布，保留并发替换的文件。"""
-    try:
-        if temporary.exists() and final.exists() and os.path.samefile(temporary, final):
-            final.unlink()
-    except FileNotFoundError:
-        return
-
-
 def package_formal_input(input_root: Path, output_dir: Path) -> tuple[Path, Path]:
     """Validate and package the frozen Stage 3 input reproducibly."""
     root = Path(input_root).resolve()
@@ -170,13 +162,11 @@ def package_formal_input(input_root: Path, output_dir: Path) -> tuple[Path, Path
         digest = _sha256(archive_temp)
         with checksum_temp.open("wb") as handle:
             handle.write(f"{digest}  {ARCHIVE_NAME}\n".encode("ascii"))
-        # 两项产物都落盘后再发布；清单发布失败时撤回已发布的归档，避免留下无清单的归档。
+        # 两项产物都落盘后再发布。归档最终名是提交标记：先发布清单，最后发布归档，
+        # 因此存在归档即表示两项产物都已发布完整。失败恢复不删除任何最终名，
+        # 避免删除并发写入者在本工具归属检查之后替换的文件；中断只留下清单，该状态可见。
+        _publish(checksum_temp, checksum_path)
         _publish(archive_temp, archive_path)
-        try:
-            _publish(checksum_temp, checksum_path)
-        except BaseException:
-            _rollback_owned_publish(archive_temp, archive_path)
-            raise
     finally:
         for path in temporary:
             path.unlink(missing_ok=True)
