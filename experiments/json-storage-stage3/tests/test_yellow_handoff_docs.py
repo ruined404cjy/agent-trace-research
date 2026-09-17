@@ -59,6 +59,14 @@ COMPLETION_SCOPES = (
 
 MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 
+# 批量恢复的数值必须与产生它的字段标注在同一行，避免把恢复总耗时写成 resolver 读取。
+BATCH_METRIC_ATTRIBUTION = (
+    ("1,984.5", "`recovery_ms`"),
+    ("1,284.1", "`recovery_ms`"),
+    ("384 ms", "`resolver.read_ms`"),
+    ("392 ms", "`resolver.read_ms`"),
+)
+
 
 class AssessmentDocumentContractTest(unittest.TestCase):
     """验证代表性评估文档存在，并满足交接受众所需的契约。"""
@@ -121,6 +129,17 @@ class AssessmentDocumentContractTest(unittest.TestCase):
                 f"链接指向仓库外路径：{target}",
             )
             self.assertTrue(resolved.exists(), f"链接目标不存在：{target}")
+
+    def test_batch_metrics_keep_their_own_fields(self):
+        """批量恢复总耗时标注为 recovery_ms，逐行读取标注为 resolver.read_ms。"""
+        content = self.read_document()
+        for number, field in BATCH_METRIC_ATTRIBUTION:
+            lines = [line for line in content.splitlines() if number in line]
+            self.assertTrue(lines, f"评估缺少批量恢复数值：{number}")
+            for line in lines:
+                self.assertIn(
+                    field, line, f"{number} 未标注为 {field}：{line.strip()}",
+                )
 
 
 if __name__ == "__main__":
