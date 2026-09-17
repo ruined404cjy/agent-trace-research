@@ -96,19 +96,41 @@ export CH_BIN="$CH_STATE/opt/clickhouse-common-static-${CH_VERSION}/usr/bin/clic
 export CH_CONFIG="$CH_STATE/etc/config.xml"
 export CH_HTTP_PORT=18123
 export CH_TCP_PORT=19000
-export PYTHON=python3
+export CH_INSTALL_MODE=tgz
+export CH_PIP_REQUIREMENT='psycopg[binary]==3.3.5'
+export PYTHON_BOOTSTRAP=python3
+export PYTHON="$YELLOW_STATE/venv/bin/python"
 
 require_guide_path() {
-  # 只允许删除本指南创建的状态目录，其他路径一律拒绝。
+  # 只允许删除本指南创建的状态目录下的路径；空根、相对路径、根目录与目录外路径一律拒绝。
   local target="$1"
+  local root="${YELLOW_STATE:-}"
+  if [ -z "$root" ] || [ "$root" = "/" ]; then
+    printf 'refusing to delete: YELLOW_STATE is empty or root\n' >&2
+    return 1
+  fi
+  if [ -z "$target" ]; then
+    printf 'refusing to delete: empty target\n' >&2
+    return 1
+  fi
   case "$target" in
-    "${YELLOW_STATE}"/?*) ;;
-    *) printf 'refusing to delete %s\n' "$target" >&2; return 1 ;;
+    /*) ;;
+    *) printf 'refusing to delete relative path %s\n' "$target" >&2; return 1 ;;
   esac
-  case "$target" in
-    */../*|*/..) printf 'refusing to delete %s\n' "$target" >&2; return 1 ;;
+  local root_path target_path
+  root_path=$(cd -- "$root" 2>/dev/null && pwd -P) || {
+    printf 'refusing to delete: YELLOW_STATE does not exist: %s\n' "$root" >&2
+    return 1
+  }
+  target_path=$(cd -- "$target" 2>/dev/null && pwd -P) || {
+    printf 'refusing to delete: target does not exist: %s\n' "$target" >&2
+    return 1
+  }
+  case "$target_path" in
+    "$root_path"/?*) ;;
+    *) printf 'refusing to delete %s outside %s\n' "$target_path" "$root_path" >&2; return 1 ;;
   esac
-  [ -d "$target" ] || { printf 'refusing to delete missing %s\n' "$target" >&2; return 1; }
+  printf '%s\n' "$target_path"
   return 0
 }
 ```
@@ -119,10 +141,10 @@ require_guide_path() {
 
 ```bash
 mkdir -p "$YELLOW_STATE" "$YELLOW_RELEASE"
-test -d "$YELLOW_WORKSPACE"
 
 if ! git ls-remote --exit-code --heads "$YELLOW_REPO_HTTPS" "$YELLOW_BRANCH" \
      >"$YELLOW_STATE/branch-check.txt" 2>&1; then
+  cat "$YELLOW_STATE/branch-check.txt" >&2
   printf 'branch %s is unavailable; stop here\n' "$YELLOW_BRANCH" >&2
   exit 1
 fi
@@ -169,7 +191,7 @@ mkdir -p "$YELLOW_STATE/probe"
   sudo -n true 2>/dev/null && echo 'privilege=sudo' || echo 'privilege=no-sudo'
   command -v gsql || true
   command -v python3 || true
-  "$PYTHON" -c 'import sys; print(sys.version)'
+  "$PYTHON_BOOTSTRAP" -c 'import sys; print(sys.version)'
 } 2>&1 | tee "$YELLOW_STATE/probe/environment.txt"
 ```
 
@@ -212,6 +234,40 @@ mkdir -p "$YELLOW_STATE/probe"
 | cleanup | namespace、对象目录与临时配置的确定性清理方式与确认方式 |
 | cache_control | 冷热缓存控制动作及其生效证据 |
 
+### 3.3 Python 运行环境
+
+Stage 3 runner 需要 Python 3.10 及以上（adapter 契约使用 PEP 604 联合类型标注），并需要 psycopg 供 openGauss adapter 的导入链使用，其余代码只用标准库。蓝区实测环境为 Python 3.11.6 与 psycopg 3.3.5，黄区按相同版本对齐。
+
+依赖来源限定为黄区策略批准的 PyPI 镜像；镜像不可用时在蓝区用同一解释器执行 pip download 生成 wheelhouse 并随交接材料传入，黄区用 --no-index --find-links 安装同一 pin 版本。系统 python3 只用于创建虚拟环境，不用于 loader 与 runner。
+
+```bash
+cd "$YELLOW_REPO"
+"$PYTHON_BOOTSTRAP" -m venv "$YELLOW_STATE/venv"
+"$YELLOW_STATE/venv/bin/python" -m pip install --upgrade pip
+"$YELLOW_STATE/venv/bin/python" -m pip install "$CH_PIP_REQUIREMENT"
+"$YELLOW_STATE/venv/bin/python" -m pip freeze | tee "$YELLOW_STATE/probe/python-freeze.txt"
+```
+
+虚拟环境前置检查在创建后立即执行，任一项失败即停止：
+
+```bash
+"$YELLOW_STATE/venv/bin/python" - <<'PY'
+import importlib
+import sys
+
+if sys.version_info < (3, 10):
+    raise SystemExit(f"python >= 3.10 required, found {sys.version.split()[0]}")
+
+psycopg = importlib.import_module("psycopg")
+if not psycopg.__version__.startswith("3."):
+    raise SystemExit(f"psycopg 3.x required, found {psycopg.__version__}")
+
+print(f"python={sys.version.split()[0]} psycopg={psycopg.__version__}")
+PY
+```
+
+该检查必须输出 python 与 psycopg 版本，版本或依赖不符时停止。runner 导入检查在取得仓库后执行，见 4.1 节；虚拟环境版本与 freeze 清单记入运行记录，供后续复现。
+
 ## 4. 仓库与冻结输入获取
 
 ### 4.1 获取代码并固定 HEAD
@@ -230,6 +286,26 @@ git -C "$YELLOW_REPO" log --oneline -3
 ```
 
 运行记录写明实际 HEAD，分支名只作为查找入口。基线提交 93ebf2319ae7cb60b1f68eb53b3562d26f80f443 是所有结果的祖先提交。
+
+仓库就绪后立即执行 runner 导入检查：
+
+```bash
+cd "$YELLOW_REPO"
+"$PYTHON" - <<'PY'
+import importlib
+import sys
+
+sys.path.insert(0, "experiments/json-storage-stage3/runner")
+production = importlib.import_module("production")
+if not callable(getattr(production, "load_formal_input", None)):
+    raise SystemExit("load_formal_input is unavailable")
+
+psycopg = importlib.import_module("psycopg")
+print(f"python={sys.version.split()[0]} psycopg={psycopg.__version__} runner=importable")
+PY
+```
+
+该检查必须输出 runner=importable。缺少 psycopg 时 production 的导入链（production → opengauss → psycopg）会失败，属于停止条件：不进入 4.3 节的冻结身份校验，也不执行任何 runner 命令。
 
 ### 4.2 下载并校验冻结输入
 
@@ -337,9 +413,36 @@ sha512sum clickhouse-common-static-${CH_VERSION}-arm64.tgz \
 
 sha512sum -c 对三个包都必须输出 OK。摘要文件使用标准校验格式（摘要、两个空格、文件名），在校验目录内直接执行 sha512sum -c 即可。
 
-### 5.3 有 root 与 RPM 权限时的安装路径
+### 5.3 root 与 RPM 权限路径
+
+RPM 路径与 TGZ 路径互斥：每台主机只选一条路径，并把 CH_INSTALL_MODE 设为 rpm 或 tgz 记入运行记录。两条路径使用同一 HTTP 端口 18123 与原生端口 19000，同时安装会互相冲突。
+
+RPM 路径写入系统位置。按 rpm -qlp 核对，clickhouse-server-25.12.11.4.aarch64.rpm 与同批包安装后涉及的路径如下。
+
+| 路径 | 归属 |
+|---|---|
+| /etc/clickhouse-server/config.xml、/etc/clickhouse-server/users.xml | 包默认配置 |
+| /etc/clickhouse-server/config.d/00-stage3-yellow.xml | 本指南创建的回环与端口覆盖 |
+| /lib/systemd/system/clickhouse-server.service | systemd 单元 |
+| /usr/bin/clickhouse、/usr/bin/clickhouse-server、/usr/bin/clickhouse-client | 多调用二进制与符号链接 |
+| /var/lib/clickhouse、/var/log/clickhouse-server | 包创建的数据与日志目录 |
+
+回滚范围覆盖指南创建项与包默认配置：停止服务、删除覆盖文件、恢复备份的 /etc/clickhouse-server、重新启动并验证。包创建的数据目录保留，实验数据由 runner 的按 namespace DROP DATABASE 清理；只有在操作者明确决定该主机不再保留 ClickHouse 时，才执行包移除与数据目录处理。
+
+备份、下载与安装：
 
 ```bash
+export CH_INSTALL_MODE=rpm
+mkdir -p "$CH_STATE/backup"
+if [ -d /etc/clickhouse-server ]; then
+  sudo tar -czf "$CH_STATE/backup/etc-clickhouse-server.tar.gz" -C /etc clickhouse-server
+  sha256sum "$CH_STATE/backup/etc-clickhouse-server.tar.gz" \
+    | tee "$CH_STATE/backup/etc-clickhouse-server.sha256"
+  printf 'preexisting=yes\n' | tee "$CH_STATE/backup/preexisting.txt"
+else
+  printf 'preexisting=no\n' | tee "$CH_STATE/backup/preexisting.txt"
+fi
+
 cd "$CH_STATE/pkg"
 for name in clickhouse-common-static clickhouse-server clickhouse-client; do
   file="${name}-${CH_VERSION}.aarch64.rpm"
@@ -357,13 +460,72 @@ sudo dnf install -y ./clickhouse-common-static-${CH_VERSION}.aarch64.rpm \
 command -v clickhouse clickhouse-server clickhouse-client
 ```
 
-RPM 资产没有随 Release 提供 SHA-512 摘要，该路径记录 RPM 的 SHA-256 与 rpm -K 输出，并以服务端 SELECT version() 返回值作为运行版本证据。需要按摘要验证包完整性时使用 5.4 节的 TGZ 路径。
+RPM 资产没有随 Release 提供 SHA-512 摘要，该路径记录包 SHA-256 与 rpm -K 输出，并以服务端 SELECT version() 返回值作为运行版本证据；需要摘要级校验时使用 5.4 节的 TGZ 路径。rpm -K 的验收语义：摘要行必须为 digests OK；出现 NOKEY 表示本机缺少发布者公钥，该行允许存在，前提是摘要行仍为 OK 且操作者把 NOKEY 状态记入运行记录；出现 BAD、NOT OK 或 MISSING KEYS 时停止并重新下载。
+
+回环覆盖与服务验证：
+
+```bash
+sudo install -d -m 0755 /etc/clickhouse-server/config.d
+sudo tee /etc/clickhouse-server/config.d/00-stage3-yellow.xml >/dev/null <<'XML'
+<clickhouse>
+    <listen_host>127.0.0.1</listen_host>
+    <http_port>18123</http_port>
+    <tcp_port>19000</tcp_port>
+</clickhouse>
+XML
+sudo sha256sum /etc/clickhouse-server/config.d/00-stage3-yellow.xml \
+  | tee "$CH_STATE/backup/override.sha256"
+
+sudo systemctl start clickhouse-server
+sudo systemctl is-active clickhouse-server
+
+ready=0
+for attempt in $(seq 1 60); do
+  version=$(curl -sS --max-time 3 "http://127.0.0.1:18123/?query=SELECT%20version()" 2>/dev/null || true)
+  if [ "$version" = "$CH_VERSION" ]; then
+    ready=1
+    break
+  fi
+  sleep 2
+done
+test "$ready" = 1
+
+ss -ltn | grep -E ':(18123|19000)$'
+sudo journalctl -u clickhouse-server --no-pager -n 100 | tee "$CH_STATE/log/journal.txt"
+if grep -En '<Error>|<Fatal>' "$CH_STATE/log/journal.txt"; then
+  printf 'clickhouse journal contains <Error> or <Fatal>; stop here\n' >&2
+  exit 1
+fi
+```
+
+服务验证判据：systemctl is-active 输出 active，curl 返回 25.12.11.4，18123 与 19000 只出现在 127.0.0.1 上，journal 中无 <Error> 或 <Fatal>。
+
+回滚：
+
+```bash
+sudo systemctl stop clickhouse-server || true
+sudo rm -f -- /etc/clickhouse-server/config.d/00-stage3-yellow.xml
+if [ "$(cat "$CH_STATE/backup/preexisting.txt")" = "yes" ]; then
+  sudo tar -xzf "$CH_STATE/backup/etc-clickhouse-server.tar.gz" -C /etc
+fi
+sudo systemctl start clickhouse-server
+sudo systemctl is-active clickhouse-server
+```
+
+包移除只在操作者明确决定该主机不再保留 ClickHouse 时执行，范围限定为三个包：
+
+```bash
+sudo dnf remove -y clickhouse-server clickhouse-client clickhouse-common-static
+```
+
+/var/lib/clickhouse 与 /var/log/clickhouse-server 属于包创建目录，本指南的自动清理不删除它们；需要清理时由操作者单独确认并记录。
 
 ### 5.4 无 root 时的 TGZ 独立运行路径
 
 该路径在用户目录内运行独立的 server、client、data、log 与配置文件，不写入系统目录。
 
 ```bash
+export CH_INSTALL_MODE=tgz
 mkdir -p "$CH_STATE/opt" "$CH_STATE/etc"
 cd "$CH_STATE/pkg"
 for name in clickhouse-common-static clickhouse-server clickhouse-client; do
@@ -377,7 +539,7 @@ cp "$CH_STATE/opt/clickhouse-server-${CH_VERSION}/etc/clickhouse-server/users.xm
   "$CH_STATE/etc/users.xml"
 
 mkdir -p "$CH_STATE/data" "$CH_STATE/tmp" "$CH_STATE/user_files" \
-  "$CH_STATE/format_schemas" "$CH_STATE/access" "$CH_STATE/log"
+  "$CH_STATE/format_schemas" "$CH_STATE/caches" "$CH_STATE/access" "$CH_STATE/log"
 
 sha256sum "$CH_BIN" | tee "$CH_STATE/pkg/clickhouse-binary-sha256.txt"
 ```
@@ -413,6 +575,8 @@ text = replace("<log>/var/log/clickhouse-server/clickhouse-server.log</log>",
                f"<log>{state}/log/clickhouse-server.log</log>")
 text = replace("<errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>",
                f"<errorlog>{state}/log/clickhouse-server.err.log</errorlog>")
+text = replace("<custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>",
+               f"<custom_cached_disks_base_directory>{state}/caches/</custom_cached_disks_base_directory>")
 text = replace("<path>/var/lib/clickhouse/</path>", f"<path>{state}/data/</path>")
 text = replace("<tmp_path>/var/lib/clickhouse/tmp/</tmp_path>", f"<tmp_path>{state}/tmp/</tmp_path>")
 text = replace("<user_files_path>/var/lib/clickhouse/user_files/</user_files_path>",
@@ -424,7 +588,8 @@ text = replace("<path>/var/lib/clickhouse/access/</path>", f"<path>{state}/acces
 text = replace("<http_port>8123</http_port>",
                f"<listen_host>127.0.0.1</listen_host>\n    <http_port>{http_port}</http_port>")
 text = replace("<tcp_port>9000</tcp_port>", f"<tcp_port>{tcp_port}</tcp_port>")
-text = replace("<max_server_memory_usage>0</max_server_memory_usage>",
+# 包内已有生效的 ratio 元素，按值替换保持唯一；max_server_memory_usage 保留包默认 0（自动）。
+text = replace("<max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>",
                "<max_server_memory_usage_to_ram_ratio>0.5</max_server_memory_usage_to_ram_ratio>")
 destination.parent.mkdir(parents=True, exist_ok=True)
 destination.write_text(text, encoding="utf-8")
@@ -445,11 +610,21 @@ expect("path", f"{state}/data/")
 expect("tmp_path", f"{state}/tmp/")
 expect("user_files_path", f"{state}/user_files/")
 expect("format_schema_path", f"{state}/format_schemas/")
+expect("custom_cached_disks_base_directory", f"{state}/caches/")
+expect("max_server_memory_usage", "0")
 expect("http_port", http_port)
 expect("tcp_port", tcp_port)
 expect("listen_host", "127.0.0.1")
 expect("user_directories/users_xml/path", f"{state}/etc/users.xml")
 expect("user_directories/local_directory/path", f"{state}/access/")
+
+ratios = root.findall("max_server_memory_usage_to_ram_ratio")
+if len(ratios) != 1 or (ratios[0].text or "").strip() != "0.5":
+    raise SystemExit("max_server_memory_usage_to_ram_ratio must be the only active ratio element with value 0.5")
+
+listeners = root.findall("listen_host")
+if len(listeners) != 1 or (listeners[0].text or "").strip() != "127.0.0.1":
+    raise SystemExit("listen_host must be the only active listener and bound to 127.0.0.1")
 
 digest = hashlib.sha256(destination.read_bytes()).hexdigest()
 print(f"config={destination} sha256={digest}")
@@ -457,6 +632,8 @@ PY
 ```
 
 改写后的配置只监听 127.0.0.1，HTTP 端口 18123 与 runner 默认端点一致，原生协议端口 19000 用于客户端查询。实验期间不得把监听地址改成对外地址。
+
+包内 config.xml 的 listen_host 行全部处于注释状态（含 IPv6 回环 ::1 与 127.0.0.1 两个示例），脚本插入一条生效的 127.0.0.1，因此只监听 IPv4 回环，IPv6 回环与其他网络接口都不监听；生效 listen_host 数量为 1 由脚本断言。多盘示例块内的 /data/ 与 blob 元数据路径同样位于注释内，不参与生效配置。
 
 ### 5.5 启动、健康检查与版本证据
 
@@ -481,7 +658,7 @@ curl -sS "http://127.0.0.1:${CH_HTTP_PORT}/?query=SELECT%20version()"
 "$CH_BIN" client --host 127.0.0.1 --port "$CH_TCP_PORT" --query 'SELECT version()'
 ```
 
-健康判据：curl 与客户端都返回 25.12.11.4，18123 与 19000 只出现在 127.0.0.1 上，server-console.log 无异常。启动失败或版本不一致时保留日志并停止，不进入 adapter 与实验阶段。
+健康判据：curl 与客户端都返回 25.12.11.4，18123 与 19000 只出现在 127.0.0.1 上，启动日志不含 <Error> 或 <Fatal> 标记。启动失败、版本不一致或出现上述标记时保留日志并停止，不进入 adapter 与实验阶段。
 
 ```bash
 listeners=$(ss -ltn | awk 'NR>1 {print $4}' | grep -E ':(18123|19000)$' || true)
@@ -489,31 +666,46 @@ printf '%s\n' "$listeners"
 loopback=$(printf '%s\n' "$listeners" | grep -c '^127\.0\.0\.1:' || true)
 total=$(printf '%s\n' "$listeners" | grep -c ':' || true)
 test "$loopback" = "$total"
+
+grep -En '<Error>|<Fatal>' "$CH_STATE/log/server-console.log" \
+  "$CH_STATE/log/clickhouse-server.log" | tee "$CH_STATE/log/error-scan.txt" || true
+if [ -s "$CH_STATE/log/error-scan.txt" ]; then
+  printf 'clickhouse startup log contains <Error> or <Fatal>; stop here\n' >&2
+  exit 1
+fi
 ```
 
 ### 5.6 稳定版本回退
 
 黄区安全策略不允许使用 25.12.11.4 时，改用策略批准的 ARM64 stable 或 LTS 版本，并在运行记录中写明策略依据、包名与运行版本。结论限定为黄区同机 XStore/ClickHouse 对比，不与蓝区 ClickHouse 数值合并；需要跨区趋势时先记录版本差异，并由蓝区按相同版本复测。
 
-### 5.7 停止与清理
+### 5.7 停止服务
+
+暂停或结束实验时先停止引擎，再收集证据。本节不删除目录；目录、覆盖配置与备份的清理在第 9.1 节执行，重复执行保持幂等。
 
 ```bash
-if [ -f "$CH_STATE/run/clickhouse.pid" ]; then
-  kill "$(cat "$CH_STATE/run/clickhouse.pid")"
-  for attempt in $(seq 1 30); do
-    kill -0 "$(cat "$CH_STATE/run/clickhouse.pid")" 2>/dev/null || break
-    sleep 1
-  done
+if [ "$CH_INSTALL_MODE" = "rpm" ]; then
+  sudo systemctl stop clickhouse-server || true
+  if sudo systemctl is-active --quiet clickhouse-server; then
+    printf 'clickhouse-server is still active after stop; stop here\n' >&2
+    exit 1
+  fi
+else
+  if [ -f "$CH_STATE/run/clickhouse.pid" ]; then
+    kill "$(cat "$CH_STATE/run/clickhouse.pid")"
+    for attempt in $(seq 1 30); do
+      kill -0 "$(cat "$CH_STATE/run/clickhouse.pid")" 2>/dev/null || break
+      sleep 1
+    done
+  fi
+fi
+if ss -ltn | grep -E ':(18123|19000)$'; then
+  printf 'clickhouse ports are still listening; stop here\n' >&2
+  exit 1
 fi
 ```
 
-实验结束并完成证据收集后删除指南创建的目录：
-
-```bash
-require_guide_path "$CH_STATE" || exit 1
-rm -rf -- "$CH_STATE"
-test ! -d "$CH_STATE"
-```
+停止与确认完成后按第 9.1 节执行清理；清理片段可重复执行，已经缺失的目录按已清理处理。
 
 ## 6. XStore adapter 实施门禁
 
@@ -559,9 +751,29 @@ XStore adapter 实现 [common.py](../../experiments/json-storage-stage3/runner/c
 2. 工厂：[production.py](../../experiments/json-storage-stage3/runner/production.py) 的 create_adapter 与 EngineEndpoints 增加 xstore 端点，保持未实现 engine 的拒绝行为。
 3. 运行入口：[run_stage3.py](../../experiments/json-storage-stage3/runner/run_stage3.py) 的 candidate、part-states、interference、asset-failures 操作按引擎扩展，或在 xstore 不适用时在运行清单中记录不适用与原因。
 4. 汇总器：[summarize.py](../../experiments/json-storage-stage3/report/summarize.py) 增加 xstore 分支，保持既有 workload、provenance、访问路径、维护状态与清理门禁不变。
-5. 引擎身份证据：现有 run manifest 对 opengauss 与 clickhouse 引擎要求容器镜像摘要，黄区无 Docker 时该证据不可得。接入时改为记录包身份证据：ClickHouse 的包文件名、包 SHA-512、二进制 SHA-256、配置 SHA-256 与服务端版本；XStore 的产品版本、安装路径与服务状态。该改动先补测试，再进入正式执行。
+5. 引擎身份证据：无 Docker 的 ClickHouse 与 XStore 都缺少容器镜像摘要，接入前先按 6.4 节实现原生包引擎身份证据并补测试。
 
-### 6.4 布局边界
+### 6.4 原生包引擎身份契约
+
+现有 run manifest 在写入 container 字段时对 engine 为 opengauss 与 clickhouse 的目标调用 docker inspect，缺少镜像摘要即报 container image digest evidence is missing。黄区不使用 Docker，该门禁必然失败，因此 ClickHouse 与 XStore 都要先完成同一项代码改动并通过测试，才能进入 7.1 节第 3 阶段的单 target candidate。改动完成前，现有 runner 不支持无 Docker 的本机引擎。
+
+引擎身份证据改为原生包身份，字段与来源如下。
+
+| 字段 | ClickHouse TGZ 路径 | ClickHouse RPM 路径 | XStore |
+|---|---|---|---|
+| engine | clickhouse | clickhouse | xstore |
+| engine_version | 服务端 SELECT version() | 服务端 SELECT version() | 能力报告的版本查询 |
+| product_path | $CH_BIN 的解包路径 | /usr/bin/clickhouse | 能力报告的安装路径 |
+| package_files | 三个 tgz 文件名 | 三个 rpm 文件名 | 能力报告的安装包清单 |
+| package_checksums | 三个 .sha512 校验结果 | 包 SHA-256 与 rpm -K 结果 | 能力报告的校验方式与结果 |
+| binary_sha256 | sha256sum "$CH_BIN" | sha256sum /usr/bin/clickhouse | 能力报告的二进制或等价身份 |
+| config_identity | config.xml 路径与 SHA-256 | config.d 覆盖文件路径与 SHA-256 | 能力报告的配置身份 |
+| service_identity | PID 文件与启动命令 | systemd 单元与 is-active 结果 | 能力报告的服务与进程状态 |
+| host | uname -n 与 uname -m | 同左 | 同左 |
+
+改动范围与验收：runner 的 container 证据路径按 engine 分流，容器引擎保持原行为，原生包引擎写入上表字段；缺少 engine_version、package_checksums 或 binary_sha256 时同样拒绝发布 complete manifest。该改动需要单元测试覆盖两类引擎的分流与缺字段拒绝，并在正式矩阵前完成一次单 target candidate 验证。
+
+### 6.5 布局边界
 
 asset_ref 保留为应用侧参考布局：查询引用与 assets 记录，再由应用侧 resolver 读取本地内容寻址目录，两引擎使用同一实现。XStore extension 或进程内对象读取属于数据库内调度，定义为第五个候选布局 db_lob_ref，使用独立的查询、存储与失败语义，单独汇总，不重命名 asset_ref，也不并入四布局矩阵的排序。
 
@@ -589,14 +801,14 @@ cd "$YELLOW_REPO"
   --output "$YELLOW_OUTPUT/clickhouse-main" \
   --engines clickhouse \
   --layouts same_table,separate,full_core,asset_ref \
-  --workloads main \
+  --workloads main,equal_total_few_large,equal_total_many_medium,correctness_only \
   --measurements 30 \
   --batch-measurements 5 \
   --clickhouse-host 127.0.0.1 \
   --clickhouse-port "$CH_HTTP_PORT"
 ```
 
-同一命令可用于 equal_total_few_large、equal_total_many_medium 与 correctness_only 工作负载；四个工作负载分别输出统计口径，不与 main 合并。命令保留在 target run-manifest.json 的 command 字段中。
+一次调用必须列出全部四个 workload：三个性能 workload 各四轮 Latin square，correctness_only 一轮。汇总器要求每个 target 的 workload 证据同时包含 main、equal_total_few_large、equal_total_many_medium 与 correctness_only，缺任一项即拒绝发布；可发布的 target 只由本条命令产生。分次调用会覆盖同一 target 的 run-manifest.json 与轮次目录，留下不完整的 provenance，属于无效运行。四个 workload 分别输出统计口径，不与 main 合并，命令保留在 target run-manifest.json 的 command 字段中。
 
 ### 7.3 XStore 侧运行
 
@@ -608,7 +820,7 @@ python experiments/json-storage-stage3/runner/run_layout_matrix.py \
   --output <输出根>/xstore-main \
   --engines xstore \
   --layouts same_table,separate,full_core,asset_ref \
-  --workloads main \
+  --workloads main,equal_total_few_large,equal_total_many_medium,correctness_only \
   --measurements 30 \
   --batch-measurements 5
 ```
@@ -653,19 +865,41 @@ python experiments/json-storage-stage3/runner/run_layout_matrix.py \
 
 ### 9.1 清理顺序
 
-清理顺序固定为：停止 XStore 侧运行中的查询与后台任务，删除 XStore namespace 与对象目录，停止 ClickHouse，删除 ClickHouse 状态目录，确认端口不再监听。
+清理保持幂等：已经缺失的目录按已清理处理，最终断言始终执行。顺序为停止 XStore 侧查询与后台任务，删除 XStore namespace 与对象目录，停止 ClickHouse，按安装路径回滚 ClickHouse 配置，删除指南创建的状态目录，确认端口不再监听。
 
 ```bash
-require_guide_path "$YELLOW_STATE/clickhouse" || exit 1
-rm -rf -- "$YELLOW_STATE/clickhouse"
-if [ -d "$YELLOW_STATE/runs/xstore-assets" ]; then
-  require_guide_path "$YELLOW_STATE/runs/xstore-assets" || exit 1
-  rm -rf -- "$YELLOW_STATE/runs/xstore-assets"
+# 1) XStore 侧：确认无运行中的查询与后台任务后删除 namespace 与对象目录，命令来自能力报告，
+#    删除后确认对象清单为空。
+
+# 2) ClickHouse 侧：先停止；RPM 路径再按 5.3 节回滚覆盖配置并恢复备份，读取备份前不删除状态目录。
+#    RPM 路径在执行第 3 步前先运行 5.3 节的回滚命令，删除覆盖文件并恢复备份。
+if [ "$CH_INSTALL_MODE" = "rpm" ]; then
+  sudo systemctl stop clickhouse-server || true
+elif [ -f "$CH_STATE/run/clickhouse.pid" ]; then
+  kill "$(cat "$CH_STATE/run/clickhouse.pid")" 2>/dev/null || true
 fi
+
+# 3) 删除指南创建的状态目录，缺失即视为已清理。
+for target in "$YELLOW_STATE/clickhouse" "$YELLOW_STATE/runs/xstore-assets" "$YELLOW_STATE/runs/xstore-main"; do
+  if [ -d "$target" ]; then
+    require_guide_path "$target" || exit 1
+    rm -rf -- "$target"
+  else
+    printf 'already clean: %s\n' "$target"
+  fi
+done
+
+# 4) 最终断言始终执行。
 test ! -d "$YELLOW_STATE/clickhouse"
+test ! -d "$YELLOW_STATE/runs/xstore-assets"
+if ss -ltn | grep -E ':(18123|19000)$'; then
+  printf 'experiment ports are still listening; stop here\n' >&2
+  exit 1
+fi
+printf 'cleanup complete: %s\n' "$YELLOW_STATE"
 ```
 
-删除范围限定为指南创建的状态目录。对象目录与临时配置无法清理时停止后续运行，并记录未清理对象清单。
+删除范围限定为指南创建的状态目录；RPM 路径的系统覆盖文件按 5.3 节的固定字面路径删除，包创建的 /var/lib/clickhouse 与 /var/log/clickhouse-server 不在自动清理范围内。对象目录、后台任务或临时配置无法清理时停止后续运行，并记录未清理对象清单。
 
 ### 9.2 回传材料
 

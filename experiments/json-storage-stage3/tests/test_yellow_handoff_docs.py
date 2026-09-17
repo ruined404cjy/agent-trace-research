@@ -2,8 +2,11 @@
 
 import json
 import re
+import shlex
 import subprocess
+import tempfile
 import unittest
+import xml.etree.ElementTree as ElementTree
 from pathlib import Path
 
 
@@ -157,11 +160,56 @@ FORBIDDEN_PUBLICATION_CLAIMS = (
 
 STOP_CONDITION_MARKERS = ("停止", "git ls-remote", "可用性")
 
-# shell 片段检查依赖指南标记的变量声明块，删除命令必须带路径守卫。
+# shell 片段检查依赖指南标记的变量声明块；递归删除必须带路径守卫。
 PREAMBLE_MARKER = "<!-- shell-preamble -->"
 FENCE_OPEN = re.compile(r"^(?P<fence>(?:`{3,}|~{3,}))\s*(?P<info>[^\n]*?)\s*$")
-DELETION_COMMAND = re.compile(r"\brm\s+-[A-Za-z]*[rRf]")
+RECURSIVE_DELETION = re.compile(r"\brm\s+-[A-Za-z]*[rR]")
+ANY_DELETION = re.compile(r"\brm\s+-")
 DELETION_GUARD = "require_guide_path"
+# RPM 路径只删除本指南创建的固定覆盖文件，路径为字面常量。
+FIXED_RPM_OVERRIDE = "/etc/clickhouse-server/config.d/00-stage3-yellow.xml"
+ALL_WORKLOADS_ARGUMENT = (
+    "--workloads main,equal_total_few_large,equal_total_many_medium,correctness_only"
+)
+
+# 与包内 config.xml 同形的测试模板，用于执行指南的配置改写脚本。
+CONFIG_TEMPLATE = """<clickhouse>
+    <logger>
+        <log>/var/log/clickhouse-server/clickhouse-server.log</log>
+        <errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>
+    </logger>
+    <!--
+    <storage_configuration>
+        <disks>
+            <blob_storage_disk>
+                <metadata_path>/var/lib/clickhouse/disks/blob_storage_disk/</metadata_path>
+            </blob_storage_disk>
+        </disks>
+    </storage_configuration>
+    -->
+    <custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>
+    <http_port>8123</http_port>
+    <tcp_port>9000</tcp_port>
+    <!--
+    <listen_host>::1</listen_host>
+    <listen_host>127.0.0.1</listen_host>
+    -->
+    <max_server_memory_usage>0</max_server_memory_usage>
+    <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
+    <path>/var/lib/clickhouse/</path>
+    <tmp_path>/var/lib/clickhouse/tmp/</tmp_path>
+    <user_files_path>/var/lib/clickhouse/user_files/</user_files_path>
+    <format_schema_path>/var/lib/clickhouse/format_schemas/</format_schema_path>
+    <user_directories>
+        <users_xml>
+            <path>users.xml</path>
+        </users_xml>
+        <local_directory>
+            <path>/var/lib/clickhouse/access/</path>
+        </local_directory>
+    </user_directories>
+</clickhouse>
+"""
 
 
 def extract_code_fences(text):
@@ -212,6 +260,39 @@ def assert_shell_syntax(case, script, label):
         0, completed.returncode,
         f"{label} 未通过 bash -n：{completed.stderr.strip()}",
     )
+
+
+def assert_bash_ok(case, script, label):
+    """执行受控 shell 片段，非零退出时输出命令结果以便定位。"""
+    completed = subprocess.run(
+        ["bash", "-c", script], text=True, capture_output=True, check=False,
+    )
+    case.assertEqual(
+        0, completed.returncode,
+        f"{label} 执行失败：{completed.stderr.strip()} {completed.stdout.strip()}",
+    )
+    return completed
+
+
+def fence_with(fences, needle):
+    """返回首个正文包含 needle 的围栏；缺失时直接失败。"""
+    for fence in fences:
+        if needle in fence["body"]:
+            return fence
+    raise AssertionError(f"指南缺少包含 {needle} 的代码块")
+
+
+def heredoc_body(body, marker):
+    """提取 <<'MARKER' 与其后单独 MARKER 行之间的脚本正文。"""
+    lines = body.splitlines()
+    opener = "<<'" + marker + "'"
+    start = next(
+        index for index, line in enumerate(lines) if line.rstrip().endswith(opener)
+    )
+    end = next(
+        index for index in range(start + 1, len(lines)) if lines[index].strip() == marker
+    )
+    return "\n".join(lines[start + 1:end])
 
 
 class AssessmentDocumentContractTest(unittest.TestCase):
@@ -326,6 +407,10 @@ class YellowGuideContractTest(unittest.TestCase):
     def test_guide_stops_when_branch_or_release_is_unavailable(self):
         """指南要求先做可用性检查，且不把推送或发布写成已完成事实。"""
         content = self.read_guide()
+        self.assertIn(
+            'cat "$YELLOW_STATE/branch-check.txt" >&2', content,
+            "分支可用性失败时必须回显检查输出",
+        )
         for marker in STOP_CONDITION_MARKERS:
             self.assertIn(marker, content, f"指南缺少停止条件标记：{marker}")
         for claim in FORBIDDEN_PUBLICATION_CLAIMS:
@@ -475,17 +560,201 @@ class YellowGuideContractTest(unittest.TestCase):
             )
 
     def test_guide_deletion_commands_are_guarded(self):
-        """删除命令限制在指南创建的目录内，并带路径守卫。"""
+        """递归删除限制在指南创建的目录内；唯一例外是指南创建的固定覆盖文件。"""
         fences = extract_code_fences(self.read_guide())
         preamble = shell_preamble(fences)
         self.assertIn(DELETION_GUARD, preamble, "指南缺少删除路径守卫函数")
         self.assertIn("refusing", preamble, "指南的删除守卫必须拒绝非指南目录")
-        deletions = [fence for fence in fences if DELETION_COMMAND.search(fence["body"])]
+        deletions = [fence for fence in fences if ANY_DELETION.search(fence["body"])]
         self.assertTrue(deletions, "指南缺少清理命令")
         for fence in deletions:
+            self.assertTrue(
+                DELETION_GUARD in fence["body"] or FIXED_RPM_OVERRIDE in fence["body"],
+                f"第 {fence['line']} 行的删除命令既无路径守卫，也不是固定覆盖文件",
+            )
+        for fence in fences:
+            if not RECURSIVE_DELETION.search(fence["body"]):
+                continue
             self.assertIn(
                 DELETION_GUARD, fence["body"],
-                f"第 {fence['line']} 行的删除命令缺少路径守卫",
+                f"第 {fence['line']} 行的递归删除缺少路径守卫",
+            )
+            self.assertNotIn(
+                FIXED_RPM_OVERRIDE, fence["body"],
+                f"第 {fence['line']} 行不得递归删除系统路径",
+            )
+
+
+    def test_guide_shell_preamble_runs_and_guard_rejects_unsafe_paths(self):
+        """前置变量块可执行；删除守卫拒绝空根、相对路径、目录外与状态根目录本身。"""
+        fences = extract_code_fences(self.read_guide())
+        preamble = shell_preamble(fences)
+        with tempfile.TemporaryDirectory() as root:
+            state = Path(root) / "state"
+            inside = state / "child"
+            outside = Path(root) / "outside"
+            inside.mkdir(parents=True)
+            outside.mkdir()
+            probe = "\n".join((
+                f"export YELLOW_STATE={shlex.quote(str(state))}",
+                'probe() { require_guide_path "$1" >/dev/null 2>&1; echo "$?"; }',
+                f'echo "inside=$(probe {shlex.quote(str(inside))})"',
+                f'echo "outside=$(probe {shlex.quote(str(outside))})"',
+                f'echo "root=$(probe {shlex.quote(str(state))})"',
+                f'echo "traversal=$(probe {shlex.quote(str(state / ".." / "state"))})"',
+                'echo "relative=$(probe relative/child)"',
+                f'echo "missing=$(probe {shlex.quote(str(state / "missing"))})"',
+                f'echo "empty_root=$(YELLOW_STATE= probe {shlex.quote(str(inside))})"',
+                f'echo "message=$(require_guide_path {shlex.quote(str(outside))} 2>&1 >/dev/null || true)"',
+            ))
+            completed = assert_bash_ok(self, preamble + "\n" + probe, "前置变量块与删除守卫")
+        values = dict(
+            line.split("=", 1) for line in completed.stdout.splitlines() if "=" in line
+        )
+        self.assertEqual("0", values["inside"], "守卫必须放行状态目录内的路径")
+        for name in ("outside", "root", "traversal", "relative", "missing", "empty_root"):
+            self.assertNotEqual("0", values[name], f"守卫必须拒绝 {name}")
+        self.assertIn("refusing", values["message"], "拒绝时必须输出 refusing 说明")
+
+    def test_guide_config_rewrite_pins_state_paths_and_single_memory_ratio(self):
+        """TGZ 配置改写把路径与端口指向状态目录，并只保留一个生效内存比例。"""
+        fences = extract_code_fences(self.read_guide())
+        script = heredoc_body(fence_with(fences, "config anchor not unique")["body"], "PY")
+        with tempfile.TemporaryDirectory() as root:
+            template = Path(root) / "config.xml"
+            template.write_text(CONFIG_TEMPLATE, encoding="utf-8")
+            output = Path(root) / "etc" / "config.xml"
+            state = Path(root) / "state"
+            completed = subprocess.run(
+                ["python3", "-", str(template), str(output), str(state), "18123", "19000"],
+                input=script, text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(
+                0, completed.returncode, f"配置改写脚本执行失败：{completed.stderr.strip()}",
+            )
+            text = output.read_text(encoding="utf-8")
+        tree = ElementTree.fromstring(text)
+        expected = {
+            "logger/log": f"{state}/log/clickhouse-server.log",
+            "logger/errorlog": f"{state}/log/clickhouse-server.err.log",
+            "path": f"{state}/data/",
+            "tmp_path": f"{state}/tmp/",
+            "user_files_path": f"{state}/user_files/",
+            "format_schema_path": f"{state}/format_schemas/",
+            "custom_cached_disks_base_directory": f"{state}/caches/",
+            "http_port": "18123",
+            "tcp_port": "19000",
+            "listen_host": "127.0.0.1",
+            "user_directories/users_xml/path": f"{state}/etc/users.xml",
+            "user_directories/local_directory/path": f"{state}/access/",
+            "max_server_memory_usage": "0",
+        }
+        for path, value in expected.items():
+            self.assertEqual(value, tree.findtext(path), f"配置项 {path} 未按预期改写")
+        ratios = tree.findall("max_server_memory_usage_to_ram_ratio")
+        self.assertEqual(1, len(ratios), "生效内存比例必须只有一个")
+        self.assertEqual("0.5", (ratios[0].text or "").strip(), "内存比例必须改写为 0.5")
+        self.assertEqual(
+            1, text.count("<max_server_memory_usage_to_ram_ratio>"), "内存比例元素出现重复",
+        )
+        self.assertEqual(1, len(tree.findall("listen_host")), "生效 listen_host 必须只有一个")
+        self.assertIn("<listen_host>::1</listen_host>", text, "包内注释示例保持注释状态")
+        self.assertNotIn("<path>/var/lib/clickhouse/</path>", text, "数据目录必须指向状态目录")
+
+    def test_guide_cleanup_is_idempotent_and_keeps_foreign_paths(self):
+        """清理片段可重复执行：状态目录被删除，重复执行成功，目录外路径不变。"""
+        fences = extract_code_fences(self.read_guide())
+        cleanup = fence_with(fences, "already clean")["body"]
+        with tempfile.TemporaryDirectory() as root:
+            state = Path(root) / "state"
+            keep = Path(root) / "keep"
+            for relative in ("clickhouse/data", "runs/xstore-assets", "runs/xstore-main"):
+                target = state / relative
+                target.mkdir(parents=True)
+                (target / "sentinel.txt").write_text("x", encoding="utf-8")
+            keep.mkdir()
+            (keep / "keep.txt").write_text("keep", encoding="utf-8")
+            script = "\n".join((
+                shell_preamble(fences),
+                f"export YELLOW_STATE={shlex.quote(str(state))}",
+                "export CH_INSTALL_MODE=tgz",
+                f"export CH_STATE={shlex.quote(str(state / Path('clickhouse')))}",
+                "ss() { echo 'State Recv-Q Send-Q Local Address:Port Peer Address:Port'; }",
+                cleanup,
+            ))
+            first = assert_bash_ok(self, script, "清理片段第一次执行")
+            second = assert_bash_ok(self, script, "清理片段第二次执行")
+            self.assertIn("cleanup complete", first.stdout, "最终断言必须执行")
+            self.assertIn("already clean", second.stdout, "重复执行必须按已清理处理")
+            self.assertFalse((state / "clickhouse").exists(), "状态目录未删除")
+            self.assertFalse((state / "runs" / "xstore-assets").exists(), "对象目录未删除")
+            self.assertTrue((keep / "keep.txt").is_file(), "清理不得触碰指南目录外路径")
+
+    def test_guide_defines_python_environment_and_preflight(self):
+        """指南给出可复现虚拟环境与依赖来源，并在 loader 前做版本与导入检查。"""
+        content = self.read_guide()
+        for term in (
+            "-m venv", "-m pip install", "psycopg[binary]==3.3.5", "PYTHON_BOOTSTRAP",
+            "sys.version_info < (3, 10)", 'import_module("psycopg")',
+            'import_module("production")', "load_formal_input", "runner=importable",
+        ):
+            self.assertIn(term, content, f"指南缺少 Python 环境契约：{term}")
+        fences = extract_code_fences(content)
+        self.assertTrue(
+            [fence for fence in fences if "runner=importable" in fence["body"]],
+            "指南缺少 Python 前置检查代码块",
+        )
+
+    def test_guide_documents_native_package_engine_identity_contract(self):
+        """无 Docker 的 ClickHouse 与 XStore 都要先完成原生包引擎身份改动与测试。"""
+        content = self.read_guide()
+        for term in (
+            "container image digest evidence is missing", "原生包引擎身份",
+            "engine_version", "package_checksums", "binary_sha256", "config_identity",
+            "单 target candidate", "ClickHouse", "XStore",
+        ):
+            self.assertIn(term, content, f"指南缺少引擎身份契约：{term}")
+
+    def test_guide_runs_all_workloads_in_one_invocation(self):
+        """可发布 target 必须在一次调用中列出四个 workload，分次调用属于无效运行。"""
+        fences = extract_code_fences(self.read_guide())
+        clickhouse = [fence for fence in fences if "--engines clickhouse" in fence["body"]]
+        self.assertTrue(clickhouse, "指南缺少 ClickHouse 矩阵调用")
+        for fence in clickhouse:
+            self.assertIn(
+                ALL_WORKLOADS_ARGUMENT, fence["body"],
+                f"第 {fence['line']} 行的 ClickHouse 调用未列出四个 workload",
+            )
+        for fence in fences:
+            for line in fence["body"].splitlines():
+                stripped = line.strip().rstrip("\\").strip()
+                self.assertNotEqual(
+                    "--workloads main", stripped,
+                    f"第 {fence['line']} 行只列出 main workload",
+                )
+        content = self.read_guide()
+        for term in ("覆盖同一 target 的 run-manifest.json", "无效运行"):
+            self.assertIn(term, content, f"指南缺少单次调用说明：{term}")
+
+    def test_guide_makes_rpm_and_tgz_paths_exclusive(self):
+        """RPM 与 TGZ 路径互斥，RPM 具备备份、服务验证、回滚与卸载语义。"""
+        content = self.read_guide()
+        for term in (
+            "互斥", "CH_INSTALL_MODE", "systemctl start clickhouse-server",
+            "systemctl stop clickhouse-server", "dnf remove", "tar -czf",
+            FIXED_RPM_OVERRIDE, "NOKEY", "digests OK", "preexisting",
+        ):
+            self.assertIn(term, content, f"指南缺少 RPM 路径契约：{term}")
+
+    def test_guide_treats_error_and_fatal_logs_as_failures(self):
+        """启动日志出现 <Error> 或 <Fatal> 标记时停止。"""
+        fences = extract_code_fences(self.read_guide())
+        scanners = [fence for fence in fences if "<Error>|<Fatal>" in fence["body"]]
+        self.assertTrue(scanners, "指南缺少 ERROR/FATAL 日志判据")
+        for fence in scanners:
+            self.assertIn(
+                "exit 1", fence["body"],
+                f"第 {fence['line']} 行未在发现 ERROR/FATAL 时停止",
             )
 
 
