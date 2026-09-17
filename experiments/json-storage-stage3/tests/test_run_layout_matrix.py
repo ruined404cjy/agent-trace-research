@@ -414,6 +414,23 @@ class LayoutMatrixUnitTest(unittest.TestCase):
                 "clickhouse", "same_table", "formal", (sample,), access, "jsons3_test",
             )
 
+    def test_formal_clickhouse_access_accepts_primary_key_granule_pruning(self):
+        """捕获 ClickHouse Granules 计划被误判为缺少 mark-range 证据。"""
+        plan = "\n".join((
+            '{"explain":"ReadFromMergeTree (events_analytics)"}',
+            '{"explain":"Indexes:"}',
+            '{"explain":"  PrimaryKey"}',
+            '{"explain":"    Condition: project_id = \'Leoxx/whowhen_pro\'"}',
+            '{"explain":"    Parts: 1/6"}',
+            '{"explain":"    Granules: 4/11"}',
+            '{"explain":"    Search Algorithm: binary search"}',
+        ))
+
+        self.assertEqual(
+            runner._formal_access_structure("clickhouse", "list", plan),
+            "primary-key-mark-pruning",
+        )
+
     def test_access_rejects_opengauss_composite_null_projection(self):
         """捕获 COALESCE 形式的 NULL 投影仍实际读取 payload。"""
         statement = access_statement(

@@ -1228,9 +1228,12 @@ def _formal_access_structure(engine, kind, plan):
         return "query-plan-index" if has_runtime and has_index else None
     if engine == "clickhouse":
         has_primary_key = "primarykey" in normalized or "primary key" in normalized
-        has_marks = "marks" in normalized
+        has_mark_ranges = "marks" in normalized or "granules:" in normalized
         has_condition = "condition" in normalized
-        return "primary-key-mark-pruning" if has_primary_key and has_marks and has_condition else None
+        return (
+            "primary-key-mark-pruning"
+            if has_primary_key and has_mark_ranges and has_condition else None
+        )
     return "test-engine"
 
 
