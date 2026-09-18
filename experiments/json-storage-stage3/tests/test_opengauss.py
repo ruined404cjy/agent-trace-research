@@ -87,15 +87,18 @@ class RecordingResult:
 class CatalogReuseConnection:
     """按语句分派主查询与 catalog 读取，并统计自身关闭次数。"""
 
-    def __init__(self, requests, query_rows, catalog_rows):
+    def __init__(self, requests, query_rows, catalog_rows, failing_asset_id=None):
         self.requests = requests
         self.query_rows = query_rows
         self.catalog_rows = catalog_rows
+        self.failing_asset_id = failing_asset_id
         self.close_count = 0
 
     def execute(self, statement, parameters=None):
         self.requests.append((self, statement, parameters))
         if "assets WHERE asset_id=" in statement:
+            if parameters[0] == self.failing_asset_id:
+                raise RuntimeError("injected catalog failure")
             row = self.catalog_rows.get(parameters[0])
             return RecordingResult(() if row is None else (row,))
         return RecordingResult(self.query_rows)
@@ -258,10 +261,13 @@ class OpenGaussAdapterUnitTest(unittest.TestCase):
         self.assertIn("resolver_read_ms", result_fields)
 
     @staticmethod
-    def _catalog_connection_factory(requests, connections, query_rows, catalog_rows):
+    def _catalog_connection_factory(requests, connections, query_rows, catalog_rows,
+                                    failing_asset_id=None):
         """返回记录新建连接的 connect_worker 替身。"""
         def connect_worker():
-            connection = CatalogReuseConnection(requests, query_rows, catalog_rows)
+            connection = CatalogReuseConnection(
+                requests, query_rows, catalog_rows, failing_asset_id,
+            )
             connections.append(connection)
             return connection
         return connect_worker
@@ -387,6 +393,54 @@ class OpenGaussAdapterUnitTest(unittest.TestCase):
 
             self.assertEqual(len(connections), 1)
             self.assertEqual(connections[0].close_count, 1)
+
+    def test_two_asset_queries_do_not_share_a_closed_catalog_connection(self):
+        """捕获跨查询复用上一条查询已关闭的 catalog 连接。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first, second = b"first asset payload", b"second asset payload"
+            store, catalog_rows, rows = asset_query_fixture(root, [first, second, first])
+            requests, connections = [], []
+            adapter = opengauss.OpenGaussAdapter(
+                "127.0.0.1", 15432, "unused", "jsons3_test", "asset_ref", root, store,
+            )
+            adapter.connect_worker = self._catalog_connection_factory(
+                requests, connections, rows, catalog_rows,
+            )
+
+            first_result = adapter.run_query(QuerySpec("batch", {"cohort": "main"}))
+            second_result = adapter.run_query(QuerySpec("batch", {"cohort": "main"}))
+
+            catalog_statements = self._catalog_statements(requests)
+            catalog_connections = [id(entry[0]) for entry in catalog_statements]
+            self.assertEqual([row["payload"] for row in first_result.rows], [first, second, first])
+            self.assertEqual([row["payload"] for row in second_result.rows], [first, second, first])
+            self.assertEqual(len(connections), 4)
+            self.assertEqual(catalog_connections.count(id(connections[1])), 3)
+            self.assertEqual(catalog_connections.count(id(connections[3])), 3)
+            self.assertEqual(len(set(catalog_connections)), 2)
+            self.assertEqual([connection.close_count for connection in connections], [1, 1, 1, 1])
+
+    def test_catalog_select_failure_propagates_and_closes_the_query_connection(self):
+        """捕获 catalog SELECT 抛异常时未关闭查询作用域连接或吞掉异常。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first, second = b"first asset payload", b"second asset payload"
+            store, catalog_rows, rows = asset_query_fixture(root, [first, second, first])
+            requests, connections = [], []
+            adapter = opengauss.OpenGaussAdapter(
+                "127.0.0.1", 15432, "unused", "jsons3_test", "asset_ref", root, store,
+            )
+            adapter.connect_worker = self._catalog_connection_factory(
+                requests, connections, rows, catalog_rows,
+                failing_asset_id=hashlib.sha256(second).hexdigest(),
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "^injected catalog failure$"):
+                adapter.run_query(QuerySpec("batch", {"cohort": "main"}))
+
+            self.assertEqual(len(connections), 2)
+            self.assertEqual([connection.close_count for connection in connections], [1, 1])
 
 
 @unittest.skipUnless(os.environ.get("RUN_OPENGAUSS_INTEGRATION") == "1",
