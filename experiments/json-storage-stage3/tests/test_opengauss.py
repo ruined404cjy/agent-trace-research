@@ -1,4 +1,6 @@
+import datetime
 import hashlib
+import json
 import os
 import sys
 import tempfile
@@ -64,6 +66,73 @@ def fixture(root):
          "content_length": len(CONTROL_PAYLOAD), "preview": CONTROL_PAYLOAD.decode(),
          "sha256": control_digest, "payload_path": "payloads/control.json"},
     ]
+
+
+ASSET_START_TIME = datetime.datetime(2030, 1, 1, tzinfo=datetime.timezone.utc)
+
+
+class RecordingResult:
+    """提供 psycopg 风格 fetchone/fetchall 的固定结果。"""
+
+    def __init__(self, rows):
+        self._rows = tuple(rows)
+
+    def fetchone(self):
+        return self._rows[0] if self._rows else None
+
+    def fetchall(self):
+        return list(self._rows)
+
+
+class CatalogReuseConnection:
+    """按语句分派主查询与 catalog 读取，并统计自身关闭次数。"""
+
+    def __init__(self, requests, query_rows, catalog_rows):
+        self.requests = requests
+        self.query_rows = query_rows
+        self.catalog_rows = catalog_rows
+        self.close_count = 0
+
+    def execute(self, statement, parameters=None):
+        self.requests.append((self, statement, parameters))
+        if "assets WHERE asset_id=" in statement:
+            row = self.catalog_rows.get(parameters[0])
+            return RecordingResult(() if row is None else (row,))
+        return RecordingResult(self.query_rows)
+
+    def close(self):
+        self.close_count += 1
+
+
+def asset_query_fixture(root, payloads):
+    """发布 payload 对象，并返回 store、catalog 行和 asset_ref 主查询行。"""
+
+    store = LocalAssetStore(root / "assets")
+    catalog_rows = {}
+    rows = []
+    for index, payload in enumerate(payloads):
+        if payload is None:
+            rows.append((f"event-{index}", "trace-a", "project-a", ASSET_START_TIME,
+                         None, None, None, None, None, None, None))
+            continue
+        asset_id = hashlib.sha256(payload).hexdigest()
+        store.publish_bytes(asset_id, payload)
+        catalog_rows[asset_id] = (
+            asset_id, asset_id, "text/plain", "utf-8", len(payload),
+            str(store.object_path(asset_id)), "available", ASSET_START_TIME, None,
+        )
+        rows.append((f"event-{index}", "trace-a", "project-a", ASSET_START_TIME,
+                     "text_64k", "text/plain", "utf-8", len(payload),
+                     payload.decode("utf-8")[:200], asset_id, asset_id))
+    return store, catalog_rows, tuple(rows)
+
+
+def catalog_response_bytes(row):
+    """按 adapter 的客户端表示规则计算 catalog 行长度。"""
+    return len(json.dumps(
+        row, ensure_ascii=False,
+        default=lambda value: value.isoformat() if hasattr(value, "isoformat") else str(value),
+    ).encode("utf-8"))
 
 
 class OpenGaussAdapterUnitTest(unittest.TestCase):
@@ -187,6 +256,137 @@ class OpenGaussAdapterUnitTest(unittest.TestCase):
         self.assertIn("database_protocol_bytes", result_fields)
         self.assertIn("resolver_requests", result_fields)
         self.assertIn("resolver_read_ms", result_fields)
+
+    @staticmethod
+    def _catalog_connection_factory(requests, connections, query_rows, catalog_rows):
+        """返回记录新建连接的 connect_worker 替身。"""
+        def connect_worker():
+            connection = CatalogReuseConnection(requests, query_rows, catalog_rows)
+            connections.append(connection)
+            return connection
+        return connect_worker
+
+    @staticmethod
+    def _catalog_statements(requests):
+        return [entry for entry in requests if "assets WHERE asset_id=" in entry[1]]
+
+    def test_asset_normalization_reuses_one_lazy_catalog_connection_per_query(self):
+        """捕获每个 Asset 引用新建 catalog 连接并耗尽客户端连接。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first, second = b"first asset payload", b"second asset payload"
+            store, catalog_rows, rows = asset_query_fixture(root, [first, second, first])
+            requests, connections = [], []
+            adapter = opengauss.OpenGaussAdapter(
+                "127.0.0.1", 15432, "unused", "jsons3_test", "asset_ref", root, store,
+            )
+            adapter.connect_worker = self._catalog_connection_factory(
+                requests, connections, rows, catalog_rows,
+            )
+
+            normalized, catalog_bytes, resolver_requests, _ = adapter._normalize_rows(rows)
+
+            catalog_statements = self._catalog_statements(requests)
+            first_id = hashlib.sha256(first).hexdigest()
+            second_id = hashlib.sha256(second).hexdigest()
+            self.assertEqual(resolver_requests, 3)
+            self.assertEqual([row["payload"] for row in normalized], [first, second, first])
+            self.assertEqual(len(catalog_statements), 3)
+            self.assertEqual(len({id(entry[0]) for entry in catalog_statements}), 1)
+            self.assertEqual(len(connections), 1)
+            self.assertEqual(connections[0].close_count, 1)
+            self.assertEqual(catalog_bytes, (
+                2 * catalog_response_bytes(catalog_rows[first_id])
+                + catalog_response_bytes(catalog_rows[second_id])
+            ))
+
+    def test_asset_query_owns_query_and_catalog_connections_separately(self):
+        """捕获查询作用域 catalog 连接与主查询连接混用或未关闭。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first, second = b"first asset payload", b"second asset payload"
+            store, catalog_rows, rows = asset_query_fixture(root, [first, second, first])
+            requests, connections = [], []
+            adapter = opengauss.OpenGaussAdapter(
+                "127.0.0.1", 15432, "unused", "jsons3_test", "asset_ref", root, store,
+            )
+            adapter.connect_worker = self._catalog_connection_factory(
+                requests, connections, rows, catalog_rows,
+            )
+
+            result = adapter.run_query(QuerySpec("batch", {"cohort": "main"}))
+
+            self.assertEqual([row["payload"] for row in result.rows], [first, second, first])
+            self.assertEqual(result.resolver_requests, 3)
+            self.assertEqual(len(connections), 2)
+            self.assertEqual([connection.close_count for connection in connections], [1, 1])
+            catalog_connections = {id(entry[0]) for entry in self._catalog_statements(requests)}
+            self.assertEqual(catalog_connections, {id(connections[1])})
+
+    def test_asset_query_without_references_opens_no_catalog_connection(self):
+        """捕获无 Asset 引用的查询仍为 catalog 读取新建闲置连接。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store, catalog_rows, rows = asset_query_fixture(root, [None])
+            requests, connections = [], []
+            adapter = opengauss.OpenGaussAdapter(
+                "127.0.0.1", 15432, "unused", "jsons3_test", "asset_ref", root, store,
+            )
+            adapter.connect_worker = self._catalog_connection_factory(
+                requests, connections, rows, catalog_rows,
+            )
+
+            result = adapter.run_query(QuerySpec("batch", {"cohort": "main"}))
+
+            self.assertEqual(result.resolver_requests, 0)
+            self.assertEqual([row["payload"] for row in result.rows], [None])
+            self.assertEqual(self._catalog_statements(requests), [])
+            self.assertEqual(len(connections), 1)
+            self.assertEqual(connections[0].close_count, 1)
+
+    def test_public_asset_lookup_owns_and_closes_its_catalog_connection(self):
+        """捕获公开 catalog 读取复用查询连接或遗留未关闭连接。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            payload = b"public lookup payload"
+            store, catalog_rows, rows = asset_query_fixture(root, [payload])
+            requests, connections = [], []
+            adapter = opengauss.OpenGaussAdapter(
+                "127.0.0.1", 15432, "unused", "jsons3_test", "asset_ref", root, store,
+            )
+            adapter.connect_worker = self._catalog_connection_factory(
+                requests, connections, rows, catalog_rows,
+            )
+
+            adapter.run_query(QuerySpec("batch", {"cohort": "main"}))
+            query_connections = tuple(connections)
+            record = adapter.get_available(hashlib.sha256(payload).hexdigest())
+
+            self.assertEqual(record.status, "available")
+            self.assertEqual(len(connections), len(query_connections) + 1)
+            self.assertNotIn(connections[-1], query_connections)
+            self.assertEqual(connections[-1].close_count, 1)
+
+    def test_asset_normalization_closes_catalog_connection_when_resolution_fails(self):
+        """捕获 resolver 异常路径遗留查询作用域 catalog 连接。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first, second = b"first asset payload", b"second asset payload"
+            store, catalog_rows, rows = asset_query_fixture(root, [first, second])
+            requests, connections = [], []
+            adapter = opengauss.OpenGaussAdapter(
+                "127.0.0.1", 15432, "unused", "jsons3_test", "asset_ref", root, store,
+            )
+            adapter.connect_worker = self._catalog_connection_factory(
+                requests, connections, rows, catalog_rows,
+            )
+            store.object_path(hashlib.sha256(second).hexdigest()).unlink()
+
+            with self.assertRaisesRegex(AssetError, "^missing$"):
+                adapter._normalize_rows(rows)
+
+            self.assertEqual(len(connections), 1)
+            self.assertEqual(connections[0].close_count, 1)
 
 
 @unittest.skipUnless(os.environ.get("RUN_OPENGAUSS_INTEGRATION") == "1",

@@ -484,18 +484,24 @@ class OpenGaussAdapter:
         finally:
             connection.close()
 
-    def _read_asset_record(self, asset_id):
-        """读取真实 catalog 行，并返回其客户端表示 bytes。"""
+    def _read_asset_record(self, asset_id, connection=None):
+        """读取真实 catalog 行，并返回其客户端表示 bytes。
+
+        connection 为 None 时本方法自建并关闭连接，调用方传入时复用该连接。
+        """
         if self.layout != "asset_ref":
             return None, 0
-        connection = self.connect_worker()
+        owned = connection is None
+        if owned:
+            connection = self.connect_worker()
         try:
             row = connection.execute(
                 f"SELECT asset_id,sha256,content_type,encoding,content_length,storage_path,status,updated_at,error_category "
                 f"FROM {self.schema}.assets WHERE asset_id=%s", (asset_id,),
             ).fetchone()
         finally:
-            connection.close()
+            if owned:
+                connection.close()
         if row is None:
             return None, 0
         record = AssetRecord(
@@ -566,30 +572,42 @@ class OpenGaussAdapter:
         return value.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
     def _normalize_rows(self, rows):
-        """恢复统一逻辑字段并确保 payload bytes 到达调用方。"""
+        """恢复统一逻辑字段并确保 payload bytes 到达调用方。
+
+        asset_ref 的 catalog 读取在本批内复用一条查询作用域连接，避免逐对象建连。
+        """
         result = []
         catalog_response_bytes = 0
         resolver_requests = 0
         resolver_read_ms = 0.0
-        for raw in rows:
-            item = dict(zip(LOGICAL_FIELDS, raw[:len(LOGICAL_FIELDS)]))
-            item["start_time"] = self._timestamp(item["start_time"])
-            if self.layout == "asset_ref" and raw[-1] is not None:
-                record, response_bytes = self._read_asset_record(raw[-1])
-                catalog_response_bytes += response_bytes
-                reference = AssetReference(
-                    "asset:sha256:" + raw[-1], item["content_type"], item["encoding"],
-                    int(item["content_length"]), item["preview"],
-                )
-                resolve_started = time.perf_counter()
-                item["payload"] = AssetResolver(
-                    _CatalogRow(record), self.asset_store,
-                ).resolve(reference).payload
-                resolver_read_ms += (time.perf_counter() - resolve_started) * 1000
-                resolver_requests += 1
-            else:
-                item["payload"] = raw[-1].encode("utf-8") if isinstance(raw[-1], str) else None
-            result.append(item)
+        catalog_connection = None
+        try:
+            for raw in rows:
+                item = dict(zip(LOGICAL_FIELDS, raw[:len(LOGICAL_FIELDS)]))
+                item["start_time"] = self._timestamp(item["start_time"])
+                if self.layout == "asset_ref" and raw[-1] is not None:
+                    if catalog_connection is None:
+                        catalog_connection = self.connect_worker()
+                    record, response_bytes = self._read_asset_record(
+                        raw[-1], catalog_connection,
+                    )
+                    catalog_response_bytes += response_bytes
+                    reference = AssetReference(
+                        "asset:sha256:" + raw[-1], item["content_type"], item["encoding"],
+                        int(item["content_length"]), item["preview"],
+                    )
+                    resolve_started = time.perf_counter()
+                    item["payload"] = AssetResolver(
+                        _CatalogRow(record), self.asset_store,
+                    ).resolve(reference).payload
+                    resolver_read_ms += (time.perf_counter() - resolve_started) * 1000
+                    resolver_requests += 1
+                else:
+                    item["payload"] = raw[-1].encode("utf-8") if isinstance(raw[-1], str) else None
+                result.append(item)
+        finally:
+            if catalog_connection is not None:
+                catalog_connection.close()
         return tuple(result), catalog_response_bytes, resolver_requests, resolver_read_ms
 
     def run_query(self, query: QuerySpec):
