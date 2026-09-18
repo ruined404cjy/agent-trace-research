@@ -23,9 +23,10 @@
 依次执行 catalog 查询、对象文件读取、长度与摘要校验，三段都在应用可用计时之内。可达性证据取自
 `events_analytics JOIN assets`；孤立 catalog 行与 fault injector 自报路径不构成证据。
 
-该布局代表应用侧引用式存储的成本，包含本地文件读取与 catalog 查询的协议开销：一次逻辑查询复用
-一个 catalog 连接，对象查找仍逐个执行；另外三种布局的 payload 留在数据库存储结构内。计时口径不同
-的 `asset_ref` 样本不进入同一汇总，运行前确认所有 `asset_ref` shard 使用同一连接语义。
+该布局代表应用侧引用式存储的成本，包含本地文件读取与 catalog 查询的协议开销。ClickHouse 在一次
+逻辑查询内复用一个 catalog 连接，对象查找仍逐个执行；openGauss 当前为每个对象建立并关闭一个 catalog
+连接。跨引擎结果包含各自连接管理方式的实现成本。同一引擎、同一比较集合内的 `asset_ref` shard 必须使用
+一致的代码身份与计时口径。
 
 ## 解释器、输入与产物
 
@@ -44,8 +45,12 @@
 
 输出目录规则：
 
-- 每条命令使用新的 attempt 目录与新的随机 namespace，生产命令在输出目录已存在时直接拒绝启动。
-- `running` 与 `failed` 目录保留为诊断证据，从不续写；重试写入新的 `attempt-N` 目录。
+- `run_stage3.py` 的五个子命令 `generate-input`、`candidate`、`part-states`、`interference`、
+  `asset-failures` 在 output 已存在时直接拒绝启动。
+- `run_layout_matrix.py` 没有 output 存在性守卫，会覆盖既有 target manifest 与 `samples.jsonl`。每次矩阵
+  调用必须人工指定全新的 output 目录。
+- `running`、`failed` 与 `complete` 目录均不续写；重试写入新的 `attempt-N` 目录。数据库调用使用新的
+  随机 namespace。
 - 汇总只接收显式列出的 target 目录（每个目录携带自己的 complete manifest），runner 不扫描“最新”目录。
 - 两条条件集成测试由环境变量启用：`RUN_OPENGAUSS_INTEGRATION=1`、`RUN_CLICKHOUSE_INTEGRATION=1`。
 
@@ -249,18 +254,21 @@ round-first、四轮中位数统计，`write_summary_atomic(output, summary)` �
 该实现与本指南的主矩阵命令之间存在确切阻塞，正式汇总在 Task 7B 完成前无法执行：
 
 - `_round_records()` 要求每个 target manifest 的 `workloads` 覆盖全部四个 workload，其中三个性能
-  workload 各四轮、`correctness_only` 一轮；`validate_run()` 另外要求 target 级 `rounds_complete == 4`。
-- 本指南按 engine 与 workload 分片执行，每个 shard 的 manifest 只含单个 workload，target 级轮次也只
-  覆盖该 workload，因此当前 summarizer 会拒绝分片结果。
+  workload 各四轮、`correctness_only` 一轮。`rounds_complete` 只累计 `main` 轮次；非 `main` shard 的值为
+  0，会先被 `validate_run()` 的最小值检查拒绝。`main` shard 的值为 4，通过该检查后仍因缺少其余三个
+  workload 被 `_round_records()` 拒绝。
+- 本指南按 engine 与 workload 分片执行，每个 shard 的 manifest 只含单个 workload，因此当前
+  summarizer 无法接收这些分片结果。
 - 模块没有 CLI 入口（没有 `argparse` 或 `main()`），只能由 Python 代码显式传入 target 目录列表。
-- 模块不校验 part-state、interference、Asset failure 三类控制 manifest，也不做跨运行 identity 检查。
+- 模块会比较已传入主矩阵 target 的 input identity，但不校验 part-state、interference、Asset failure
+  三类控制 manifest，也不具备跨 shard 组装及其 identity 校验。
 
 Task 7B 补齐 summary CLI、三类控制 schema 与跨 shard 组装规则后，本节再给出最终 `summary.json` 与
 阶段三报告的命令。Task 7B 完成前不做汇总，也不从单个 shard 目录生成比较结论。
 
 ## 生产门禁
 
-正式运行在发布 complete 前验证以下证据，缺失任一项即把运行级 manifest 写为 `failed`：
+正式运行在发布 complete 前验证以下证据，缺失任一项即把所属 manifest 写为 `failed`：
 
 - truth 与输入 identity：冻结源 manifest digest、`truth.json`、48,534 行与 190 block 水位、seed
   `20260907`、workload 的 payload 数量与原始字节。
