@@ -558,11 +558,16 @@ class ClickHouseAdapter:
         finally:
             connection.close()
 
-    def _read_asset_record(self, asset_id):
-        """读取真实 catalog 行，并返回对应 HTTP body bytes。"""
+    def _read_asset_record(self, asset_id, connection=None):
+        """读取真实 catalog 行，并返回对应 HTTP body bytes。
+
+        connection 为 None 时本方法自建并关闭连接，调用方传入时复用该连接。
+        """
         if self.layout != "asset_ref":
             return None, 0
-        connection = self.connect_worker()
+        owned = connection is None
+        if owned:
+            connection = self.connect_worker()
         try:
             body = self._request(
                 connection,
@@ -573,7 +578,8 @@ class ClickHouseAdapter:
             )
             rows = self._json_rows(body)
         finally:
-            connection.close()
+            if owned:
+                connection.close()
         if not rows:
             return None, len(body.encode("utf-8"))
         row = rows[0]
@@ -654,32 +660,44 @@ class ClickHouseAdapter:
         return whole + "." + fraction[:3].ljust(3, "0") + "Z"
 
     def _normalize_rows(self, rows):
-        """恢复统一逻辑字段，并把完整 String payload 转为原始 bytes。"""
+        """恢复统一逻辑字段，并把完整 String payload 转为原始 bytes。
+
+        asset_ref 的 catalog 读取在本批内复用一条查询作用域连接，避免逐对象建连。
+        """
         result = []
         catalog_response_bytes = 0
         resolver_requests = 0
         resolver_read_ms = 0.0
-        for raw in rows:
-            item = {field: raw[field] for field in LOGICAL_FIELDS}
-            item["start_time"] = self._timestamp(item["start_time"])
-            if self.layout == "asset_ref" and raw["payload_value"] is not None:
-                record, response_bytes = self._read_asset_record(raw["payload_value"])
-                catalog_response_bytes += response_bytes
-                reference = AssetReference(
-                    "asset:sha256:" + raw["payload_value"], item["content_type"], item["encoding"],
-                    int(item["content_length"]), item["preview"],
-                )
-                resolve_started = time.perf_counter()
-                item["payload"] = AssetResolver(
-                    _CatalogRow(record), self.asset_store,
-                ).resolve(reference).payload
-                resolver_read_ms += (time.perf_counter() - resolve_started) * 1000
-                resolver_requests += 1
-            elif item["sha256"] is None or raw["payload_value"] is None:
-                item["payload"] = None
-            else:
-                item["payload"] = raw["payload_value"].encode("utf-8")
-            result.append(item)
+        catalog_connection = None
+        try:
+            for raw in rows:
+                item = {field: raw[field] for field in LOGICAL_FIELDS}
+                item["start_time"] = self._timestamp(item["start_time"])
+                if self.layout == "asset_ref" and raw["payload_value"] is not None:
+                    if catalog_connection is None:
+                        catalog_connection = self.connect_worker()
+                    record, response_bytes = self._read_asset_record(
+                        raw["payload_value"], catalog_connection,
+                    )
+                    catalog_response_bytes += response_bytes
+                    reference = AssetReference(
+                        "asset:sha256:" + raw["payload_value"], item["content_type"], item["encoding"],
+                        int(item["content_length"]), item["preview"],
+                    )
+                    resolve_started = time.perf_counter()
+                    item["payload"] = AssetResolver(
+                        _CatalogRow(record), self.asset_store,
+                    ).resolve(reference).payload
+                    resolver_read_ms += (time.perf_counter() - resolve_started) * 1000
+                    resolver_requests += 1
+                elif item["sha256"] is None or raw["payload_value"] is None:
+                    item["payload"] = None
+                else:
+                    item["payload"] = raw["payload_value"].encode("utf-8")
+                result.append(item)
+        finally:
+            if catalog_connection is not None:
+                catalog_connection.close()
         return tuple(result), catalog_response_bytes, resolver_requests, resolver_read_ms
 
     def run_query(self, query: QuerySpec):

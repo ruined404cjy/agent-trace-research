@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -48,6 +49,78 @@ class RecordingConnection:
 
     def close(self):
         return None
+
+
+CATALOG_QUERY_PATTERN = re.compile(r"param_asset_id=([0-9a-f]{64})")
+
+
+class FixedResponse:
+    """按给定状态返回固定 body 的最小 HTTP response。"""
+
+    def __init__(self, status, body):
+        self.status = status
+        self._body = body
+
+    def read(self):
+        return self._body
+
+
+class CatalogReuseConnection:
+    """按绑定参数返回主查询或 catalog 响应，并记录自身关闭状态。"""
+
+    def __init__(self, requests, main_body, catalog_rows, failing_asset_id=None):
+        self.requests = requests
+        self.main_body = main_body
+        self.catalog_rows = catalog_rows
+        self.failing_asset_id = failing_asset_id
+        self.closed = False
+
+    def request(self, method, path, body, headers):
+        self.requests.append({"connection": self, "path": path, "body": body})
+
+    def getresponse(self):
+        entry = self.requests[-1]
+        matched = CATALOG_QUERY_PATTERN.search(entry["path"])
+        if matched is None:
+            return FixedResponse(200, self.main_body)
+        asset_id = matched.group(1)
+        if asset_id == self.failing_asset_id:
+            return FixedResponse(500, b"injected failure")
+        row = self.catalog_rows[asset_id]
+        return FixedResponse(200, (json.dumps(row, ensure_ascii=False) + "\n").encode("utf-8"))
+
+    def close(self):
+        self.closed = True
+
+
+def asset_catalog_fixture(root, payloads):
+    """发布 payload 对象，并返回 store、catalog 行和主查询 JSONEachRow 响应。"""
+    store = LocalAssetStore(root / "assets")
+    catalog_rows = {}
+    rows = []
+    for index, payload in enumerate(payloads):
+        row = {
+            "event_id": f"event-{index}", "trace_id": "trace-a", "project_id": "project-a",
+            "start_time": "2030-01-01 00:00:00.000", "profile": "profile-a",
+            "content_type": "text/plain", "encoding": "utf-8",
+            "content_length": 0, "preview": "", "sha256": None, "payload_value": None,
+        }
+        if payload is not None:
+            asset_id = hashlib.sha256(payload).hexdigest()
+            store.publish_bytes(asset_id, payload)
+            catalog_rows[asset_id] = {
+                "asset_id": asset_id, "sha256": asset_id, "content_type": "text/plain",
+                "encoding": "utf-8", "content_length": len(payload),
+                "storage_path": str(store.object_path(asset_id)), "status": "available",
+                "updated_at": "2030-01-01 00:00:00.000", "error_category": None,
+            }
+            row.update({
+                "content_length": len(payload), "preview": payload.decode("utf-8")[:200],
+                "sha256": asset_id, "payload_value": asset_id,
+            })
+        rows.append(row)
+    body = "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows).encode("utf-8")
+    return store, catalog_rows, body
 
 
 class ClickHouseAdapterUnitTest(unittest.TestCase):
@@ -270,6 +343,110 @@ class ClickHouseAdapterUnitTest(unittest.TestCase):
             self.assertEqual(
                 evidence(), {"assets": len(bodies[0])},
             )
+
+    @staticmethod
+    def _catalog_connection_factory(requests, connections, body, catalog_rows, failing_asset_id=None):
+        """返回按语句分派响应的连接工厂，并记录新建连接。"""
+        def connect_worker():
+            connection = CatalogReuseConnection(requests, body, catalog_rows, failing_asset_id)
+            connections.append(connection)
+            return connection
+        return connect_worker
+
+    @staticmethod
+    def _catalog_requests(requests):
+        return [entry for entry in requests if CATALOG_QUERY_PATTERN.search(entry["path"])]
+
+    def test_run_query_reuses_one_catalog_connection_for_every_asset_reference(self):
+        """捕获每个 Asset 引用新建 catalog 连接并耗尽客户端临时端口。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first, second = b"first asset payload", b"second asset payload"
+            store, catalog_rows, body = asset_catalog_fixture(root, [first, second, first])
+            requests, connections = [], []
+            adapter = clickhouse.ClickHouseAdapter(
+                "127.0.0.1", 18123, "unused", "jsons3_test", "asset_ref", root, store,
+            )
+            adapter.connect_worker = self._catalog_connection_factory(
+                requests, connections, body, catalog_rows,
+            )
+
+            result = adapter.run_query(QuerySpec("batch", {"cohort": "main"}))
+
+            catalog_requests = self._catalog_requests(requests)
+            self.assertEqual(result.resolver_requests, 3)
+            self.assertEqual([row["payload"] for row in result.rows], [first, second, first])
+            self.assertEqual(len(catalog_requests), 3)
+            self.assertEqual(len({id(entry["connection"]) for entry in catalog_requests}), 1)
+            self.assertEqual(len(connections), 2)
+            self.assertTrue(all(connection.closed for connection in connections))
+
+    def test_asset_query_without_references_keeps_one_connection(self):
+        """捕获无 Asset 引用的查询仍为 catalog 读取新建闲置连接。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store, catalog_rows, body = asset_catalog_fixture(root, [None])
+            requests, connections = [], []
+            adapter = clickhouse.ClickHouseAdapter(
+                "127.0.0.1", 18123, "unused", "jsons3_test", "asset_ref", root, store,
+            )
+            adapter.connect_worker = self._catalog_connection_factory(
+                requests, connections, body, catalog_rows,
+            )
+
+            result = adapter.run_query(QuerySpec("list", {
+                "project_id": "project-a", "start_time": "2030-01-01T00:00:00.000Z",
+                "end_time": "2030-01-02T00:00:00.000Z", "page_size": 10,
+            }))
+
+            self.assertEqual(result.resolver_requests, 0)
+            self.assertEqual(self._catalog_requests(requests), [])
+            self.assertEqual(len(connections), 1)
+            self.assertTrue(connections[0].closed)
+
+    def test_public_asset_lookup_owns_and_closes_its_catalog_connection(self):
+        """捕获公开 catalog 读取复用查询连接或遗留未关闭连接。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            payload = b"public lookup payload"
+            store, catalog_rows, body = asset_catalog_fixture(root, [payload])
+            requests, connections = [], []
+            adapter = clickhouse.ClickHouseAdapter(
+                "127.0.0.1", 18123, "unused", "jsons3_test", "asset_ref", root, store,
+            )
+            adapter.connect_worker = self._catalog_connection_factory(
+                requests, connections, body, catalog_rows,
+            )
+
+            adapter.run_query(QuerySpec("batch", {"cohort": "main"}))
+            query_connections = tuple(connections)
+            record = adapter.get_available(hashlib.sha256(payload).hexdigest())
+
+            self.assertEqual(record.status, "available")
+            self.assertEqual(len(connections), len(query_connections) + 1)
+            self.assertNotIn(connections[-1], query_connections)
+            self.assertTrue(connections[-1].closed)
+
+    def test_catalog_failure_propagates_and_closes_every_owned_connection(self):
+        """捕获 catalog 读取失败时泄漏查询连接或掩盖 HTTP 错误。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            first, second = b"first asset payload", b"second asset payload"
+            store, catalog_rows, body = asset_catalog_fixture(root, [first, second, first])
+            failing_asset_id = hashlib.sha256(second).hexdigest()
+            requests, connections = [], []
+            adapter = clickhouse.ClickHouseAdapter(
+                "127.0.0.1", 18123, "unused", "jsons3_test", "asset_ref", root, store,
+            )
+            adapter.connect_worker = self._catalog_connection_factory(
+                requests, connections, body, catalog_rows, failing_asset_id,
+            )
+
+            with self.assertRaisesRegex(RuntimeError, r"ClickHouse request failed \(500\)"):
+                adapter.run_query(QuerySpec("batch", {"cohort": "main"}))
+
+            self.assertEqual(len(connections), 2)
+            self.assertTrue(all(connection.closed for connection in connections))
 
 
 @unittest.skipUnless(os.environ.get("RUN_CLICKHOUSE_INTEGRATION") == "1",
