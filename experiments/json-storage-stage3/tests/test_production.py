@@ -29,6 +29,7 @@ from run_layout_matrix import (
 import production
 from run_interference import DeadlineTarget, FIXED_PHASES, fixed_phase_schedules
 import run_asset_failures as failure_runner
+import run_stage3
 
 
 LAYOUT_WATERMARK_KEYS = {
@@ -811,6 +812,27 @@ class ProductionFactoryTest(unittest.TestCase):
             targets["continuous_ingest"](float("inf"), threading.Event())
             self.assertEqual(adapter.submitted[0][0]["ingest_seq"], 108 * 256)
             self.assertEqual(formal.main_blocks[108][0]["ingest_seq"], 108 * 256)
+
+    def test_interference_metadata_gate_accepts_real_factory_snapshot(self):
+        """捕获真实工厂 metadata 因正式 query_window 额外字段被 metadata gate 误拒绝。"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            formal = load_fixture_formal(root / "formal")
+            _, _, metadata = production.interference_factories(
+                formal, "same_table", None, production.EngineEndpoints(),
+            )
+            window = metadata["selection_rules"]["outside_query_window"]
+            self.assertEqual(set(window), {"project_id", "start_time", "end_time"})
+
+            snapshot = run_stage3._gate_interference_metadata(metadata, formal)
+            self.assertEqual(snapshot["selection_rules"]["outside_query_window"], window)
+
+            drifted = deepcopy(metadata)
+            drifted["selection_rules"]["outside_query_window"]["page_size"] = (
+                formal.truth.query_window["page_size"]
+            )
+            with self.assertRaisesRegex(RuntimeError, "factory metadata is invalid"):
+                run_stage3._gate_interference_metadata(drifted, formal)
 
     def test_interference_preloads_each_layout_and_builds_exact_phase_targets(self):
         """捕获跳块预载、遗漏联合水位等待、重复预载或 phase 查询映射错误。"""
