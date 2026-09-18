@@ -1230,7 +1230,11 @@ def _gate_interference_metadata(metadata, formal):
     expected = {
         "selection_rules": {
             "full_block_rows": formal.truth.block_size,
-            "outside_query_window": _json_value(formal.truth.query_window),
+            "outside_query_window": {
+                "project_id": formal.truth.query_window["project_id"],
+                "start_time": formal.truth.query_window["start_time"],
+                "end_time": formal.truth.query_window["end_time"],
+            },
             "requires_main_payload": True,
             "query_scenarios": {
                 "list": "list:first", "preview": "preview:first",

@@ -1085,6 +1085,8 @@ def interference_formal_fixture():
                 "project_id": "query-project",
                 "start_time": "2026-02-01T00:00:00.000Z",
                 "end_time": "2026-03-01T00:00:00.000Z",
+                "page_size": 256,
+                "row_count": 27_561,
             },
         ),
         main_blocks=tuple(blocks),
@@ -1096,6 +1098,39 @@ def interference_formal_fixture():
                                    ("batch:main", "batch"))
         ),
     )
+
+
+def interference_factory_metadata(formal):
+    """按 production.interference_factories 的字段构造固定 interference metadata。"""
+    eligible = production._continuous_blocks(formal)
+    window = formal.truth.query_window
+    return {
+        "selection_rules": {
+            "full_block_rows": formal.truth.block_size,
+            "outside_query_window": {
+                "project_id": window["project_id"],
+                "start_time": window["start_time"],
+                "end_time": window["end_time"],
+            },
+            "requires_main_payload": True,
+            "query_scenarios": {
+                "list": "list:first", "preview": "preview:first",
+                "detail_2m": "detail:text_2m", "trace_long": "trace:p95",
+                "batch_loop": "batch:main",
+            },
+        },
+        "eligible_block_count": len(eligible),
+        "eligible_block_indices": [index for index, _ in eligible],
+        "eligible_block_sha256": [
+            canonical_digest([dict(row) for row in block]) for _, block in eligible
+        ],
+        "cyclic_replay": True,
+        "main_query_catalog_sha256": query_digest(formal),
+        "preload_block_count": len(formal.main_blocks),
+        "block_size": formal.truth.block_size,
+        "final_watermark": formal.truth.record_count,
+        "seed": formal.truth.seed,
+    }
 
 
 def valid_interference_tree(output, layout="same_table"):
@@ -1478,6 +1513,35 @@ class InterferenceProductionGateTests(unittest.TestCase):
             run_stage3._gate_interference(child, self.formal, "same_table")
 
 
+class InterferenceFactoryMetadataGateTests(unittest.TestCase):
+    """验证 interference factory metadata 按 production 的三字段窗口核对。"""
+
+    def test_gate_accepts_three_field_window_when_truth_window_has_more_fields(self):
+        """正式 truth 的 query_window 含 page_size/row_count 时三字段 metadata 仍通过。"""
+        formal = interference_formal_fixture()
+        self.assertEqual(set(formal.truth.query_window), {
+            "project_id", "start_time", "end_time", "page_size", "row_count",
+        })
+        snapshot = run_stage3._gate_interference_metadata(
+            interference_factory_metadata(formal), formal,
+        )
+        self.assertEqual(snapshot["selection_rules"]["outside_query_window"], {
+            "project_id": formal.truth.query_window["project_id"],
+            "start_time": formal.truth.query_window["start_time"],
+            "end_time": formal.truth.query_window["end_time"],
+        })
+
+    def test_gate_rejects_three_field_window_drift(self):
+        """捕获 outside_query_window 三字段任一漂移仍被接受。"""
+        for field in ("project_id", "start_time", "end_time"):
+            with self.subTest(field=field):
+                formal = interference_formal_fixture()
+                metadata = interference_factory_metadata(formal)
+                metadata["selection_rules"]["outside_query_window"][field] = "drifted"
+                with self.assertRaisesRegex(RuntimeError, "factory metadata is invalid"):
+                    run_stage3._gate_interference_metadata(metadata, formal)
+
+
 class InterferenceCliTests(unittest.TestCase):
     """验证 interference CLI 的固定 production 编排和失败证据。"""
 
@@ -1494,30 +1558,7 @@ class InterferenceCliTests(unittest.TestCase):
         parsed = {}
 
         def metadata():
-            eligible = production._continuous_blocks(formal)
-            return {
-                "selection_rules": {
-                    "full_block_rows": 256,
-                    "outside_query_window": dict(formal.truth.query_window),
-                    "requires_main_payload": True,
-                    "query_scenarios": {
-                        "list": "list:first", "preview": "preview:first",
-                        "detail_2m": "detail:text_2m", "trace_long": "trace:p95",
-                        "batch_loop": "batch:main",
-                    },
-                },
-                "eligible_block_count": 45,
-                "eligible_block_indices": [index for index, _ in eligible],
-                "eligible_block_sha256": [
-                    canonical_digest([dict(row) for row in block]) for _, block in eligible
-                ],
-                "cyclic_replay": True,
-                "main_query_catalog_sha256": query_digest(formal),
-                "preload_block_count": 190,
-                "block_size": 256,
-                "final_watermark": 48_534,
-                "seed": 20260907,
-            }
+            return interference_factory_metadata(formal)
 
         def fake_create(engine, layout_arg, namespace, formal_arg, asset_root, endpoints):
             self.assertEqual((engine, layout_arg, namespace), (
