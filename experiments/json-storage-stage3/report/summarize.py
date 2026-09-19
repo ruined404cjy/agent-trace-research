@@ -63,8 +63,8 @@ def _sha256(value):
     )
 
 
-def _validate_provenance(manifest):
-    """验证 target 汇总的 code、DDL 和 workload query 身份。"""
+def _validate_provenance(manifest, workloads):
+    """验证 manifest 汇总的 code、DDL 和 workload query 身份。"""
     code = manifest.get("code")
     if not isinstance(code, dict) or set(code) != {"runner", "common", "assets", "adapter"}:
         raise ValueError("provenance evidence is incomplete")
@@ -85,7 +85,7 @@ def _validate_provenance(manifest):
         or any(not _sha256(value) for value in ddl)
         or ddl != sorted(set(ddl))
         or not isinstance(queries, dict)
-        or set(queries) != set(ALL_WORKLOADS)
+        or set(queries) != set(workloads)
         or any(
             not isinstance(values, list)
             or not values
@@ -138,14 +138,26 @@ def _identity(value):
     return value
 
 
-def _round_records(manifest):
-    """读取每个 workload 的固定 round 列表。"""
-    workloads = _require(manifest.get("workloads"), "workload evidence is missing")
-    if not isinstance(workloads, dict) or set(workloads) != set(ALL_WORKLOADS):
+def _workload_scope(manifest):
+    """读取 manifest 声明的 workload 范围，兼容聚合 target 与单 workload shard。"""
+    states = _require(manifest.get("workloads"), "workload evidence is missing")
+    if (
+        not isinstance(states, dict)
+        or not states
+        or not set(states) <= set(ALL_WORKLOADS)
+    ):
+        raise ValueError("workload evidence is incomplete")
+    return tuple(workload for workload in ALL_WORKLOADS if workload in states)
+
+
+def _round_records(manifest, workloads):
+    """读取给定 workload 范围内每个 workload 的固定 round 列表。"""
+    states = _require(manifest.get("workloads"), "workload evidence is missing")
+    if not isinstance(states, dict):
         raise ValueError("workload evidence is incomplete")
     records = {}
-    for workload in ALL_WORKLOADS:
-        state = workloads[workload]
+    for workload in workloads:
+        state = states[workload]
         if not isinstance(state, dict) or state.get("status") != "complete":
             raise ValueError(f"{workload} workload is not complete")
         rounds = state.get("rounds")
@@ -333,25 +345,30 @@ def validate_run(manifest: dict[str, object]) -> None:
     if manifest.get("layout") not in LAYOUTS:
         raise ValueError("target layout is invalid")
     _identity(manifest.get("input"))
-    _validate_provenance(manifest)
+    workloads = _workload_scope(manifest)
+    _validate_provenance(manifest, workloads)
     expected_schedule = [list(LAYOUTS[index:] + LAYOUTS[:index]) for index in range(4)]
     if manifest.get("latin_square") != expected_schedule:
         raise ValueError("Latin square order is invalid")
+    records_by_workload = _round_records(manifest, workloads)
     correctness = _require(manifest.get("correctness"), "response-byte validation is missing")
     if not isinstance(correctness, dict) or not correctness.get("response_bytes_validated"):
         raise ValueError("response-byte validation is missing")
-    _integer(correctness.get("rounds_complete"), "response-byte validation is missing", 1)
+    _integer(correctness.get("rounds_complete"), "response-byte validation is missing")
     formal_samples = _integer(
         correctness.get("formal_samples"), "response-byte validation is missing", 1,
     )
     successful_samples = _integer(
         correctness.get("successful_samples"), "response-byte validation is missing", 1,
     )
-    if correctness["rounds_complete"] != 4 or successful_samples != formal_samples:
+    # 生产按 engine + workload 分片发布，只有 main 的 round 计入 rounds_complete。
+    if (
+        correctness["rounds_complete"] != len(records_by_workload.get("main", ()))
+        or successful_samples != formal_samples
+    ):
         raise ValueError("response-byte validation is missing")
     if not isinstance(manifest.get("global_cleanup"), dict) or not manifest["global_cleanup"].get("removed"):
         raise ValueError("cleanup evidence is missing")
-    records_by_workload = _round_records(manifest)
     for workload, records in records_by_workload.items():
         positions = set()
         round_indexes = set()
@@ -408,7 +425,7 @@ def _round_index(records):
 
 def _validate_samples(manifest, samples):
     """验证 raw sample 可由相应 round 的访问和 truth 证据解释。"""
-    records = _round_records(manifest)
+    records = _round_records(manifest, _workload_scope(manifest))
     index = _round_index(records)
     grouped = defaultdict(list)
     seen_ids = set()
@@ -558,12 +575,11 @@ def _target_summary(manifest, samples):
 
 
 def summarize(runs: list[Path]) -> dict[str, object]:
-    """从调用方显式选择的正式 target 目录汇总主矩阵结果。"""
+    """从调用方显式选择的正式 target 或 single-workload shard 目录汇总主矩阵结果。"""
     if not runs:
         raise ValueError("at least one target directory is required")
-    targets = []
+    groups = {}
     input_identity = None
-    seen = set()
     for run in runs:
         target = Path(run)
         try:
@@ -571,15 +587,41 @@ def summarize(runs: list[Path]) -> dict[str, object]:
         except (OSError, json.JSONDecodeError) as error:
             raise ValueError("run-manifest.json is unavailable or invalid") from error
         validate_run(manifest)
-        key = (manifest["engine"], manifest["layout"])
-        if key in seen:
-            raise ValueError("duplicate matrix target")
-        seen.add(key)
         if input_identity is None:
             input_identity = manifest["input"]
         elif input_identity != manifest["input"]:
             raise ValueError("matrix input identity differs between targets")
-        targets.append(_target_summary(manifest, _read_samples(target / "samples.jsonl")))
+        scope = _workload_scope(manifest)
+        group = groups.get((manifest["engine"], manifest["layout"]))
+        if group is None:
+            group = groups[(manifest["engine"], manifest["layout"])] = {
+                "code": manifest["code"], "workloads": {}, "samples": [],
+            }
+        elif manifest["code"] != group["code"]:
+            raise ValueError("code evidence differs between matrix shards")
+        if set(group["workloads"]) & set(scope):
+            raise ValueError("duplicate matrix shard")
+        for workload in scope:
+            group["workloads"][workload] = manifest["workloads"][workload]
+        group["samples"].extend(_read_samples(target / "samples.jsonl"))
+    targets = []
+    for (engine, layout), group in groups.items():
+        # 每个 engine/layout 必须由精确覆盖四个 workload 的 shard 组装而成。
+        if set(group["workloads"]) != set(ALL_WORKLOADS):
+            raise ValueError("matrix shard coverage is incomplete")
+        logical = {
+            "engine": engine,
+            "layout": layout,
+            "workloads": group["workloads"],
+            "correctness": {
+                "formal_samples": sum(
+                    record["correctness"]["formal_samples"]
+                    for state in group["workloads"].values()
+                    for record in state["rounds"]
+                ),
+            },
+        }
+        targets.append(_target_summary(logical, group["samples"]))
     return {
         "format": "agent-trace-json-storage-stage3-matrix-summary",
         "format_version": 1,

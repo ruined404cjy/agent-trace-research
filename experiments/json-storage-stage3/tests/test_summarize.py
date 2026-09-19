@@ -212,6 +212,61 @@ def formal_target(root, engine="opengauss", layout="same_table"):
     return target, manifest, all_samples
 
 
+def formal_shard(root, workload, engine="opengauss", layout="same_table"):
+    """写入一个与生产分片一致的 single-workload 正式 shard。
+
+    生产命令按 engine + workload 分目录发布，每个 manifest 只含一个 workload，
+    且只把 main 的 round 计入 correctness.rounds_complete。
+    """
+    with tempfile.TemporaryDirectory() as scratch:
+        _, manifest, samples = formal_target(scratch, engine, layout)
+    rounds = manifest["workloads"][workload]["rounds"]
+    shard_samples = [item for item in samples if item["workload"] == workload]
+    manifest.pop("summary")
+    manifest["workloads"] = {workload: manifest["workloads"][workload]}
+    manifest["query_catalog_sha256"] = {workload: manifest["query_catalog_sha256"][workload]}
+    manifest["ddl_sha256"] = sorted({record["ddl_sha256"] for record in rounds})
+    manifest["correctness"] = {
+        "rounds_complete": 4 if workload == "main" else 0,
+        "formal_samples": len(shard_samples),
+        "successful_samples": len(shard_samples),
+        "response_bytes_validated": True,
+    }
+    target = Path(root) / f"{engine}-{layout}-{workload}"
+    target.mkdir(parents=True)
+    (target / "run-manifest.json").write_text(json.dumps(manifest))
+    (target / "samples.jsonl").write_text(
+        "".join(json.dumps(item) + "\n" for item in shard_samples)
+    )
+    return target, manifest, shard_samples
+
+
+def rewrite_manifest(target, mutate):
+    """改写一个 target 或 shard 的 manifest，用于构造证据漂移。"""
+    path = Path(target) / "run-manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    mutate(manifest)
+    path.write_text(json.dumps(manifest))
+    return manifest
+
+
+def drift_code(manifest):
+    """把 target 与每轮的 adapter code 证据同时改到另一 identity。"""
+    manifest["code"]["adapter"]["sha256"] = "9" * 64
+    for state in manifest["workloads"].values():
+        for record in state["rounds"]:
+            record["code"]["adapter"]["sha256"] = "9" * 64
+
+
+def drift_input(manifest):
+    """把正式 input identity 与每轮的引用同时改到另一 identity。"""
+    manifest["input"]["identity_sha256"] = "5" * 64
+    for state in manifest["workloads"].values():
+        for record in state["rounds"]:
+            record["input"]["identity_sha256"] = "5" * 64
+            record["correctness"]["truth_identity"] = "5" * 64
+
+
 class StageThreeSummaryTest(unittest.TestCase):
     """验证正式矩阵汇总的证据门禁、分层统计和原子发布。"""
 
@@ -697,6 +752,130 @@ class StageThreeSummaryTest(unittest.TestCase):
             self.assertEqual(output_unlinks, 0)
             self.assertEqual(output.read_bytes(), published)
             self.assertEqual(list(output.parent.glob(".*.tmp")), [])
+
+
+class StageThreeMatrixShardTest(unittest.TestCase):
+    """验证正式 single-workload shard 可组装为 engine/layout 逻辑 target。"""
+
+    def shards(self, directory, engine="opengauss", layout="same_table"):
+        return [
+            formal_shard(directory, workload, engine, layout)[0]
+            for workload in PERFORMANCE_WORKLOADS + ("correctness_only",)
+        ]
+
+    def test_assembles_single_workload_shards_into_engine_layout_target(self):
+        """四个 workload shard 精确覆盖一个逻辑 target，且与输入顺序无关。"""
+        with tempfile.TemporaryDirectory() as directory:
+            shards = self.shards(directory)
+            summary = report.summarize(shards)
+            self.assertEqual(
+                summary["statistics_boundary"], "round-first-four-round-median"
+            )
+            self.assertEqual(len(summary["matrix"]), 1)
+            target = summary["matrix"][0]
+            self.assertEqual(
+                (target["engine"], target["layout"]), ("opengauss", "same_table")
+            )
+            self.assertEqual(set(target["workloads"]), set(PERFORMANCE_WORKLOADS))
+            for workload in PERFORMANCE_WORKLOADS:
+                scenario = target["workloads"][workload]["scenarios"]["list:first"]
+                self.assertEqual(scenario["round_count"], 4)
+                self.assertEqual(
+                    [item["round_index"] for item in scenario["rounds"]],
+                    [0, 1, 2, 3],
+                )
+            self.assertEqual(summary, report.summarize(list(reversed(shards))))
+
+    def test_keeps_shard_workload_samples_separate(self):
+        """组装按 workload 保留各自的四轮统计，不做跨 shard 池化。"""
+        offsets = {
+            "main": 100, "equal_total_few_large": 200, "equal_total_many_medium": 300,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            shards = []
+            for workload in PERFORMANCE_WORKLOADS + ("correctness_only",):
+                target, _, samples = formal_shard(directory, workload)
+                if workload in offsets:
+                    for item in samples:
+                        item["application_ready_ms"] = offsets[workload]
+                    (target / "samples.jsonl").write_text(
+                        "".join(json.dumps(item) + "\n" for item in samples)
+                    )
+                shards.append(target)
+            workloads = report.summarize(shards)["matrix"][0]["workloads"]
+            medians = {
+                workload: workloads[workload]["scenarios"]["list:first"][
+                    "round_statistic_median"
+                ]["application_ready_ms"]["p50"]
+                for workload in PERFORMANCE_WORKLOADS
+            }
+            self.assertEqual(
+                medians, {name: float(value) for name, value in offsets.items()}
+            )
+
+    def test_rejects_incomplete_or_duplicated_shard_coverage(self):
+        """缺少 workload 或同一 workload 出现两次都不得组装。"""
+        with tempfile.TemporaryDirectory() as directory:
+            shards = self.shards(directory)
+            with self.assertRaisesRegex(ValueError, "coverage is incomplete"):
+                report.summarize(shards[:-1])
+            with self.assertRaisesRegex(ValueError, "duplicate matrix shard"):
+                report.summarize(shards + [shards[0]])
+
+    def test_rejects_cross_shard_input_identity_and_code_drift(self):
+        """同一 engine/layout 的 shard 必须共享正式 input 与 code 证据。"""
+        with tempfile.TemporaryDirectory() as directory:
+            shards = self.shards(directory)
+            rewrite_manifest(shards[1], drift_code)
+            with self.assertRaisesRegex(ValueError, "code evidence differs"):
+                report.summarize(shards)
+        with tempfile.TemporaryDirectory() as directory:
+            shards = self.shards(directory)
+            rewrite_manifest(shards[2], drift_input)
+            with self.assertRaisesRegex(ValueError, "input identity differs"):
+                report.summarize(shards)
+
+    def test_gates_each_shard_workload_rounds_and_completion(self):
+        """每个 shard 只对自己的 workload、round 数、rounds_complete 和计数负责。"""
+        with tempfile.TemporaryDirectory() as directory:
+            _, manifest, _ = formal_shard(directory, "main")
+            manifest["workloads"]["main"]["status"] = "running"
+            with self.assertRaisesRegex(ValueError, "workload is not complete"):
+                report.validate_run(manifest)
+
+            _, manifest, _ = formal_shard(Path(directory) / "rounds", "main")
+            manifest["workloads"]["main"]["rounds"].pop()
+            with self.assertRaisesRegex(ValueError, "must have 4 rounds"):
+                report.validate_run(manifest)
+
+            _, manifest, _ = formal_shard(Path(directory) / "main-rounds", "main")
+            manifest["correctness"]["rounds_complete"] = 0
+            with self.assertRaisesRegex(ValueError, "response-byte validation"):
+                report.validate_run(manifest)
+
+            _, manifest, _ = formal_shard(
+                Path(directory) / "control-rounds", "equal_total_few_large"
+            )
+            manifest["correctness"]["rounds_complete"] = 4
+            with self.assertRaisesRegex(ValueError, "response-byte validation"):
+                report.validate_run(manifest)
+
+            _, manifest, _ = formal_shard(Path(directory) / "samples", "main")
+            manifest["correctness"]["successful_samples"] -= 1
+            with self.assertRaisesRegex(ValueError, "response-byte validation"):
+                report.validate_run(manifest)
+
+    def test_rejects_shard_sample_count_that_contradicts_its_rounds(self):
+        """shard 的原始样本数必须与自身 round 计数一致。"""
+        with tempfile.TemporaryDirectory() as directory:
+            shards = self.shards(directory)
+            main = next(path for path in shards if path.name.endswith("-main"))
+            samples = (main / "samples.jsonl").read_text(encoding="utf-8").splitlines()
+            (main / "samples.jsonl").write_text(
+                "".join(line + "\n" for line in samples[:-1])
+            )
+            with self.assertRaisesRegex(ValueError, "sample evidence"):
+                report.summarize(shards)
 
 
 if __name__ == "__main__":
