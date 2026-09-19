@@ -1,4 +1,4 @@
-"""汇总已完成的 Stage 3 主矩阵 target 与 part-state 控制。"""
+"""汇总已完成的 Stage 3 主矩阵 target、part-state 与 interference 控制。"""
 
 import hashlib
 import json
@@ -72,6 +72,122 @@ FORMAL_TRUTH = {
     "block_size": 256,
     "block_count": 190,
 }
+
+INTERFERENCE_FORMAT = "agent-trace-json-storage-stage3-interference-run"
+INTERFERENCE_PHASE_FORMAT = "agent-trace-json-storage-stage3-interference-phase"
+INTERFERENCE_SUMMARY_FORMAT = "agent-trace-json-storage-stage3-interference-summary"
+INTERFERENCE_PHASE_ORDER = (
+    "quiet", "detail_2m", "trace_long", "batch_loop", "continuous_ingest",
+)
+INTERFERENCE_SEGMENTS = ("warmup", "measurement")
+INTERFERENCE_SEGMENT_SECONDS = {"warmup": 30.0, "measurement": 300.0}
+INTERFERENCE_SEGMENT_FILES = {
+    "warmup": "warmup-samples.jsonl", "measurement": "samples.jsonl",
+}
+INTERFERENCE_SNAPSHOT_NAMES = (
+    "before_warmup", "before_measurement", "after_measurement",
+)
+INTERFERENCE_STATISTICS_BOUNDARY = "raw-samples-retained-p99-requires-1000-successes"
+INTERFERENCE_P99_MINIMUM_SUCCESSES = 1000
+INTERFERENCE_SCOPE = "formal"
+INTERFERENCE_CLASSIFICATION = "formal_complete"
+INTERFERENCE_ELIGIBLE_BLOCK_COUNT = 45
+INTERFERENCE_ASSET_OBJECTS = 160
+INTERFERENCE_ASSET_BYTES = 128450560
+INTERFERENCE_PHASE_STREAMS = {
+    "quiet": None,
+    "detail_2m": "detail_2m",
+    "trace_long": "trace_long",
+    "batch_loop": "batch_loop",
+    "continuous_ingest": "continuous_ingest",
+}
+INTERFERENCE_STREAM_RATES = {
+    "list": 20.0, "preview": 20.0, "detail_2m": 1.0,
+    "trace_long": 0.2, "batch_loop": None, "continuous_ingest": 1.0,
+}
+INTERFERENCE_STREAM_WORKERS = {
+    "list": 2, "preview": 2, "detail_2m": 1,
+    "trace_long": 1, "batch_loop": 1, "continuous_ingest": 1,
+}
+INTERFERENCE_STREAM_MODES = {"batch_loop": "continuous"}
+INTERFERENCE_TIMEOUT_SECONDS = 30.0
+INTERFERENCE_LATE_TOLERANCE_SECONDS = 0.05
+INTERFERENCE_QUERY_SCENARIOS = {
+    "list": ("list", "list:first"),
+    "preview": ("preview", "preview:first"),
+    "detail_2m": ("detail", "detail:text_2m"),
+    "trace_long": ("trace", "trace:p95"),
+    "batch_loop": ("batch", "batch:main"),
+}
+INTERFERENCE_CODE_ROLES = frozenset({
+    "assets", "common", "generator", "interference_runner",
+    "layout_runner", "production", "run_stage3",
+})
+INTERFERENCE_METADATA_FIELDS = frozenset({
+    "block_size", "cyclic_replay", "eligible_block_count", "eligible_block_indices",
+    "eligible_block_sha256", "final_watermark", "main_query_catalog_sha256",
+    "preload_block_count", "seed", "selection_rules",
+})
+INTERFERENCE_SELECTION_FIELDS = frozenset({
+    "full_block_rows", "outside_query_window", "query_scenarios", "requires_main_payload",
+})
+INTERFERENCE_QUERY_WINDOW_FIELDS = frozenset({"project_id", "start_time", "end_time"})
+INTERFERENCE_CLEANUP_FIELDS = frozenset({
+    "namespaces", "namespaces_removed", "asset_directory_applicable",
+    "asset_directory_removed",
+})
+INTERFERENCE_NAMESPACE_POLICY_FIELDS = frozenset({
+    "strategy", "reuse", "phase_order", "namespace_prefix", "namespaces",
+})
+INTERFERENCE_NAMESPACE_STRATEGY = "runner-fixed-phase-unique"
+INTERFERENCE_NAMESPACE_PREFIX = "jsons3_if_<phase>_"
+INTERFERENCE_CHILD_FIELDS = frozenset({
+    "path", "bytes", "sha256", "format", "format_version", "status", "run_id",
+})
+INTERFERENCE_ARTIFACT_FIELDS = frozenset({"path", "bytes", "sha256"})
+INTERFERENCE_ARTIFACT_PATHS = tuple(
+    ["child/run-manifest.json"]
+    + [
+        path
+        for phase in INTERFERENCE_PHASE_ORDER
+        for path in (
+            f"child/{phase}/run-manifest.json",
+            f"child/{phase}/warmup-samples.jsonl",
+            f"child/{phase}/samples.jsonl",
+        )
+    ]
+)
+INTERFERENCE_SNAPSHOT_TABLE_METRICS = (
+    "part_count", "marks", "compressed_bytes", "uncompressed_bytes",
+)
+INTERFERENCE_QUERY_EVIDENCE_FIELDS = frozenset({
+    "index_scans", "plans", "query_details", "query_finish",
+})
+INTERFERENCE_COUNT_FIELDS = (
+    "scheduled_requests", "started_requests", "completed_requests", "successful_requests",
+    "failed_requests", "timed_out_requests", "dropped_requests", "late_requests",
+)
+INTERFERENCE_PUBLICATION_FIELDS = frozenset(
+    set(INTERFERENCE_COUNT_FIELDS)
+    | {
+        "offered_rate_requests_s", "phase_wall_seconds",
+        "completed_throughput_requests_s", "latency_ms",
+    }
+)
+INTERFERENCE_LATENCY_FIELDS = frozenset({
+    "minimum", "p50", "p95", "p99", "maximum", "p99_status", "p99_minimum_successes",
+})
+INTERFERENCE_STATUS_FIELDS = {
+    "success": "successful_requests",
+    "failed": "failed_requests",
+    "timed_out": "timed_out_requests",
+    "dropped": "dropped_requests",
+}
+INTERFERENCE_RAW_FIELDS = frozenset({
+    "stream", "sequence", "scheduled_offset_seconds", "started_offset_seconds",
+    "completed_offset_seconds", "duration_ms", "application_ready_ms", "status",
+    "late_by_ms", "sample", "error",
+})
 
 
 def _require(value, message):
@@ -1181,6 +1297,1048 @@ def summarize_part_states(runs: list[Path]) -> dict[str, object]:
         "state_order": list(PART_STATE_STATE_ORDER),
         "scenarios": list(PART_STATE_SCENARIOS),
         "part_states": targets,
+    }
+
+
+def _is_number(value, minimum=0):
+    """判断 JSON 值是否为排除 bool 的有界有限数值。"""
+    return type(value) in {int, float} and math.isfinite(value) and value >= minimum
+
+
+def _is_integer(value, minimum=0):
+    """判断 JSON 值是否为排除 bool 的有界整数。"""
+    return type(value) is int and value >= minimum
+
+
+def _matches_contract(value, expected):
+    """按 JSON 节点类型和值精确核对固定契约。"""
+    if type(value) is not type(expected):
+        return False
+    if isinstance(expected, dict):
+        return set(value) == set(expected) and all(
+            _matches_contract(value[key], item) for key, item in expected.items()
+        )
+    if isinstance(expected, list):
+        return len(value) == len(expected) and all(
+            _matches_contract(item, wanted) for item, wanted in zip(value, expected)
+        )
+    return value == expected
+
+
+def _matches_json_measurement(value, expected):
+    """比较重算测量值与已发布值，浮点数使用固定容差。"""
+    if expected is None or isinstance(expected, (bool, str)):
+        return type(value) is type(expected) and value == expected
+    if isinstance(expected, int):
+        return type(value) is int and value == expected
+    if isinstance(expected, float):
+        return type(value) is float and math.isfinite(value) and math.isclose(
+            value, expected, rel_tol=1e-9, abs_tol=1e-9,
+        )
+    if isinstance(expected, dict):
+        return isinstance(value, dict) and set(value) == set(expected) and all(
+            _matches_json_measurement(value[key], item) for key, item in expected.items()
+        )
+    if isinstance(expected, list):
+        return isinstance(value, list) and len(value) == len(expected) and all(
+            _matches_json_measurement(item, wanted) for item, wanted in zip(value, expected)
+        )
+    return value == expected
+
+
+def _nullable_distribution(values):
+    """返回允许空样本的 minimum/p50/p95/maximum 分布。"""
+    if not values:
+        return {"minimum": None, "p50": None, "p95": None, "maximum": None}
+    return _distribution(values)
+
+
+def _load_json_line(raw, label):
+    """解析单行 JSON object，拒绝非有限常量和非 object 记录。"""
+    def reject_constant(value):
+        raise ValueError(f"{label} contains non-finite JSON value: {value}")
+
+    try:
+        value = json.loads(raw, parse_constant=reject_constant)
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"{label} is invalid") from error
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be an object")
+    return value
+
+
+def _load_json_document(path, label):
+    """流式读取 JSON object 文档，拒绝非有限常量与非 object 文档。"""
+    def reject_constant(value):
+        raise ValueError(f"{label} contains non-finite JSON value: {value}")
+
+    try:
+        with open(path, "rb") as handle:
+            value = json.load(handle, parse_constant=reject_constant)
+    except OSError as error:
+        raise ValueError(f"{label} is unavailable") from error
+    except (UnicodeDecodeError, json.JSONDecodeError) as error:
+        raise ValueError(f"{label} is invalid") from error
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be an object")
+    return value
+
+
+def _stream_identity(path):
+    """流式重算文件 bytes 与 SHA-256，不把大文件整体读入内存。"""
+    digest = hashlib.sha256()
+    size = 0
+    with open(path, "rb") as handle:
+        while True:
+            chunk = handle.read(1 << 20)
+            if not chunk:
+                break
+            digest.update(chunk)
+            size += len(chunk)
+    return {"bytes": size, "sha256": digest.hexdigest()}
+
+
+def _interference_schedules():
+    """按 runner 固定 factory 生成 30/300 秒的 phase schedule。"""
+    schedules = {}
+    for phase in INTERFERENCE_PHASE_ORDER:
+        streams = ["list", "preview"]
+        interference_stream = INTERFERENCE_PHASE_STREAMS[phase]
+        if interference_stream is not None:
+            streams.append(interference_stream)
+        schedules[phase] = {
+            segment: {
+                stream: {
+                    "name": stream,
+                    "rate_per_second": INTERFERENCE_STREAM_RATES[stream],
+                    "duration_seconds": INTERFERENCE_SEGMENT_SECONDS[segment],
+                    "workers": INTERFERENCE_STREAM_WORKERS[stream],
+                    "timeout_seconds": INTERFERENCE_TIMEOUT_SECONDS,
+                    "late_tolerance_seconds": INTERFERENCE_LATE_TOLERANCE_SECONDS,
+                    "mode": INTERFERENCE_STREAM_MODES.get(stream, "fixed"),
+                }
+                for stream in streams
+            }
+            for segment in INTERFERENCE_SEGMENTS
+        }
+    return schedules
+
+
+INTERFERENCE_SCHEDULES = _interference_schedules()
+
+
+def _interference_runtime(envelope):
+    """验证 interference runtime 的固定引擎与布局身份。"""
+    runtime = envelope.get("runtime")
+    if (
+        not isinstance(runtime, dict)
+        or runtime.get("operation") != "interference"
+        or runtime.get("engine") != "clickhouse"
+        or runtime.get("layout") not in LAYOUTS
+    ):
+        raise ValueError("interference runtime identity mismatch")
+    endpoint = runtime.get("endpoint")
+    if (
+        not isinstance(endpoint, dict)
+        or not isinstance(endpoint.get("host"), str) or not endpoint["host"]
+        or not _integer(endpoint.get("port"), "interference runtime evidence is invalid", 1)
+    ):
+        raise ValueError("interference runtime evidence is invalid")
+    container = runtime.get("container")
+    if not isinstance(container, dict) or any(
+        not isinstance(container.get(field), str) or not container[field]
+        for field in ("container", "image", "image_id")
+    ):
+        raise ValueError("interference runtime evidence is invalid")
+    engine_runtime = runtime.get("engine_runtime")
+    if (
+        not isinstance(engine_runtime, dict)
+        or not isinstance(engine_runtime.get("version"), str) or not engine_runtime["version"]
+        or engine_runtime.get("source") != "database-query"
+    ):
+        raise ValueError("interference runtime evidence is invalid")
+    host = runtime.get("host")
+    if (
+        not isinstance(host, dict)
+        or not isinstance(host.get("platform"), str) or not host["platform"]
+        or not isinstance(host.get("machine"), str) or not host["machine"]
+    ):
+        raise ValueError("interference runtime evidence is invalid")
+    for field in ("cpu_count", "memory_total_kib"):
+        _integer(host.get(field), "interference runtime evidence is invalid", 1)
+    return runtime["layout"]
+
+
+def _interference_runtime_identity(envelope):
+    """返回跨运行比较的引擎版本与镜像身份。"""
+    runtime = envelope["runtime"]
+    container = runtime["container"]
+    return (
+        runtime["engine_runtime"]["version"], container["image"], container["image_id"],
+    )
+
+
+def _interference_code(code):
+    """验证正式 code map 的固定角色与身份。"""
+    if not isinstance(code, dict) or set(code) != INTERFERENCE_CODE_ROLES:
+        raise ValueError("interference code evidence is incomplete")
+    for evidence in code.values():
+        if (
+            not isinstance(evidence, dict)
+            or set(evidence) != {"path", "bytes", "sha256"}
+            or not isinstance(evidence.get("path"), str) or not evidence["path"]
+            or not _sha256(evidence.get("sha256"))
+        ):
+            raise ValueError("interference code evidence is incomplete")
+        _integer(evidence.get("bytes"), "interference code evidence is incomplete", 1)
+
+
+def _interference_metadata(metadata, truth, query_digest):
+    """验证固定 interference factory metadata，包含 45-block 选择与 digest。"""
+    invalid = "interference metadata is invalid"
+    if not isinstance(metadata, dict) or set(metadata) != INTERFERENCE_METADATA_FIELDS:
+        raise ValueError(invalid)
+    for field, expected in (
+        ("seed", FORMAL_TRUTH["seed"]),
+        ("final_watermark", FORMAL_TRUTH["record_count"]),
+        ("block_size", truth["block_size"]),
+        ("preload_block_count", truth["block_count"]),
+    ):
+        if _integer(metadata.get(field), invalid, 1) != expected:
+            raise ValueError(invalid)
+    if metadata.get("cyclic_replay") is not True:
+        raise ValueError(invalid)
+    indices = metadata.get("eligible_block_indices")
+    if (
+        not isinstance(indices, list)
+        or any(not _is_integer(value) for value in indices)
+        or indices != sorted(set(indices))
+        or len(indices) != INTERFERENCE_ELIGIBLE_BLOCK_COUNT
+    ):
+        raise ValueError(invalid)
+    digests = metadata.get("eligible_block_sha256")
+    if (
+        not isinstance(digests, list)
+        or len(digests) != len(indices)
+        or any(not _sha256(value) for value in digests)
+        or len(set(digests)) != len(digests)
+        or _integer(metadata.get("eligible_block_count"), invalid, 1) != len(indices)
+        or metadata.get("main_query_catalog_sha256") != query_digest
+    ):
+        raise ValueError(invalid)
+    rules = metadata.get("selection_rules")
+    window = rules.get("outside_query_window") if isinstance(rules, dict) else None
+    if (
+        not isinstance(rules, dict)
+        or set(rules) != INTERFERENCE_SELECTION_FIELDS
+        or _integer(rules.get("full_block_rows"), invalid, 1) != truth["block_size"]
+        or rules.get("requires_main_payload") is not True
+        or not _matches_contract(
+            rules.get("query_scenarios"),
+            {stream: scenario for stream, (_, scenario) in INTERFERENCE_QUERY_SCENARIOS.items()},
+        )
+        or not isinstance(window, dict)
+        or set(window) != INTERFERENCE_QUERY_WINDOW_FIELDS
+        or any(not isinstance(window.get(field), str) or not window[field]
+               for field in INTERFERENCE_QUERY_WINDOW_FIELDS)
+    ):
+        raise ValueError(invalid)
+
+
+def _interference_namespace_policy(policy):
+    """验证 phase 独占 namespace 策略。"""
+    invalid = "interference namespace policy is invalid"
+    namespaces = policy.get("namespaces") if isinstance(policy, dict) else None
+    if (
+        not isinstance(policy, dict)
+        or set(policy) != INTERFERENCE_NAMESPACE_POLICY_FIELDS
+        or policy.get("strategy") != INTERFERENCE_NAMESPACE_STRATEGY
+        or policy.get("reuse") is not False
+        or policy.get("namespace_prefix") != INTERFERENCE_NAMESPACE_PREFIX
+        or not _matches_contract(policy.get("phase_order"), list(INTERFERENCE_PHASE_ORDER))
+        or not isinstance(namespaces, list)
+        or len(namespaces) != len(INTERFERENCE_PHASE_ORDER)
+        or any(not isinstance(namespace, str) or not namespace for namespace in namespaces)
+        or len(set(namespaces)) != len(namespaces)
+    ):
+        raise ValueError(invalid)
+
+
+def _interference_cleanup(cleanup, layout):
+    """验证运行级 cleanup 与 Asset 目录证据。"""
+    invalid = "interference cleanup evidence is missing"
+    namespaces = cleanup.get("namespaces") if isinstance(cleanup, dict) else None
+    if (
+        not isinstance(cleanup, dict)
+        or set(cleanup) != INTERFERENCE_CLEANUP_FIELDS
+        or cleanup.get("namespaces_removed") is not True
+        or cleanup.get("asset_directory_removed") is not True
+        or cleanup.get("asset_directory_applicable") is not (layout == "asset_ref")
+        or not isinstance(namespaces, list)
+        or len(namespaces) != len(INTERFERENCE_PHASE_ORDER)
+        or any(not isinstance(namespace, str) or not namespace for namespace in namespaces)
+        or len(set(namespaces)) != len(namespaces)
+    ):
+        raise ValueError(invalid)
+
+
+def _interference_child_evidence(evidence):
+    """验证 envelope 记录的 child manifest 身份结构。"""
+    invalid = "interference child evidence is missing"
+    if (
+        not isinstance(evidence, dict)
+        or set(evidence) != INTERFERENCE_CHILD_FIELDS
+        or evidence.get("path") != "child/run-manifest.json"
+        or not _integer(evidence.get("bytes"), invalid, 1)
+        or not _sha256(evidence.get("sha256"))
+        or not _matches_contract(evidence.get("format"), INTERFERENCE_FORMAT)
+        or not _matches_contract(evidence.get("format_version"), FORMAT_VERSION)
+        or not _matches_contract(evidence.get("status"), "complete")
+        or not isinstance(evidence.get("run_id"), str) or not evidence["run_id"]
+    ):
+        raise ValueError(invalid)
+
+
+def _interference_artifacts(artifacts):
+    """验证十六项 child artifact 的固定路径集合。"""
+    invalid = "interference artifacts are incomplete"
+    if not isinstance(artifacts, list) or len(artifacts) != len(INTERFERENCE_ARTIFACT_PATHS):
+        raise ValueError(invalid)
+    paths = []
+    for item in artifacts:
+        if (
+            not isinstance(item, dict)
+            or set(item) != INTERFERENCE_ARTIFACT_FIELDS
+            or not isinstance(item.get("path"), str)
+            or not _integer(item.get("bytes"), invalid, 1)
+            or not _sha256(item.get("sha256"))
+        ):
+            raise ValueError(invalid)
+        paths.append(item["path"])
+    if len(set(paths)) != len(paths) or set(paths) != set(INTERFERENCE_ARTIFACT_PATHS):
+        raise ValueError(invalid)
+
+
+def _validate_interference_envelope(envelope):
+    """验证一个 interference production envelope 的格式、身份与固定 metadata。"""
+    if (
+        not _matches_contract(envelope.get("format"), PRODUCTION_FORMAT)
+        or not _matches_contract(envelope.get("format_version"), FORMAT_VERSION)
+    ):
+        raise ValueError("interference production envelope format/version is invalid")
+    if not _matches_contract(envelope.get("status"), "complete"):
+        raise ValueError("interference production envelope status is not complete")
+    if not _matches_contract(envelope.get("operation"), "interference"):
+        raise ValueError("interference operation is invalid")
+    if not isinstance(envelope.get("run_id"), str) or not envelope["run_id"]:
+        raise ValueError("interference run identity is missing")
+    layout = _interference_runtime(envelope)
+    _identity(envelope.get("input"))
+    truth = envelope.get("truth")
+    if (
+        not isinstance(truth, dict)
+        or set(truth) != {"seed", "identity_sha256", "record_count", "block_size", "block_count"}
+        or not _sha256(truth.get("identity_sha256"))
+        or truth["identity_sha256"] != envelope["input"]["identity_sha256"]
+    ):
+        raise ValueError("interference truth identity is invalid")
+    for field, expected in FORMAL_TRUTH.items():
+        if _integer(truth.get(field), "interference truth identity is invalid", 1) != expected:
+            raise ValueError("interference truth identity is invalid")
+    if not _sha256(envelope.get("query_catalog_sha256")):
+        raise ValueError("interference query catalog identity is invalid")
+    _interference_code(envelope.get("code"))
+    _interference_metadata(envelope.get("interference"), truth, envelope["query_catalog_sha256"])
+    _interference_namespace_policy(envelope.get("namespace_policy"))
+    _interference_cleanup(envelope.get("cleanup"), layout)
+    _interference_artifacts(envelope.get("artifacts"))
+    _interference_child_evidence(envelope.get("child"))
+    return layout
+
+
+def _recompute_interference_artifacts(run):
+    """流式重算十六项 child artifact 的 bytes/SHA，拒绝路径逃逸。"""
+    root = Path(run).resolve()
+    child_root = (root / "child").resolve()
+    identities = {}
+    for relative in INTERFERENCE_ARTIFACT_PATHS:
+        path = (root / relative).resolve()
+        try:
+            path.relative_to(child_root)
+        except ValueError as error:
+            raise ValueError("interference artifact path escapes the child directory") from error
+        try:
+            identities[relative] = {"path": relative, **_stream_identity(path)}
+        except OSError as error:
+            raise ValueError("interference artifact is unavailable") from error
+    return identities
+
+
+def _verify_interference_artifacts(artifacts, recomputed):
+    """核对 envelope 记录的 artifact 身份与流式重算结果。"""
+    declared = {item["path"]: item for item in artifacts}
+    for relative, identity in recomputed.items():
+        item = declared[relative]
+        if item["bytes"] != identity["bytes"] or item["sha256"] != identity["sha256"]:
+            raise ValueError("interference artifact identity mismatch")
+
+
+def _read_interference_child(run, envelope):
+    """读取 child root manifest，并核对 envelope 记录的实际 bytes/SHA。"""
+    evidence = envelope["child"]
+    root = Path(run).resolve()
+    path = (root / evidence["path"]).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as error:
+        raise ValueError("interference child path escapes the run directory") from error
+    try:
+        identity = _stream_identity(path)
+    except OSError as error:
+        raise ValueError("interference child manifest is unavailable") from error
+    if evidence["bytes"] != identity["bytes"] or evidence["sha256"] != identity["sha256"]:
+        raise ValueError("interference child identity mismatch")
+    manifest = _load_json_document(path, "interference child manifest")
+    return manifest
+
+
+def _verify_interference_child_evidence(evidence, manifest):
+    """核对 envelope child 记录与 child manifest 的格式、状态和运行身份。"""
+    for key in ("format", "format_version", "status", "run_id"):
+        if evidence.get(key) != manifest.get(key):
+            raise ValueError("interference child format/status mismatch")
+
+
+def _validate_interference_root(manifest):
+    """验证 child root 的固定正式身份并返回内嵌 phase 列表。"""
+    fixed = {
+        "format": INTERFERENCE_FORMAT,
+        "format_version": FORMAT_VERSION,
+        "status": "complete",
+        "seed": FORMAL_TRUTH["seed"],
+        "execution_scope": INTERFERENCE_SCOPE,
+        "classification": INTERFERENCE_CLASSIFICATION,
+        "phase_order": list(INTERFERENCE_PHASE_ORDER),
+    }
+    if (
+        any(not _matches_contract(manifest.get(key), value) for key, value in fixed.items())
+        or any(key in manifest for key in ("error", "errors", "execution_resolution"))
+        or not isinstance(manifest.get("run_id"), str) or not manifest["run_id"]
+    ):
+        raise ValueError("interference root manifest is not formal complete")
+    phases = manifest.get("phases")
+    if (
+        not isinstance(phases, list)
+        or len(phases) != len(INTERFERENCE_PHASE_ORDER)
+        or any(not isinstance(phase, dict) for phase in phases)
+    ):
+        raise ValueError("interference root phases are incomplete")
+    return phases
+
+
+def _interference_resources(resources):
+    """验证正式 resource snapshot 的 CPU、内存与 I/O 观测。"""
+    invalid = "interference resource snapshot is invalid"
+    if not isinstance(resources, dict):
+        raise ValueError(invalid)
+    cpu = resources.get("cpu")
+    ticks = cpu.get("ticks") if isinstance(cpu, dict) else None
+    if (
+        not isinstance(cpu, dict) or cpu.get("status") != "available"
+        or not isinstance(ticks, list) or not ticks
+        or any(not _is_integer(value) for value in ticks)
+    ):
+        raise ValueError(invalid)
+    memory = resources.get("memory")
+    if (
+        not isinstance(memory, dict) or memory.get("status") != "available"
+        or any(not _is_integer(memory.get(field)) for field in ("total_kib", "available_kib"))
+        or memory["available_kib"] > memory["total_kib"]
+    ):
+        raise ValueError(invalid)
+    io = resources.get("io")
+    if (
+        not isinstance(io, dict) or io.get("status") != "available"
+        or any(
+            not _is_integer(io.get(field), minimum)
+            for field, minimum in (("devices", 1), ("read_sectors", 0), ("written_sectors", 0))
+        )
+    ):
+        raise ValueError(invalid)
+    return resources
+
+
+def _interference_asset_store(storage, layout):
+    """要求 asset_ref 记录 160 个对象水位，其它布局不携带 Asset 证据。"""
+    value = storage.get("asset_store")
+    invalid = "interference asset store evidence is invalid"
+    if layout != "asset_ref":
+        if value is not None:
+            raise ValueError(invalid)
+        return None
+    if not isinstance(value, dict):
+        raise ValueError(invalid)
+    for field in PART_STATE_ASSET_FIELDS:
+        _integer(value.get(field), invalid)
+    if (
+        value["available_object_count"] != INTERFERENCE_ASSET_OBJECTS
+        or value["available_bytes"] != INTERFERENCE_ASSET_BYTES
+        or value["orphan_object_count"] != 0
+        or value["orphan_bytes"] != 0
+    ):
+        raise ValueError(invalid)
+    return {field: value[field] for field in PART_STATE_ASSET_FIELDS}
+
+
+def _interference_snapshots(manifest, layout):
+    """验证三个资源/存储 snapshot 的顺序、物理计数与 Asset 水位。"""
+    snapshots = manifest.get("snapshots")
+    names = [
+        item.get("name") if isinstance(item, dict) else None for item in snapshots
+    ] if isinstance(snapshots, list) else None
+    if names != list(INTERFERENCE_SNAPSHOT_NAMES):
+        raise ValueError("interference snapshots are incomplete")
+    targets = LAYOUT_TARGETS[layout]
+    results = []
+    for snapshot in snapshots:
+        _interference_resources(snapshot.get("resources"))
+        _number(snapshot.get("captured_offset_seconds"), "interference snapshot offset is invalid")
+        storage = snapshot.get("storage")
+        tables = storage.get("tables") if isinstance(storage, dict) else None
+        merges = storage.get("merges") if isinstance(storage, dict) else None
+        if (
+            not isinstance(tables, dict) or set(tables) != set(targets)
+            or not isinstance(merges, list)
+            or any(
+                not isinstance(merge, dict) or not isinstance(merge.get("table"), str)
+                or not merge["table"] for merge in merges
+            )
+        ):
+            raise ValueError("interference storage evidence is incomplete")
+        normalized = {}
+        for table, values in tables.items():
+            if not isinstance(values, dict):
+                raise ValueError("interference storage metrics are invalid")
+            normalized[table] = {
+                metric: _integer(values.get(metric), "interference storage metrics are invalid")
+                for metric in INTERFERENCE_SNAPSHOT_TABLE_METRICS
+            }
+        backlog = sum(max(0, values["part_count"] - 1) for values in normalized.values())
+        if (
+            _integer(snapshot.get("active_part_backlog"), "interference storage totals mismatch")
+            != backlog
+            or _integer(snapshot.get("active_merge_count"), "interference storage totals mismatch")
+            != len(merges)
+        ):
+            raise ValueError("interference storage totals mismatch")
+        results.append({
+            "name": snapshot["name"],
+            "captured_offset_seconds": snapshot["captured_offset_seconds"],
+            "resources": snapshot["resources"],
+            "tables": normalized,
+            "merges": merges,
+            "active_part_backlog": backlog,
+            "active_merge_count": len(merges),
+            "asset_store": _interference_asset_store(storage, layout),
+        })
+    return results
+
+
+def _interference_accumulator(stream):
+    """建立一个 stream 的流式重算累加器。"""
+    return {
+        "stream": stream,
+        "continuous": stream == "continuous_ingest",
+        "counts": {field: 0 for field in INTERFERENCE_COUNT_FIELDS},
+        "latency_values": [],
+        "metrics_values": {metric: [] for metric in METRICS},
+        "resolver_requests": [],
+        "resolver_read_ms": [],
+        "response_bytes": {
+            "database": 0, "resolver_payload": 0, "total": 0, "validated_payload": 0,
+            "request_count": 0, "database_protocol": 0, "protocol_complete": True,
+        },
+        "queries": {},
+    }
+
+
+def _interference_raw_evidence(row):
+    """按 runner 契约验证一条 raw 的状态、时序与错误证据。"""
+    status = row.get("status")
+    if status not in INTERFERENCE_STATUS_FIELDS:
+        raise ValueError("interference raw status is invalid")
+    for field in ("scheduled_offset_seconds", "late_by_ms"):
+        _number(row.get(field), "interference raw timing is invalid")
+    started = row.get("started_offset_seconds")
+    completed = row.get("completed_offset_seconds")
+    if status == "dropped":
+        if started is not None or completed is not None or row.get("sample") is not None:
+            raise ValueError("interference raw dropped sample is inconsistent")
+    elif (
+        not _is_number(started)
+        or (status in {"success", "failed"} and not _is_number(completed))
+        or (completed is not None and (not _is_number(completed) or completed < started))
+    ):
+        raise ValueError("interference raw started/completed evidence is invalid")
+    duration, application_ready = row.get("duration_ms"), row.get("application_ready_ms")
+    if completed is None:
+        if duration is not None or application_ready is not None:
+            raise ValueError("interference raw incomplete timing is inconsistent")
+    elif not _is_number(duration) or not _is_number(application_ready):
+        raise ValueError("interference raw request duration is invalid")
+    if status == "success" and row.get("error") is not None:
+        raise ValueError("interference raw successful sample contains error")
+    if status != "success" and (not isinstance(row.get("error"), str) or not row["error"]):
+        raise ValueError("interference raw failed sample lacks error")
+    return status
+
+
+def _interference_success_evidence(row, accumulator, query_scenarios, write_tables,
+                                   block_size, watermarks):
+    """验证成功 raw 的目标证据并累加 bytes、时延与 resolver 分布。"""
+    invalid = "interference successful query evidence is invalid"
+    sample = row.get("sample")
+    if accumulator["continuous"]:
+        if (
+            not isinstance(sample, dict)
+            or not _is_integer(sample.get("rows"), 1) or sample["rows"] != block_size
+            or not _is_integer(sample.get("watermark"), 1)
+            or sample["watermark"] not in watermarks
+            or not isinstance(sample.get("watermarks"), dict)
+            or set(sample["watermarks"]) != set(write_tables)
+            or any(not _is_integer(value) for value in sample["watermarks"].values())
+            or any(value != sample["watermark"] for value in sample["watermarks"].values())
+        ):
+            raise ValueError("interference continuous_ingest success lacks BlockResult")
+        return
+    expected = query_scenarios.get(accumulator["stream"])
+    validation = sample.get("validation") if isinstance(sample, dict) else None
+    if (
+        expected is None or not isinstance(sample, dict)
+        or sample.get("kind") != expected[0] or sample.get("scenario") != expected[1]
+        or sample.get("status") != "success"
+        or not isinstance(sample.get("query_id"), str) or not sample["query_id"]
+        or sample["query_id"] in accumulator["queries"]
+        or not isinstance(validation, dict)
+    ):
+        raise ValueError(invalid)
+    response = _integer(sample.get("response_bytes"), invalid, 1)
+    database = _integer(sample.get("database_response_bytes"), invalid)
+    resolver_payload = _integer(sample.get("resolver_payload_bytes"), invalid)
+    request_count = _integer(sample.get("request_count"), invalid, 1)
+    resolver_requests = _integer(sample.get("resolver_requests"), invalid)
+    resolver_read_ms = _number(sample.get("resolver_read_ms"), invalid)
+    protocol = sample.get("database_protocol_bytes")
+    if protocol is not None:
+        _integer(protocol, invalid)
+    rows = _integer(validation.get("row_count"), invalid)
+    validated = _integer(validation.get("validated_payload_bytes"), invalid)
+    for metric in METRICS:
+        _number(sample.get(metric), invalid)
+    if response != database + resolver_payload:
+        raise ValueError(invalid)
+    if sample["application_ready_ms"] <= 0 and sample["scenario"].startswith("batch:"):
+        raise ValueError(invalid)
+    accumulator["queries"][sample["query_id"]] = {"kind": sample["kind"], "row_count": rows}
+    for metric in METRICS:
+        accumulator["metrics_values"][metric].append(sample[metric])
+    accumulator["resolver_requests"].append(resolver_requests)
+    accumulator["resolver_read_ms"].append(resolver_read_ms)
+    totals = accumulator["response_bytes"]
+    totals["database"] += database
+    totals["resolver_payload"] += resolver_payload
+    totals["total"] += response
+    totals["validated_payload"] += validated
+    totals["request_count"] += request_count
+    if protocol is None:
+        totals["protocol_complete"] = False
+    else:
+        totals["database_protocol"] += protocol
+
+
+def _parse_interference_raw(path, schedules, *, query_scenarios, write_tables,
+                            block_size, watermarks):
+    """流式重算一个 raw JSONL 的 stream 计数、时延与成功 query 证据。"""
+    path = Path(path)
+    if not path.is_file():
+        raise ValueError("interference raw file is unavailable")
+    if not isinstance(schedules, dict) or not schedules:
+        raise ValueError("interference schedules mismatch")
+    accumulators = {stream: _interference_accumulator(stream) for stream in schedules}
+    sequences = {stream: [] for stream in schedules}
+    with open(path, "rb") as handle:
+        for number, line in enumerate(handle, 1):
+            if not line.strip():
+                raise ValueError("interference raw file is empty or contains an empty line")
+            row = _load_json_line(line, f"interference raw line {number}")
+            if set(row) != INTERFERENCE_RAW_FIELDS or row.get("stream") not in accumulators:
+                raise ValueError("interference raw fields or stream are invalid")
+            stream = row["stream"]
+            schedule = schedules[stream]
+            status = _interference_raw_evidence(row)
+            tolerance = _number(
+                schedule.get("late_tolerance_seconds"), "interference schedules mismatch"
+            )
+            counts = accumulators[stream]["counts"]
+            counts[INTERFERENCE_STATUS_FIELDS[status]] += 1
+            counts["started_requests"] += row["started_offset_seconds"] is not None
+            counts["completed_requests"] += row["completed_offset_seconds"] is not None
+            counts["late_requests"] += row["late_by_ms"] > tolerance * 1000
+            sequences[stream].append(row["sequence"])
+            if status == "success":
+                _interference_success_evidence(
+                    row, accumulators[stream], query_scenarios, write_tables,
+                    block_size, watermarks,
+                )
+                accumulators[stream]["latency_values"].append(row["application_ready_ms"])
+    results = {}
+    for stream, accumulator in accumulators.items():
+        rows = sequences[stream]
+        if not rows:
+            raise ValueError("interference raw stream is missing")
+        if (
+            any(not _is_integer(value) for value in rows)
+            or rows != list(range(len(rows)))
+        ):
+            raise ValueError("interference raw sequence is not contiguous")
+        accumulator["counts"]["scheduled_requests"] = len(rows)
+        if schedules[stream].get("mode") == "fixed":
+            mismatch = "interference schedules mismatch"
+            duration = _number(schedules[stream].get("duration_seconds"), mismatch)
+            rate = _number(schedules[stream].get("rate_per_second"), mismatch)
+            if len(rows) != math.ceil(duration * rate):
+                raise ValueError("interference raw fixed scheduled count is invalid")
+        results[stream] = accumulator
+    return results
+
+
+def _interference_latency(values):
+    """按固定阈值发布 application-ready 时延，p99 至少需要 1,000 个成功样本。"""
+    publishable = len(values) >= INTERFERENCE_P99_MINIMUM_SUCCESSES
+    return {
+        "minimum": min(values) if values else None,
+        "p50": _percentile(values, 0.50) if values else None,
+        "p95": _percentile(values, 0.95) if values else None,
+        "p99": _percentile(values, 0.99) if publishable else None,
+        "maximum": max(values) if values else None,
+        "p99_status": (
+            "publishable" if publishable else "unavailable_insufficient_successes"
+        ),
+        "p99_minimum_successes": INTERFERENCE_P99_MINIMUM_SUCCESSES,
+    }
+
+
+def _interference_stream_statistics(parsed, schedule, phase_wall_seconds):
+    """按固定定义重算一个 stream 的计数、吞吐、时延与 bytes 分布。"""
+    invalid = "interference summary publication evidence is invalid"
+    wall = _number(phase_wall_seconds, invalid)
+    if wall <= 0:
+        raise ValueError(invalid)
+    counts = parsed["counts"]
+    result = {
+        "counts": {field: counts[field] for field in INTERFERENCE_COUNT_FIELDS},
+        "offered_rate_requests_s": schedule.get("rate_per_second"),
+        "phase_wall_seconds": wall,
+        "completed_throughput_requests_s": counts["successful_requests"] / wall,
+        "latency_ms": _interference_latency(parsed["latency_values"]),
+    }
+    if parsed["continuous"]:
+        return result
+    totals = parsed["response_bytes"]
+    result["metrics"] = {
+        metric: _nullable_distribution(parsed["metrics_values"][metric]) for metric in METRICS
+    }
+    result["response_bytes"] = {
+        "database": totals["database"],
+        "resolver_payload": totals["resolver_payload"],
+        "total": totals["total"],
+        "validated_payload": totals["validated_payload"],
+        "request_count": totals["request_count"],
+        "database_protocol": (
+            totals["database_protocol"] if totals["protocol_complete"] else "unavailable"
+        ),
+    }
+    result["resolver_requests"] = _nullable_distribution(parsed["resolver_requests"])
+    result["resolver_read_ms"] = _nullable_distribution(parsed["resolver_read_ms"])
+    return result
+
+
+def _gate_interference_summary(published, statistics, schedules):
+    """交叉核对 raw 重算计数、吞吐与时延发布证据。"""
+    if not isinstance(published, dict) or set(published) != set(schedules):
+        raise ValueError("interference summary streams mismatch")
+    for stream, schedule in schedules.items():
+        item = published.get(stream)
+        result = statistics[stream]
+        if (
+            not isinstance(item, dict)
+            or set(item) != INTERFERENCE_PUBLICATION_FIELDS
+            or not isinstance(item.get("latency_ms"), dict)
+            or set(item["latency_ms"]) != INTERFERENCE_LATENCY_FIELDS
+        ):
+            raise ValueError("interference summary publication evidence is invalid")
+        for field, value in result["counts"].items():
+            if not _is_integer(item.get(field)) or item[field] != value:
+                raise ValueError("interference raw and summary counts mismatch")
+        if (
+            not _matches_json_measurement(
+                item.get("offered_rate_requests_s"), schedule["rate_per_second"]
+            )
+            or not _matches_json_measurement(
+                item.get("phase_wall_seconds"), result["phase_wall_seconds"]
+            )
+            or not _matches_json_measurement(
+                item.get("completed_throughput_requests_s"),
+                result["completed_throughput_requests_s"],
+            )
+            or not _matches_json_measurement(item.get("latency_ms"), result["latency_ms"])
+        ):
+            raise ValueError("interference summary publication evidence is invalid")
+
+
+def _gate_interference_access(manifest, queries):
+    """核对成功 query 与 plan/detail/QueryFinish 的一一对应。"""
+    grouped = defaultdict(dict)
+    for query_id, (stream, evidence) in queries.items():
+        grouped[stream][query_id] = evidence
+    if not grouped or any(not values for values in grouped.values()):
+        raise ValueError("interference query stream lacks a success")
+    evidence = manifest.get("query_evidence")
+    if (
+        not isinstance(evidence, dict)
+        or set(evidence) != INTERFERENCE_QUERY_EVIDENCE_FIELDS
+    ):
+        raise ValueError("interference query evidence is missing")
+    expected = set(queries)
+    for key in ("plans", "query_details", "query_finish"):
+        if not isinstance(evidence.get(key), dict) or set(evidence[key]) != expected:
+            raise ValueError("interference query evidence IDs mismatch")
+    for query_id, (_, planned) in queries.items():
+        plan = evidence["plans"][query_id]
+        detail = evidence["query_details"][query_id]
+        finish = evidence["query_finish"][query_id]
+        if not isinstance(plan, str) or not plan.strip():
+            raise ValueError("interference query plan is invalid")
+        if (
+            not isinstance(detail, dict) or detail.get("kind") != planned["kind"]
+            or not isinstance(detail.get("statement"), str) or not detail["statement"].strip()
+            or not isinstance(detail.get("declared_source"), str)
+            or not detail["declared_source"]
+        ):
+            raise ValueError("interference query detail evidence is invalid")
+        invalid = "interference query detail evidence is invalid"
+        scanned_rows = _integer(detail.get("scanned_rows"), invalid)
+        scanned_bytes = _integer(detail.get("scanned_bytes"), invalid)
+        if (
+            not isinstance(finish, dict) or finish.get("type") != "QueryFinish"
+            or not _is_integer(finish.get("exception_code")) or finish["exception_code"] != 0
+        ):
+            raise ValueError("interference QueryFinish evidence is invalid")
+        invalid = "interference QueryFinish evidence is invalid"
+        read_rows = _integer(finish.get("read_rows"), invalid)
+        read_bytes = _integer(finish.get("read_bytes"), invalid)
+        if (
+            scanned_rows != read_rows or scanned_bytes != read_bytes
+            or read_rows < planned["row_count"]
+        ):
+            raise ValueError("interference query evidence is inconsistent")
+
+
+def _validate_interference_phase(run, phase, manifest, layout, metadata, schedules,
+                                 segment_seconds):
+    """验证单个 phase 的固定 manifest、snapshot、raw 与访问证据。"""
+    expected = {
+        "format": INTERFERENCE_PHASE_FORMAT,
+        "format_version": FORMAT_VERSION,
+        "status": "complete",
+        "phase": phase,
+        "seed": FORMAL_TRUTH["seed"],
+        "execution_scope": INTERFERENCE_SCOPE,
+        "classification": INTERFERENCE_CLASSIFICATION,
+        "layout": layout,
+        "warmup_seconds": segment_seconds["warmup"],
+        "measurement_seconds": segment_seconds["measurement"],
+    }
+    if any(not _matches_contract(manifest.get(key), value) for key, value in expected.items()):
+        raise ValueError("interference phase manifest mismatch")
+    if any(key in manifest for key in ("error", "errors", "execution_resolution")):
+        raise ValueError("interference phase manifest is not formal complete")
+    namespace = manifest.get("namespace")
+    if not isinstance(namespace, str) or not namespace:
+        raise ValueError("interference phase namespaces are invalid or duplicated")
+    database = f"{namespace}_{layout}"
+    cleanup = manifest.get("cleanup")
+    if (
+        not isinstance(cleanup, dict) or set(cleanup) != {"namespace", "removed"}
+        or cleanup.get("removed") is not True or cleanup.get("namespace") != database
+    ):
+        raise ValueError("interference phase cleanup evidence is invalid")
+    definition = manifest.get("layout_definition")
+    if (
+        not isinstance(definition, dict) or definition.get("database") != database
+        or not isinstance(definition.get("ddl"), str) or not definition["ddl"].strip()
+    ):
+        raise ValueError("interference phase layout definition is invalid")
+    if not _matches_contract(manifest.get("schedules"), schedules[phase]):
+        raise ValueError("interference schedules mismatch")
+    coverage = manifest.get("execution_coverage")
+    if (
+        not isinstance(coverage, dict)
+        or set(coverage) != {f"{segment}_actual_seconds" for segment in INTERFERENCE_SEGMENTS}
+    ):
+        raise ValueError("interference formal coverage is short")
+    for segment in INTERFERENCE_SEGMENTS:
+        actual = _number(
+            coverage.get(f"{segment}_actual_seconds"), "interference formal coverage is short"
+        )
+        if actual < segment_seconds[segment]:
+            raise ValueError("interference formal coverage is short")
+    snapshots = _interference_snapshots(manifest, layout)
+    watermarks = frozenset(
+        (index + 1) * metadata["block_size"] for index in metadata["eligible_block_indices"]
+    )
+    streams, queries, walls = {}, {}, {}
+    for segment in INTERFERENCE_SEGMENTS:
+        parsed = _parse_interference_raw(
+            Path(run) / "child" / phase / INTERFERENCE_SEGMENT_FILES[segment],
+            schedules[phase][segment], query_scenarios=INTERFERENCE_QUERY_SCENARIOS,
+            write_tables=LAYOUT_TARGETS[layout], block_size=metadata["block_size"],
+            watermarks=watermarks,
+        )
+        published = manifest.get("warmup" if segment == "warmup" else "statistics")
+        if not isinstance(published, dict) or set(published) != set(schedules[phase][segment]):
+            raise ValueError("interference summary streams mismatch")
+        statistics = {}
+        walls[segment] = {}
+        for stream in parsed:
+            item = published[stream]
+            wall = _number(
+                item.get("phase_wall_seconds") if isinstance(item, dict) else None,
+                "interference summary publication evidence is invalid",
+            )
+            statistics[stream] = _interference_stream_statistics(
+                parsed[stream], schedules[phase][segment][stream], wall
+            )
+            walls[segment][stream] = wall
+        _gate_interference_summary(published, statistics, schedules[phase][segment])
+        for stream, item in parsed.items():
+            if item["continuous"]:
+                continue
+            for query_id, evidence in item["queries"].items():
+                if query_id in queries:
+                    raise ValueError("interference query IDs are duplicated across segments")
+                queries[query_id] = (stream, evidence)
+        if segment == "measurement":
+            streams = statistics
+    for segment in INTERFERENCE_SEGMENTS:
+        if not math.isclose(
+            coverage[f"{segment}_actual_seconds"], min(walls[segment].values()),
+            rel_tol=1e-9, abs_tol=1e-9,
+        ):
+            raise ValueError("interference formal coverage is inconsistent")
+    _gate_interference_access(manifest, queries)
+    return {
+        "phase": phase,
+        "namespace": namespace,
+        "execution_coverage": {
+            f"{segment}_actual_seconds": coverage[f"{segment}_actual_seconds"]
+            for segment in INTERFERENCE_SEGMENTS
+        },
+        "schedules": manifest["schedules"],
+        "snapshots": snapshots,
+        "streams": streams,
+    }
+
+
+def summarize_interference(runs):
+    """汇总四布局各一个正式 interference 控制，不生成 main 矩阵配对结果。"""
+    return _summarize_interference(
+        runs, schedules=INTERFERENCE_SCHEDULES,
+        segment_seconds=dict(INTERFERENCE_SEGMENT_SECONDS),
+    )
+
+
+def _summarize_interference(runs, *, schedules, segment_seconds):
+    """按注入的固定 schedule 契约汇总 interference 控制；上层固定 30/300 秒。"""
+    if not runs:
+        raise ValueError("at least one interference run directory is required")
+    envelopes = {}
+    for run in runs:
+        envelope = _load_json_document(
+            Path(run) / "run-manifest.json", "interference production envelope"
+        )
+        layout = _validate_interference_envelope(envelope)
+        if layout in envelopes:
+            raise ValueError(f"duplicate interference layout: {layout}")
+        envelopes[layout] = (Path(run), envelope)
+    if set(envelopes) != set(LAYOUTS):
+        raise ValueError("interference layout coverage is incomplete")
+    first = envelopes[LAYOUTS[0]][1]
+    for name, field in (
+        ("input identity", "input"), ("truth identity", "truth"),
+        ("query catalog identity", "query_catalog_sha256"),
+        ("metadata", "interference"), ("code evidence", "code"),
+    ):
+        if any(envelopes[layout][1][field] != first[field] for layout in LAYOUTS):
+            raise ValueError(f"interference {name} differs between runs")
+    runtime_identity = _interference_runtime_identity(first)
+    if any(
+        _interference_runtime_identity(envelopes[layout][1]) != runtime_identity
+        for layout in LAYOUTS
+    ):
+        raise ValueError("interference runtime identity differs between runs")
+    layouts = []
+    for layout in LAYOUTS:
+        run, envelope = envelopes[layout]
+        recomputed = _recompute_interference_artifacts(run)
+        _verify_interference_artifacts(envelope["artifacts"], recomputed)
+        manifest = _read_interference_child(run, envelope)
+        embedded = _validate_interference_root(manifest)
+        _verify_interference_child_evidence(envelope["child"], manifest)
+        manifest = None
+        namespaces, phases = set(), []
+        for index, phase in enumerate(INTERFERENCE_PHASE_ORDER):
+            phase_manifest = _load_json_document(
+                run / "child" / phase / "run-manifest.json", "interference phase manifest"
+            )
+            if phase_manifest != embedded[index]:
+                raise ValueError("interference phase file and root value mismatch")
+            result = _validate_interference_phase(
+                run, phase, phase_manifest, layout, envelope["interference"],
+                schedules, segment_seconds,
+            )
+            if result["namespace"] in namespaces:
+                raise ValueError("interference phase namespaces are invalid or duplicated")
+            namespaces.add(result["namespace"])
+            embedded[index] = None
+            phases.append(result)
+        if (
+            namespaces != set(envelope["cleanup"]["namespaces"])
+            or namespaces != set(envelope["namespace_policy"]["namespaces"])
+        ):
+            raise ValueError("interference cleanup evidence is missing")
+        layouts.append({
+            "layout": layout,
+            "run_id": envelope["run_id"],
+            "code": envelope["code"],
+            "runtime": envelope["runtime"],
+            "child": envelope["child"],
+            "namespace_policy": envelope["namespace_policy"],
+            "cleanup": envelope["cleanup"],
+            "artifacts": [recomputed[relative] for relative in INTERFERENCE_ARTIFACT_PATHS],
+            "phases": phases,
+        })
+        embedded = None
+    return {
+        "format": INTERFERENCE_SUMMARY_FORMAT,
+        "format_version": FORMAT_VERSION,
+        "input": first["input"],
+        "truth": first["truth"],
+        "query_catalog_sha256": first["query_catalog_sha256"],
+        "interference": first["interference"],
+        "statistics_boundary": INTERFERENCE_STATISTICS_BOUNDARY,
+        "phase_order": list(INTERFERENCE_PHASE_ORDER),
+        "layouts": layouts,
     }
 
 

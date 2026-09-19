@@ -1,5 +1,6 @@
 import hashlib
 import json
+import math
 import os
 import stat
 import sys
@@ -2058,6 +2059,1501 @@ class StageThreePartStateResultTest(unittest.TestCase):
 
         self.assertEqual(collect(summary) & forbidden, set())
         self.assertEqual(summary["statistics_boundary"], "raw-query-sample-distribution")
+
+
+# ---------------------------------------------------------------------------
+# interference 控制 fixture
+# ---------------------------------------------------------------------------
+
+INTERFERENCE_PHASES = ("quiet", "detail_2m", "trace_long", "batch_loop", "continuous_ingest")
+INTERFERENCE_SEGMENT_FILES = {"warmup": "warmup-samples.jsonl", "measurement": "samples.jsonl"}
+INTERFERENCE_SEGMENT_SECONDS = {"warmup": 0.6, "measurement": 1.2}
+INTERFERENCE_PHASE_STREAM = {
+    "quiet": None,
+    "detail_2m": "detail_2m",
+    "trace_long": "trace_long",
+    "batch_loop": "batch_loop",
+    "continuous_ingest": "continuous_ingest",
+}
+INTERFERENCE_STREAM_RATES = {
+    "list": 5.0, "preview": 5.0, "detail_2m": 5.0,
+    "trace_long": 5.0, "batch_loop": None, "continuous_ingest": 5.0,
+}
+INTERFERENCE_STREAM_WORKERS = {
+    "list": 2, "preview": 2, "detail_2m": 1,
+    "trace_long": 1, "batch_loop": 1, "continuous_ingest": 1,
+}
+INTERFERENCE_QUERY_SCENARIOS = {
+    "list": ("list", "list:first"),
+    "preview": ("preview", "preview:first"),
+    "detail_2m": ("detail", "detail:text_2m"),
+    "trace_long": ("trace", "trace:p95"),
+    "batch_loop": ("batch", "batch:main"),
+}
+INTERFERENCE_CONTINUOUS_ROWS = {"warmup": 2, "measurement": 4}
+INTERFERENCE_ELIGIBLE_INDICES = tuple(range(108, 153))
+INTERFERENCE_BLOCK_SIZE = 256
+INTERFERENCE_FORMAL_SECONDS = {"warmup": 30.0, "measurement": 300.0}
+INTERFERENCE_CODE_ROLES = (
+    "assets", "common", "generator", "interference_runner",
+    "layout_runner", "production", "run_stage3",
+)
+INTERFERENCE_ASSET_STORE = {
+    "available_object_count": 160,
+    "available_bytes": 128450560,
+    "orphan_object_count": 0,
+    "orphan_bytes": 0,
+}
+
+
+def interference_schedules():
+    """按 runner 固定 factory 结构生成小规模 phase/segment schedule。"""
+    schedules = {}
+    for phase in INTERFERENCE_PHASES:
+        streams = ["list", "preview"]
+        if INTERFERENCE_PHASE_STREAM[phase] is not None:
+            streams.append(INTERFERENCE_PHASE_STREAM[phase])
+        schedules[phase] = {
+            segment: {
+                stream: {
+                    "name": stream,
+                    "rate_per_second": INTERFERENCE_STREAM_RATES[stream],
+                    "duration_seconds": INTERFERENCE_SEGMENT_SECONDS[segment],
+                    "workers": INTERFERENCE_STREAM_WORKERS[stream],
+                    "timeout_seconds": 30.0,
+                    "late_tolerance_seconds": 0.05,
+                    "mode": "continuous" if stream == "batch_loop" else "fixed",
+                }
+                for stream in streams
+            }
+            for segment in ("warmup", "measurement")
+        }
+    return schedules
+
+
+def interference_json_bytes(value):
+    """按 runner 原子写 manifest 的字节形式序列化固定结构。"""
+    return json.dumps(
+        value, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(",", ":"),
+    ).encode("utf-8") + b"\n"
+
+
+def interference_row(stream, sequence, layout, phase, segment, **overrides):
+    """构造一条满足固定 schedule 与 stream 场景契约的 raw 请求行。"""
+    watermark = (
+        INTERFERENCE_ELIGIBLE_INDICES[sequence % len(INTERFERENCE_ELIGIBLE_INDICES)] + 1
+    ) * INTERFERENCE_BLOCK_SIZE
+    if stream == "continuous_ingest":
+        sample = {
+            "rows": INTERFERENCE_BLOCK_SIZE,
+            "watermark": watermark,
+            "watermarks": {table: watermark for table in LAYOUT_TARGETS[layout]},
+            "wall_ms": 1.0,
+            "write_target_ms": {},
+            "asset_publish_ms": 0.0,
+            "logical_target_row_bytes": {},
+            "database_ingest_request_body_bytes": {},
+            "asset_raw_object_bytes": 0,
+        }
+    else:
+        kind, scenario = INTERFERENCE_QUERY_SCENARIOS[stream]
+        sample = {
+            "scenario": scenario,
+            "kind": kind,
+            "status": "success",
+            "query_id": f"{layout}-{phase}-{segment}-{stream}-{sequence}",
+            "query_complete_ms": 10.0,
+            "recovery_ms": 11.0,
+            "validation_ms": 12.0,
+            "application_ready_ms": 100.0,
+            "response_bytes": 100,
+            "database_response_bytes": 100,
+            "database_protocol_bytes": 100,
+            "resolver_payload_bytes": 0,
+            "resolver_requests": 0,
+            "resolver_read_ms": 0.0,
+            "request_count": 1,
+            "error": None,
+            "validation": {"row_count": 1, "validated_payload_bytes": 100},
+        }
+    row = {
+        "stream": stream,
+        "sequence": sequence,
+        "scheduled_offset_seconds": sequence * 0.05,
+        "started_offset_seconds": sequence * 0.05,
+        "completed_offset_seconds": sequence * 0.05 + 0.1,
+        "duration_ms": 100.0,
+        "application_ready_ms": 100.0,
+        "status": "success",
+        "late_by_ms": 0.0,
+        "sample": sample,
+        "error": None,
+    }
+    row.update(overrides)
+    if row["status"] == "dropped":
+        row.update({
+            "started_offset_seconds": None, "completed_offset_seconds": None,
+            "duration_ms": None, "application_ready_ms": None, "sample": None,
+        })
+        if row["error"] is None:
+            row["error"] = "scheduler dropped the request"
+    elif row["status"] in {"failed", "timed_out"}:
+        row["sample"] = None
+        if row["error"] is None:
+            row["error"] = "request failed"
+        if row["completed_offset_seconds"] is None:
+            row.update({"duration_ms": None, "application_ready_ms": None})
+    return row
+
+
+def interference_rows(layout, phase, segment, schedules):
+    """按固定 schedule 生成一个 phase/segment 的全部 raw 行。"""
+    records = {}
+    for stream, schedule in schedules[phase][segment].items():
+        count = (
+            math.ceil(schedule["duration_seconds"] * schedule["rate_per_second"])
+            if schedule["mode"] == "fixed" else INTERFERENCE_CONTINUOUS_ROWS[segment]
+        )
+        records[stream] = [
+            interference_row(stream, sequence, layout, phase, segment)
+            for sequence in range(count)
+        ]
+    return records
+
+
+def interference_published(rows, schedule, wall_seconds):
+    """按 runner 发布结构独立重算一个 stream 的 fixture 期望 summary。"""
+    successful = [row["application_ready_ms"] for row in rows if row["status"] == "success"]
+    publish_p99 = len(successful) >= 1000
+    counts = {
+        "scheduled_requests": len(rows),
+        "started_requests": sum(row["started_offset_seconds"] is not None for row in rows),
+        "completed_requests": sum(row["completed_offset_seconds"] is not None for row in rows),
+        "successful_requests": sum(row["status"] == "success" for row in rows),
+        "failed_requests": sum(row["status"] == "failed" for row in rows),
+        "timed_out_requests": sum(row["status"] == "timed_out" for row in rows),
+        "dropped_requests": sum(row["status"] == "dropped" for row in rows),
+        "late_requests": sum(
+            row["late_by_ms"] > schedule["late_tolerance_seconds"] * 1000 for row in rows
+        ),
+    }
+    # fixture 使用常量时延，期望值可独立于百分位实现直接给出。
+    return {
+        "offered_rate_requests_s": schedule["rate_per_second"],
+        "phase_wall_seconds": wall_seconds,
+        **counts,
+        "completed_throughput_requests_s": counts["successful_requests"] / wall_seconds,
+        "latency_ms": {
+            "minimum": min(successful) if successful else None,
+            "p50": min(successful) if successful else None,
+            "p95": min(successful) if successful else None,
+            "p99": min(successful) if publish_p99 else None,
+            "maximum": max(successful) if successful else None,
+            "p99_status": (
+                "publishable" if publish_p99 else "unavailable_insufficient_successes"
+            ),
+            "p99_minimum_successes": 1000,
+        },
+    }
+
+
+def interference_query_evidence(records, layout):
+    """按全部成功 query 生成 plans/details/QueryFinish 证据。"""
+    plans, details, finishes = {}, {}, {}
+    for segment in ("warmup", "measurement"):
+        for stream, rows in records[segment].items():
+            if stream == "continuous_ingest":
+                continue
+            for row in rows:
+                if row["status"] != "success":
+                    continue
+                sample = row["sample"]
+                query_id = sample["query_id"]
+                plans[query_id] = "observed scan"
+                details[query_id] = {
+                    "kind": sample["kind"], "statement": "SELECT 1",
+                    "declared_source": LAYOUT_TARGETS[layout][0],
+                    "scanned_rows": 2, "scanned_bytes": 2, "payload_selected": False,
+                }
+                finishes[query_id] = {
+                    "type": "QueryFinish", "exception_code": 0,
+                    "read_rows": 2, "read_bytes": 2, "query_duration_ms": 1,
+                }
+    return {
+        "index_scans": {}, "plans": plans,
+        "query_details": details, "query_finish": finishes,
+    }
+
+
+def interference_snapshots(layout):
+    """构造顺序固定的三个资源/存储 snapshot。"""
+    tables = {
+        table: {
+            "columns": {}, "part_count": 1, "rows": 48534, "marks": 1,
+            "compressed_bytes": 0, "uncompressed_bytes": 0,
+        }
+        for table in LAYOUT_TARGETS[layout]
+    }
+    snapshot = {
+        "captured_offset_seconds": 0.0,
+        "resources": {
+            "cpu": {"status": "available", "ticks": [1, 2, 3]},
+            "memory": {"status": "available", "total_kib": 2, "available_kib": 1},
+            "io": {
+                "status": "available", "devices": 1,
+                "read_sectors": 0, "written_sectors": 0,
+            },
+        },
+        "storage": {
+            "tables": tables, "merges": [],
+            "asset_store": dict(INTERFERENCE_ASSET_STORE) if layout == "asset_ref" else None,
+        },
+        "active_part_backlog": 0,
+        "active_merge_count": 0,
+    }
+    return [
+        dict(snapshot, name=name, captured_offset_seconds=offset)
+        for name, offset in zip(
+            ("before_warmup", "before_measurement", "after_measurement"), (0.0, 10.0, 20.0)
+        )
+    ]
+
+
+def interference_spec(layout, *, schedules=None, segment_seconds=None,
+                      row_mutate=None, phase_mutate=None):
+    """构造一个布局的 phase、raw、child 与 envelope 内存证据。"""
+    schedules = interference_schedules() if schedules is None else schedules
+    seconds = INTERFERENCE_SEGMENT_SECONDS if segment_seconds is None else segment_seconds
+    child_run_id = f"jsons3-interference-fixture-{layout}"
+    wall = {segment: seconds[segment] + 0.001 for segment in ("warmup", "measurement")}
+    phases, records = [], {}
+    for phase in INTERFERENCE_PHASES:
+        rows = {
+            segment: interference_rows(layout, phase, segment, schedules)
+            for segment in ("warmup", "measurement")
+        }
+        if row_mutate is not None:
+            row_mutate(phase, rows)
+        namespace = f"jsons3_if_{phase}_0123abcd"
+        manifest = {
+            "format": "agent-trace-json-storage-stage3-interference-phase",
+            "format_version": 1,
+            "run_id": f"{child_run_id}-{phase}",
+            "status": "complete",
+            "phase": phase,
+            "seed": 20260907,
+            "execution_scope": "formal",
+            "classification": "formal_complete",
+            "layout": layout,
+            "namespace": namespace,
+            "cache_state": "warm-fixed-offered-load-no-os-cache-drop",
+            "warmup_seconds": seconds["warmup"],
+            "measurement_seconds": seconds["measurement"],
+            "schedules": schedules[phase],
+            "execution_coverage": {
+                "warmup_actual_seconds": wall["warmup"],
+                "measurement_actual_seconds": wall["measurement"],
+            },
+            "snapshots": interference_snapshots(layout),
+            "warmup": {
+                stream: interference_published(items, schedules[phase]["warmup"][stream],
+                                               wall["warmup"])
+                for stream, items in rows["warmup"].items()
+            },
+            "statistics": {
+                stream: interference_published(items, schedules[phase]["measurement"][stream],
+                                               wall["measurement"])
+                for stream, items in rows["measurement"].items()
+            },
+            "query_evidence": interference_query_evidence(rows, layout),
+            "layout_definition": {
+                "database": f"{namespace}_{layout}", "ddl": "CREATE DATABASE fixture;",
+            },
+            "cleanup": {"namespace": f"{namespace}_{layout}", "removed": True},
+        }
+        if phase_mutate is not None:
+            phase_mutate(phase, manifest, rows)
+        phases.append(manifest)
+        records[phase] = rows
+    return {
+        "layout": layout,
+        "phases": phases,
+        "records": records,
+        "schedules": schedules,
+        "segment_seconds": seconds,
+        "child": {
+            "format": "agent-trace-json-storage-stage3-interference-run",
+            "format_version": 1,
+            "run_id": child_run_id,
+            "status": "complete",
+            "seed": 20260907,
+            "execution_scope": "formal",
+            "classification": "formal_complete",
+            "phase_order": list(INTERFERENCE_PHASES),
+            "phases": phases,
+            "statistics_boundary": "raw-samples-retained-p99-requires-1000-successes",
+        },
+    }
+
+
+def interference_artifact_paths():
+    """返回 child 内固定的十六项 artifact 相对路径。"""
+    paths = ["child/run-manifest.json"]
+    for phase in INTERFERENCE_PHASES:
+        paths.append(f"child/{phase}/run-manifest.json")
+        paths.append(f"child/{phase}/warmup-samples.jsonl")
+        paths.append(f"child/{phase}/samples.jsonl")
+    return paths
+
+
+def interference_artifact_evidence(run):
+    """按当前文件重算十六项 artifact 身份。"""
+    run = Path(run)
+    return [
+        {
+            "path": relative,
+            "bytes": (run / relative).stat().st_size,
+            "sha256": hashlib.sha256((run / relative).read_bytes()).hexdigest(),
+        }
+        for relative in interference_artifact_paths()
+    ]
+
+
+def interference_metadata():
+    """构造固定 interference factory metadata。"""
+    return {
+        "block_size": INTERFERENCE_BLOCK_SIZE,
+        "cyclic_replay": True,
+        "eligible_block_count": len(INTERFERENCE_ELIGIBLE_INDICES),
+        "eligible_block_indices": list(INTERFERENCE_ELIGIBLE_INDICES),
+        "eligible_block_sha256": [f"{index:064x}" for index in INTERFERENCE_ELIGIBLE_INDICES],
+        "final_watermark": 48534,
+        "main_query_catalog_sha256": "f" * 64,
+        "preload_block_count": 190,
+        "seed": 20260907,
+        "selection_rules": {
+            "full_block_rows": INTERFERENCE_BLOCK_SIZE,
+            "outside_query_window": {
+                "project_id": "outside-query-window",
+                "start_time": "2026-01-01T00:00:00.000Z",
+                "end_time": "2026-01-02T00:00:00.000Z",
+            },
+            "query_scenarios": {
+                "list": "list:first", "preview": "preview:first",
+                "detail_2m": "detail:text_2m", "trace_long": "trace:p95",
+                "batch_loop": "batch:main",
+            },
+            "requires_main_payload": True,
+        },
+    }
+
+
+def interference_envelope(spec, run):
+    """构造与生产 envelope schema 一致的最小 interference 运行结果。"""
+    child_root = Path(run) / "child" / "run-manifest.json"
+    content = child_root.read_bytes()
+    namespaces = [f"jsons3_if_{phase}_0123abcd" for phase in INTERFERENCE_PHASES]
+    return {
+        "format": "agent-trace-json-storage-stage3-production-run",
+        "format_version": 1,
+        "run_id": f"jsons3-production-interference-{spec['layout']}",
+        "status": "complete",
+        "operation": "interference",
+        "command": ["python3", "run_stage3.py", "interference"],
+        "input": json.loads(json.dumps(INPUT_IDENTITY)),
+        "truth": {
+            "seed": 20260907, "identity_sha256": IDENTITY, "record_count": 48534,
+            "block_size": INTERFERENCE_BLOCK_SIZE, "block_count": 190,
+        },
+        "query_catalog_sha256": "f" * 64,
+        "interference": interference_metadata(),
+        "namespace_policy": {
+            "strategy": "runner-fixed-phase-unique", "reuse": False,
+            "phase_order": list(INTERFERENCE_PHASES),
+            "namespace_prefix": "jsons3_if_<phase>_", "namespaces": namespaces,
+        },
+        "cleanup": {
+            "namespaces": namespaces, "namespaces_removed": True,
+            "asset_directory_applicable": spec["layout"] == "asset_ref",
+            "asset_directory_removed": True,
+        },
+        "runtime": {
+            "operation": "interference", "engine": "clickhouse", "layout": spec["layout"],
+            "endpoint": {"host": "127.0.0.1", "port": 18123},
+            "container": {
+                "container": "agent-trace-clickhouse-25-12",
+                "image": "clickhouse/clickhouse-server:25.12",
+                "image_id": "sha256:" + "0" * 64,
+            },
+            "engine_runtime": {"version": "25.12.11.4", "source": "database-query"},
+            "host": {
+                "platform": "Linux", "machine": "x86_64",
+                "cpu_count": 8, "memory_total_kib": 16291948,
+            },
+        },
+        "code": {
+            role: {"path": f"/source/{role}.py", "bytes": 10, "sha256": character * 64}
+            for role, character in zip(INTERFERENCE_CODE_ROLES, "0123456")
+        },
+        "child": {
+            "path": "child/run-manifest.json", "bytes": len(content),
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "format": spec["child"]["format"], "format_version": spec["child"]["format_version"],
+            "status": spec["child"]["status"], "run_id": spec["child"]["run_id"],
+        },
+        "artifacts": interference_artifact_evidence(run),
+    }
+
+
+def write_interference_run(root, layout, spec=None):
+    """写入一个最小 interference production 目录并返回路径。"""
+    spec = interference_spec(layout) if spec is None else spec
+    run = Path(root) / layout
+    child_root = run / "child"
+    child_root.mkdir(parents=True)
+    for phase, manifest in zip(INTERFERENCE_PHASES, spec["phases"]):
+        phase_root = child_root / phase
+        phase_root.mkdir()
+        (phase_root / "run-manifest.json").write_bytes(interference_json_bytes(manifest))
+        for segment, filename in INTERFERENCE_SEGMENT_FILES.items():
+            streams = spec["records"][phase][segment]
+            (phase_root / filename).write_bytes(b"".join(
+                interference_json_bytes(row) for rows in streams.values() for row in rows
+            ))
+    (child_root / "run-manifest.json").write_bytes(interference_json_bytes(spec["child"]))
+    envelope = interference_envelope(spec, run)
+    (run / "run-manifest.json").write_text(json.dumps(envelope), encoding="utf-8")
+    return run
+
+
+def sync_interference_artifact(run, relative):
+    """按当前文件 bytes 同步 envelope 中的 artifact 与 child 身份。"""
+    run = Path(run)
+    content = (run / relative).read_bytes()
+    envelope_path = run / "run-manifest.json"
+    envelope = json.loads(envelope_path.read_text(encoding="utf-8"))
+    for item in envelope["artifacts"]:
+        if item["path"] == relative:
+            item["bytes"] = len(content)
+            item["sha256"] = hashlib.sha256(content).hexdigest()
+    if relative == "child/run-manifest.json":
+        envelope["child"]["bytes"] = len(content)
+        envelope["child"]["sha256"] = hashlib.sha256(content).hexdigest()
+    envelope_path.write_text(json.dumps(envelope), encoding="utf-8")
+
+
+def rewrite_interference_envelope(run, mutate):
+    """改写 interference production envelope。"""
+    path = Path(run) / "run-manifest.json"
+    envelope = json.loads(path.read_text(encoding="utf-8"))
+    mutate(envelope)
+    path.write_text(json.dumps(envelope), encoding="utf-8")
+    return envelope
+
+
+def rewrite_interference_phase(run, phase, mutate):
+    """改写独立 phase 文件并同步其 artifact 身份。"""
+    path = Path(run) / "child" / phase / "run-manifest.json"
+    manifest = json.loads(path.read_text(encoding="utf-8"))
+    mutate(manifest)
+    path.write_text(json.dumps(manifest, separators=(",", ":")), encoding="utf-8")
+    sync_interference_artifact(run, f"child/{phase}/run-manifest.json")
+    return manifest
+
+
+def rewrite_interference_child(run, mutate):
+    """改写 child root manifest 并同步 child 身份。"""
+    path = Path(run) / "child" / "run-manifest.json"
+    child = json.loads(path.read_text(encoding="utf-8"))
+    mutate(child)
+    path.write_text(json.dumps(child, separators=(",", ":")), encoding="utf-8")
+    sync_interference_artifact(run, "child/run-manifest.json")
+    return child
+
+
+def rewrite_interference_phase_both(run, phase, mutate):
+    """同时改写 phase 文件与 child 内嵌副本，保留二者相等。"""
+    manifest = rewrite_interference_phase(run, phase, mutate)
+
+    def replace(child):
+        index = [item["phase"] for item in child["phases"]].index(phase)
+        child["phases"][index] = json.loads(json.dumps(manifest))
+
+    rewrite_interference_child(run, replace)
+    return manifest
+
+
+def rewrite_interference_raw(run, phase, segment, mutate):
+    """按行改写 raw JSONL 并同步其 artifact 身份。"""
+    relative = f"child/{phase}/{INTERFERENCE_SEGMENT_FILES[segment]}"
+    path = Path(run) / relative
+    rows = [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()]
+    mutate(rows)
+    path.write_text(
+        "".join(json.dumps(row, separators=(",", ":")) + "\n" for row in rows), encoding="utf-8",
+    )
+    sync_interference_artifact(run, relative)
+    return rows
+
+
+class StageThreeInterferenceSummaryTest(unittest.TestCase):
+    """验证四布局 interference 控制的结果树、stream 隔离与 drops 语义。"""
+
+    def runs(self, directory, spec_factory=None):
+        """写入四个布局各一个最小 interference 正式目录。"""
+        spec_factory = interference_spec if spec_factory is None else spec_factory
+        return [
+            write_interference_run(directory, layout, spec_factory(layout))
+            for layout in LAYOUTS
+        ]
+
+    def summarize(self, runs):
+        return report._summarize_interference(
+            runs, schedules=interference_schedules(),
+            segment_seconds=dict(INTERFERENCE_SEGMENT_SECONDS),
+        )
+
+    def test_summarizes_four_layout_controls_in_stable_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            summary = self.summarize(runs)
+            self.assertEqual(
+                summary["format"], "agent-trace-json-storage-stage3-interference-summary"
+            )
+            self.assertEqual(summary["format_version"], 1)
+            self.assertEqual(summary["phase_order"], list(INTERFERENCE_PHASES))
+            self.assertEqual(
+                summary["statistics_boundary"],
+                "raw-samples-retained-p99-requires-1000-successes",
+            )
+            self.assertEqual(summary["input"], INPUT_IDENTITY)
+            self.assertEqual(summary["interference"], interference_metadata())
+            self.assertEqual([item["layout"] for item in summary["layouts"]], list(LAYOUTS))
+            for item in summary["layouts"]:
+                layout = item["layout"]
+                self.assertEqual(item["runtime"]["operation"], "interference")
+                self.assertEqual(item["runtime"]["layout"], layout)
+                self.assertEqual(
+                    [artifact["path"] for artifact in item["artifacts"]],
+                    interference_artifact_paths(),
+                )
+                self.assertEqual(
+                    [phase["phase"] for phase in item["phases"]], list(INTERFERENCE_PHASES)
+                )
+                for phase in item["phases"]:
+                    name = phase["phase"]
+                    self.assertEqual(
+                        [snapshot["name"] for snapshot in phase["snapshots"]],
+                        ["before_warmup", "before_measurement", "after_measurement"],
+                    )
+                    self.assertNotIn("warmup", phase)
+                    self.assertEqual(
+                        set(phase["execution_coverage"]),
+                        {"warmup_actual_seconds", "measurement_actual_seconds"},
+                    )
+                    streams = phase["streams"]
+                    self.assertEqual(
+                        set(streams), set(interference_schedules()[name]["measurement"])
+                    )
+                    listing = streams["list"]
+                    self.assertEqual(listing["counts"]["scheduled_requests"], 6)
+                    self.assertEqual(listing["counts"]["successful_requests"], 6)
+                    self.assertEqual(listing["counts"]["dropped_requests"], 0)
+                    self.assertEqual(listing["counts"]["failed_requests"], 0)
+                    self.assertEqual(listing["counts"]["late_requests"], 0)
+                    self.assertEqual(listing["latency_ms"]["p50"], 100.0)
+                    self.assertEqual(listing["latency_ms"]["p99"], None)
+                    self.assertEqual(
+                        listing["latency_ms"]["p99_status"],
+                        "unavailable_insufficient_successes",
+                    )
+                    self.assertEqual(listing["metrics"]["query_complete_ms"]["p50"], 10.0)
+                    self.assertEqual(listing["response_bytes"]["total"], 600)
+                    self.assertEqual(listing["resolver_read_ms"]["maximum"], 0.0)
+                    if name == "quiet":
+                        self.assertEqual(set(streams), {"list", "preview"})
+                    else:
+                        stream = INTERFERENCE_PHASE_STREAM[name]
+                        self.assertIn(stream, streams)
+                        if stream == "batch_loop":
+                            self.assertIsNone(streams[stream]["offered_rate_requests_s"])
+                            self.assertEqual(
+                                streams[stream]["counts"]["scheduled_requests"],
+                                INTERFERENCE_CONTINUOUS_ROWS["measurement"],
+                            )
+                        if stream == "continuous_ingest":
+                            # 写入流只发布计数、吞吐与时延，不附查询时延指标。
+                            self.assertNotIn("metrics", streams[stream])
+                            self.assertNotIn("resolver_requests", streams[stream])
+            self.assertEqual(summary, self.summarize(list(reversed(runs))))
+
+    def test_publishes_drops_without_counting_them_as_failures(self):
+        def mutate(phase, rows):
+            if phase != "quiet":
+                return
+            for segment in ("warmup", "measurement"):
+                rows[segment]["list"][0] = interference_row(
+                    "list", 0, "same_table", phase, segment, status="dropped"
+                )
+                rows[segment]["preview"][1] = interference_row(
+                    "preview", 1, "same_table", phase, segment, status="failed"
+                )
+
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory, lambda layout: interference_spec(
+                layout, row_mutate=mutate if layout == "same_table" else None
+            ))
+            summary = self.summarize(runs)
+            quiet = next(
+                phase for item in summary["layouts"] if item["layout"] == "same_table"
+                for phase in item["phases"] if phase["phase"] == "quiet"
+            )
+            self.assertEqual(quiet["streams"]["list"]["counts"], {
+                "scheduled_requests": 6, "started_requests": 5, "completed_requests": 5,
+                "successful_requests": 5, "failed_requests": 0, "timed_out_requests": 0,
+                "dropped_requests": 1, "late_requests": 0,
+            })
+            self.assertEqual(quiet["streams"]["preview"]["counts"], {
+                "scheduled_requests": 6, "started_requests": 6, "completed_requests": 6,
+                "successful_requests": 5, "failed_requests": 1, "timed_out_requests": 0,
+                "dropped_requests": 0, "late_requests": 0,
+            })
+            self.assertEqual(quiet["streams"]["list"]["latency_ms"]["p50"], 100.0)
+
+    def test_summary_contains_no_main_matrix_pairing_fields(self):
+        forbidden = {
+            "rounds", "round_index", "round_statistic_median", "main_matrix", "delta",
+            "paired", "pairing", "main_pair", "main_vs_part", "difference", "latin_square",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            summary = self.summarize(self.runs(directory))
+
+        def collect(value):
+            found = set()
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    found.add(key)
+                    found |= collect(item)
+            elif isinstance(value, list):
+                for item in value:
+                    found |= collect(item)
+            return found
+
+        self.assertEqual(collect(summary) & forbidden, set())
+        self.assertEqual(
+            set(summary),
+            {
+                "format", "format_version", "input", "truth", "query_catalog_sha256",
+                "interference", "statistics_boundary", "phase_order", "layouts",
+            },
+        )
+
+    def test_recomputes_raw_evidence_without_read_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            with patch.object(
+                Path, "read_bytes", side_effect=AssertionError("read_bytes is not allowed")
+            ):
+                summary = self.summarize(runs)
+            self.assertEqual(len(summary["layouts"]), 4)
+
+
+class StageThreeInterferenceRawTest(unittest.TestCase):
+    """验证 raw 重算核心的计数、时延发布与 stream 边界。"""
+
+    def parse(self, directory, rows, schedule):
+        """按注入的 schedule 解析一个最小 raw JSONL。"""
+        path = Path(directory) / "samples.jsonl"
+        path.write_text(
+            "".join(json.dumps(row) + "\n" for row in rows), encoding="utf-8",
+        )
+        return report._parse_interference_raw(
+            path, {"list": schedule}, query_scenarios=INTERFERENCE_QUERY_SCENARIOS,
+            write_tables=LAYOUT_TARGETS["same_table"], block_size=INTERFERENCE_BLOCK_SIZE,
+            watermarks={27904},
+        )
+
+    def schedule(self, count):
+        return {
+            "name": "list", "rate_per_second": 1.0, "duration_seconds": float(count),
+            "workers": 1, "timeout_seconds": 30.0, "late_tolerance_seconds": 0.05,
+            "mode": "fixed",
+        }
+
+    def test_publishes_p99_only_from_one_thousand_successes(self):
+        for count, publishable in ((999, False), (1000, True)):
+            with self.subTest(count=count), tempfile.TemporaryDirectory() as directory:
+                schedule = self.schedule(count)
+                rows = [
+                    interference_row("list", sequence, "same_table", "quiet", "measurement")
+                    for sequence in range(count)
+                ]
+                parsed = self.parse(directory, rows, schedule)
+                result = report._interference_stream_statistics(
+                    parsed["list"], schedule, float(count)
+                )
+                self.assertEqual(result["counts"]["successful_requests"], count)
+                self.assertEqual(
+                    result["latency_ms"]["p99_status"],
+                    "publishable" if publishable else "unavailable_insufficient_successes",
+                )
+                self.assertEqual(result["latency_ms"]["p99"] is None, not publishable)
+                self.assertEqual(result["latency_ms"]["minimum"], 100.0)
+
+    def test_keeps_failed_timed_out_and_dropped_separate(self):
+        with tempfile.TemporaryDirectory() as directory:
+            schedule = self.schedule(4)
+            rows = [
+                interference_row("list", 0, "same_table", "quiet", "measurement"),
+                interference_row("list", 1, "same_table", "quiet", "measurement",
+                                 status="dropped"),
+                interference_row("list", 2, "same_table", "quiet", "measurement",
+                                 status="failed"),
+                interference_row("list", 3, "same_table", "quiet", "measurement",
+                                 status="timed_out", completed_offset_seconds=None),
+            ]
+            parsed = self.parse(directory, rows, schedule)
+            self.assertEqual(parsed["list"]["counts"], {
+                "scheduled_requests": 4, "started_requests": 3, "completed_requests": 2,
+                "successful_requests": 1, "failed_requests": 1, "timed_out_requests": 1,
+                "dropped_requests": 1, "late_requests": 0,
+            })
+
+    def test_schedules_mirror_the_runner_fixed_factory(self):
+        sys.path.insert(0, str(STAGE_DIR / "runner"))
+        import run_interference
+
+        formal = report._interference_schedules()
+        for phase in run_interference.FIXED_PHASES:
+            for measurement in (False, True):
+                segment = "measurement" if measurement else "warmup"
+                expected = run_interference._json_value(
+                    run_interference.fixed_phase_schedules(phase, measurement=measurement)
+                )
+                for schedule in expected.values():
+                    self.assertEqual(
+                        schedule["duration_seconds"], INTERFERENCE_FORMAL_SECONDS[segment]
+                    )
+                self.assertEqual(formal[phase.name][segment], expected)
+
+    def test_rejects_raw_streams_without_rows(self):
+        preview = {
+            "name": "preview", "rate_per_second": 1.0, "duration_seconds": 2.0,
+            "workers": 1, "timeout_seconds": 30.0, "late_tolerance_seconds": 0.05,
+            "mode": "fixed",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "samples.jsonl"
+            path.write_text("".join(
+                json.dumps(interference_row(
+                    "preview", sequence, "same_table", "quiet", "measurement"
+                )) + "\n"
+                for sequence in range(2)
+            ), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "interference raw stream is missing"):
+                report._parse_interference_raw(
+                    path, {"list": self.schedule(2), "preview": preview},
+                    query_scenarios=INTERFERENCE_QUERY_SCENARIOS,
+                    write_tables=LAYOUT_TARGETS["same_table"],
+                    block_size=INTERFERENCE_BLOCK_SIZE, watermarks={27904},
+                )
+
+
+class StageThreeInterferenceGateTest(unittest.TestCase):
+    """验证 interference 控制的身份、artifact、phase 与发布反例全部 fail closed。"""
+
+    def summarize(self, runs):
+        return report._summarize_interference(
+            runs, schedules=interference_schedules(),
+            segment_seconds=dict(INTERFERENCE_SEGMENT_SECONDS),
+        )
+
+    def runs(self, directory):
+        return [write_interference_run(directory, layout) for layout in LAYOUTS]
+
+    def reject(self, mutate, message, spec_factory=None):
+        """写入四布局 fixture，施加指定的反例后要求门禁拒绝。"""
+        with tempfile.TemporaryDirectory() as directory:
+            spec_factory = interference_spec if spec_factory is None else spec_factory
+            runs = [
+                write_interference_run(directory, layout, spec_factory(layout))
+                for layout in LAYOUTS
+            ]
+            mutate(runs)
+            with self.assertRaisesRegex(ValueError, message):
+                self.summarize(runs)
+
+    def test_rejects_missing_or_duplicated_layout(self):
+        with self.assertRaisesRegex(ValueError, "at least one interference run directory"):
+            report.summarize_interference([])
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            with self.assertRaisesRegex(ValueError, "coverage is incomplete"):
+                report.summarize_interference(runs[:-1])
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            runs.append(write_interference_run(Path(directory) / "duplicate", "same_table"))
+            with self.assertRaisesRegex(
+                ValueError, "duplicate interference layout: same_table"
+            ):
+                report.summarize_interference(runs)
+
+    def test_public_entry_requires_the_formal_contract(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "phase manifest mismatch"):
+                report.summarize_interference(self.runs(directory))
+
+    def test_rejects_cross_run_identity_drift(self):
+        cases = (
+            (
+                lambda runs: rewrite_interference_envelope(
+                    runs[1],
+                    lambda envelope: envelope["input"]["events"].__setitem__("sha256", "9" * 64),
+                ),
+                "interference input identity differs between runs",
+            ),
+            (
+                lambda runs: rewrite_interference_envelope(
+                    runs[2], lambda envelope: envelope["truth"].__setitem__("record_count", 1)
+                ),
+                "interference truth identity is invalid",
+            ),
+            (
+                lambda runs: rewrite_interference_envelope(
+                    runs[3],
+                    lambda envelope: (
+                        envelope.__setitem__("query_catalog_sha256", "9" * 64),
+                        envelope["interference"].__setitem__(
+                            "main_query_catalog_sha256", "9" * 64
+                        ),
+                    ),
+                ),
+                "interference query catalog identity differs between runs",
+            ),
+            (
+                lambda runs: rewrite_interference_envelope(
+                    runs[1],
+                    lambda envelope: envelope["interference"][
+                        "eligible_block_indices"
+                    ].__setitem__(-1, 153),
+                ),
+                "interference metadata differs between runs",
+            ),
+            (
+                lambda runs: rewrite_interference_envelope(
+                    runs[1],
+                    lambda envelope: envelope["code"]["production"].__setitem__(
+                        "sha256", "9" * 64
+                    ),
+                ),
+                "interference code evidence differs between runs",
+            ),
+            (
+                lambda runs: rewrite_interference_envelope(
+                    runs[1],
+                    lambda envelope: envelope["runtime"]["container"].__setitem__(
+                        "image_id", "sha256:" + "1" * 64
+                    ),
+                ),
+                "interference runtime identity differs between runs",
+            ),
+        )
+        for mutate, message in cases:
+            with self.subTest(message=message):
+                self.reject(mutate, message)
+
+    def test_rejects_envelope_schema_gaps(self):
+        cases = (
+            (lambda e: e.__setitem__("format", "other"), "format/version is invalid"),
+            (lambda e: e.__setitem__("format_version", True), "format/version is invalid"),
+            (lambda e: e.__setitem__("status", "running"), "status is not complete"),
+            (lambda e: e.__setitem__("operation", "part-states"), "operation is invalid"),
+            (lambda e: e.pop("run_id"), "run identity is missing"),
+            (lambda e: e["truth"].__setitem__("record_count", 1), "truth identity is invalid"),
+            (
+                lambda e: e["truth"].__setitem__("identity_sha256", "9" * 64),
+                "truth identity is invalid",
+            ),
+            (lambda e: e["truth"].__setitem__("seed", True), "truth identity is invalid"),
+            (
+                lambda e: e.__setitem__("query_catalog_sha256", "x"),
+                "query catalog identity is invalid",
+            ),
+            (lambda e: e["code"].pop("production"), "code evidence is incomplete"),
+            (
+                lambda e: e["code"]["production"].__setitem__("bytes", 0),
+                "code evidence is incomplete",
+            ),
+            (lambda e: e["interference"].pop("cyclic_replay"), "metadata is invalid"),
+            (
+                lambda e: e["interference"].__setitem__("cyclic_replay", 1),
+                "metadata is invalid",
+            ),
+            (
+                lambda e: e["interference"].__setitem__("eligible_block_count", 44),
+                "metadata is invalid",
+            ),
+            (
+                lambda e: e["interference"]["eligible_block_indices"].__setitem__(0, 200),
+                "metadata is invalid",
+            ),
+            (
+                lambda e: e["interference"]["eligible_block_sha256"].__setitem__(0, "0" * 63),
+                "metadata is invalid",
+            ),
+            (
+                lambda e: e["interference"]["selection_rules"].pop("requires_main_payload"),
+                "metadata is invalid",
+            ),
+            (
+                lambda e: e["interference"]["selection_rules"][
+                    "outside_query_window"
+                ].__setitem__("page_size", 256),
+                "metadata is invalid",
+            ),
+            (
+                lambda e: e["interference"].__setitem__(
+                    "main_query_catalog_sha256", "9" * 64
+                ),
+                "metadata is invalid",
+            ),
+            (lambda e: e["namespace_policy"].__setitem__("reuse", True),
+             "namespace policy is invalid"),
+            (
+                lambda e: e["namespace_policy"].__setitem__("strategy", "other"),
+                "namespace policy is invalid",
+            ),
+            (
+                lambda e: e["namespace_policy"]["namespaces"].__setitem__(0, "other"),
+                "cleanup evidence is missing",
+            ),
+            (lambda e: e["cleanup"].__setitem__("namespaces_removed", False),
+             "cleanup evidence is missing"),
+            (
+                lambda e: e["cleanup"]["namespaces"].pop(),
+                "cleanup evidence is missing",
+            ),
+            (
+                lambda e: e["cleanup"].__setitem__("asset_directory_applicable", True),
+                "cleanup evidence is missing",
+            ),
+            (lambda e: e["child"].__setitem__("bytes", 1), "child identity mismatch"),
+            (lambda e: e["child"].__setitem__("status", "running"), "child evidence is missing"),
+            (
+                lambda e: e["child"].__setitem__("path", "child/other.json"),
+                "child evidence is missing",
+            ),
+            (
+                lambda e: e["artifacts"].append(dict(e["artifacts"][0])),
+                "artifacts are incomplete",
+            ),
+            (lambda e: e["artifacts"].pop(), "artifacts are incomplete"),
+            (
+                lambda e: e["artifacts"][0].__setitem__("bytes", 1),
+                "artifact identity mismatch",
+            ),
+            (
+                lambda e: e["artifacts"][0].__setitem__("sha256", "9" * 64),
+                "artifact identity mismatch",
+            ),
+        )
+        for mutate, message in cases:
+            with self.subTest(message=message):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_interference_envelope(runs[0], mutate),
+                    message,
+                )
+
+    def test_rejects_artifact_file_and_path_escapes(self):
+        def append_byte(runs):
+            path = runs[0] / "child" / "quiet" / "samples.jsonl"
+            path.write_bytes(path.read_bytes() + b"{}")
+
+        def symlink_escape(runs):
+            path = runs[0] / "child" / "quiet" / "samples.jsonl"
+            path.unlink()
+            os.symlink(runs[0] / "run-manifest.json", path)
+
+        def remove_file(runs):
+            (runs[0] / "child" / "quiet" / "warmup-samples.jsonl").unlink()
+
+        for mutate, message in (
+            (append_byte, "artifact identity mismatch"),
+            (symlink_escape, "artifact path escapes the child directory"),
+            (remove_file, "artifact is unavailable"),
+        ):
+            with self.subTest(message=message):
+                self.reject(mutate, message)
+
+    def test_rejects_phase_schedule_coverage_and_root_gaps(self):
+        cases = (
+            (
+                lambda run: rewrite_interference_phase(
+                    run, "quiet",
+                    lambda m: m["schedules"]["warmup"]["list"].__setitem__(
+                        "rate_per_second", 6.0
+                    ),
+                ),
+                "phase file and root value mismatch",
+            ),
+            (
+                lambda run: rewrite_interference_phase_both(
+                    run, "quiet",
+                    lambda m: m["schedules"]["warmup"]["list"].__setitem__(
+                        "rate_per_second", 6.0
+                    ),
+                ),
+                "interference schedules mismatch",
+            ),
+            (
+                lambda run: rewrite_interference_phase_both(
+                    run, "quiet",
+                    lambda m: m["schedules"]["measurement"]["list"].__setitem__(
+                        "late_tolerance_seconds", 0.5
+                    ),
+                ),
+                "interference schedules mismatch",
+            ),
+            (
+                lambda run: rewrite_interference_phase_both(
+                    run, "trace_long",
+                    lambda m: m.__setitem__("measurement_seconds", 301.0),
+                ),
+                "phase manifest mismatch",
+            ),
+            (
+                lambda run: rewrite_interference_phase_both(
+                    run, "quiet", lambda m: m.__setitem__("status", "failed")
+                ),
+                "phase manifest mismatch",
+            ),
+            (
+                lambda run: rewrite_interference_phase_both(
+                    run, "quiet", lambda m: m.__setitem__("execution_scope", "smoke")
+                ),
+                "phase manifest mismatch",
+            ),
+            (
+                lambda run: rewrite_interference_phase_both(
+                    run, "quiet", lambda m: m.__setitem__("layout", "separate")
+                ),
+                "phase manifest mismatch",
+            ),
+            (
+                lambda run: rewrite_interference_phase_both(
+                    run, "quiet", lambda m: m.__setitem__("error", "boom")
+                ),
+                "phase manifest is not formal complete",
+            ),
+            (
+                lambda run: rewrite_interference_phase_both(
+                    run, "quiet",
+                    lambda m: m["execution_coverage"].__setitem__(
+                        "measurement_actual_seconds", 1.0
+                    ),
+                ),
+                "formal coverage is short",
+            ),
+            (
+                lambda run: rewrite_interference_phase_both(
+                    run, "quiet",
+                    lambda m: m["execution_coverage"].__setitem__(
+                        "measurement_actual_seconds", 301.0
+                    ),
+                ),
+                "formal coverage is inconsistent",
+            ),
+            (
+                lambda run: rewrite_interference_phase_both(
+                    run, "quiet", lambda m: m["cleanup"].__setitem__("removed", False)
+                ),
+                "cleanup evidence is invalid",
+            ),
+            (
+                lambda run: rewrite_interference_phase_both(
+                    run, "quiet", lambda m: m["cleanup"].__setitem__("namespace", "other")
+                ),
+                "cleanup evidence is invalid",
+            ),
+            (
+                lambda run: rewrite_interference_phase_both(
+                    run, "quiet",
+                    lambda m: m["layout_definition"].__setitem__("database", "other"),
+                ),
+                "layout definition is invalid",
+            ),
+            (
+                lambda run: rewrite_interference_child(
+                    run, lambda child: child.__setitem__("seed", 1)
+                ),
+                "root manifest is not formal complete",
+            ),
+            (
+                lambda run: rewrite_interference_child(
+                    run, lambda child: child.__setitem__("status", "failed")
+                ),
+                "root manifest is not formal complete",
+            ),
+            (
+                lambda run: rewrite_interference_child(
+                    run, lambda child: child.__setitem__("error", "boom")
+                ),
+                "root manifest is not formal complete",
+            ),
+            (
+                lambda run: rewrite_interference_child(
+                    run, lambda child: child["phase_order"].reverse()
+                ),
+                "root manifest is not formal complete",
+            ),
+            (
+                lambda run: rewrite_interference_child(
+                    run, lambda child: child.__setitem__("phases", child["phases"][:4])
+                ),
+                "root phases are incomplete",
+            ),
+            (
+                lambda run: rewrite_interference_child(
+                    run, lambda child: child["phases"][0].__setitem__("status", "failed")
+                ),
+                "phase file and root value mismatch",
+            ),
+        )
+        for mutate, message in cases:
+            with self.subTest(message=message):
+                self.reject(
+                    lambda runs, mutate=mutate: mutate(runs[0]),
+                    message,
+                )
+
+    def test_rejects_duplicated_phase_namespace(self):
+        def mutate(manifest):
+            manifest["namespace"] = "jsons3_if_detail_2m_0123abcd"
+            manifest["cleanup"]["namespace"] = "jsons3_if_detail_2m_0123abcd_same_table"
+            manifest["layout_definition"]["database"] = (
+                "jsons3_if_detail_2m_0123abcd_same_table"
+            )
+
+        self.reject(
+            lambda runs: rewrite_interference_phase_both(runs[0], "quiet", mutate),
+            "namespaces are invalid or duplicated",
+        )
+
+    def test_rejects_snapshot_and_storage_gaps(self):
+        cases = (
+            (lambda m: m["snapshots"].reverse(), "snapshots are incomplete"),
+            (
+                lambda m: m["snapshots"][1]["resources"]["memory"].__setitem__(
+                    "status", "unavailable"
+                ),
+                "resource snapshot is invalid",
+            ),
+            (
+                lambda m: m["snapshots"][0]["resources"]["io"].__setitem__("devices", 0),
+                "resource snapshot is invalid",
+            ),
+            (lambda m: m["snapshots"][0].__setitem__("active_part_backlog", 1),
+             "storage totals mismatch"),
+            (lambda m: m["snapshots"][0].__setitem__("active_merge_count", 1),
+             "storage totals mismatch"),
+            (
+                lambda m: m["snapshots"][0]["storage"].__setitem__(
+                    "merges", [{"table": "events", "num_parts": 2}]
+                ),
+                "storage totals mismatch",
+            ),
+            (
+                lambda m: m["snapshots"][2]["storage"]["tables"].pop("events"),
+                "storage evidence is incomplete",
+            ),
+            (
+                lambda m: m["snapshots"][0]["storage"]["tables"]["events"].__setitem__(
+                    "part_count", 1.0
+                ),
+                "storage metrics are invalid",
+            ),
+            (
+                lambda m: m["snapshots"][0]["storage"].__setitem__(
+                    "asset_store", dict(INTERFERENCE_ASSET_STORE)
+                ),
+                "asset store evidence is invalid",
+            ),
+        )
+        for mutate, message in cases:
+            with self.subTest(message=message):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_interference_phase_both(
+                        runs[0], "quiet", mutate
+                    ),
+                    message,
+                )
+
+    def test_rejects_asset_ref_store_watermark_drift(self):
+        cases = (
+            lambda m: m["snapshots"][0]["storage"]["asset_store"].__setitem__(
+                "available_object_count", 159
+            ),
+            lambda m: m["snapshots"][2]["storage"]["asset_store"].__setitem__(
+                "available_bytes", 128450559
+            ),
+            lambda m: m["snapshots"][1]["storage"]["asset_store"].__setitem__(
+                "orphan_object_count", 1
+            ),
+            lambda m: m["snapshots"][0]["storage"]["asset_store"].__setitem__(
+                "orphan_bytes", 1
+            ),
+        )
+        for mutate in cases:
+            with self.subTest(mutate=mutate):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_interference_phase_both(
+                        runs[3], "quiet", mutate
+                    ),
+                    "asset store evidence is invalid",
+                )
+        self.reject(
+            lambda runs: rewrite_interference_phase_both(
+                runs[3], "quiet",
+                lambda m: m["snapshots"][0]["storage"].__setitem__("asset_store", None),
+            ),
+            "asset store evidence is invalid",
+        )
+
+    def test_rejects_raw_contract_gaps(self):
+        cases = (
+            (lambda rows: rows[1].__setitem__("sequence", 5), "sequence is not contiguous"),
+            (lambda rows: rows.pop(), "fixed scheduled count is invalid"),
+            (lambda rows: rows[0].__setitem__("extra", 1), "fields or stream are invalid"),
+            (lambda rows: rows[0].__setitem__("stream", "other"), "fields or stream are invalid"),
+            (lambda rows: rows[0].__setitem__("status", "unknown"), "raw status is invalid"),
+            (lambda rows: rows[0].__setitem__("late_by_ms", "0"), "raw timing is invalid"),
+            (lambda rows: rows[0].update({"status": "dropped"}),
+             "raw dropped sample is inconsistent"),
+            (lambda rows: rows[0].__setitem__("error", "boom"),
+             "raw successful sample contains error"),
+            (lambda rows: rows[0].update({"status": "failed", "sample": None, "error": None}),
+             "raw failed sample lacks error"),
+            (
+                lambda rows: rows[0].update(
+                    {"status": "timed_out", "completed_offset_seconds": None}
+                ),
+                "raw incomplete timing is inconsistent",
+            ),
+            (
+                lambda rows: rows[0].__setitem__("completed_offset_seconds", "0.1"),
+                "raw started/completed evidence is invalid",
+            ),
+            (
+                lambda rows: rows[0]["sample"].__setitem__("scenario", "list:middle"),
+                "successful query evidence is invalid",
+            ),
+            (
+                lambda rows: rows[0]["sample"].__setitem__("query_id", ""),
+                "successful query evidence is invalid",
+            ),
+            (
+                lambda rows: rows[0]["sample"].__setitem__("validation", {"row_count": 1}),
+                "successful query evidence is invalid",
+            ),
+            (
+                lambda rows: rows[0]["sample"].__setitem__("response_bytes", 7),
+                "successful query evidence is invalid",
+            ),
+            (
+                lambda rows: rows[0]["sample"].__setitem__("resolver_read_ms", "1"),
+                "successful query evidence is invalid",
+            ),
+            (
+                lambda rows: rows[0]["sample"].__setitem__("query_complete_ms", None),
+                "successful query evidence is invalid",
+            ),
+        )
+        for mutate, message in cases:
+            with self.subTest(message=message):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_interference_raw(
+                        runs[0], "quiet", "measurement", mutate
+                    ),
+                    message,
+                )
+
+    def test_rejects_empty_and_unavailable_raw_files(self):
+        def empty_raw(runs):
+            path = runs[0] / "child" / "quiet" / "samples.jsonl"
+            path.write_bytes(b"")
+            sync_interference_artifact(runs[0], "child/quiet/samples.jsonl")
+
+        def blank_line(runs):
+            path = runs[0] / "child" / "quiet" / "samples.jsonl"
+            path.write_bytes(path.read_bytes() + b"\n")
+            sync_interference_artifact(runs[0], "child/quiet/samples.jsonl")
+
+        def missing_raw(runs):
+            (runs[0] / "child" / "quiet" / "samples.jsonl").unlink()
+
+        for mutate, message in (
+            (empty_raw, "artifacts are incomplete"),
+            (blank_line, "empty or contains an empty line"),
+            (missing_raw, "artifact is unavailable"),
+        ):
+            with self.subTest(message=message):
+                self.reject(mutate, message)
+
+    def test_rejects_query_evidence_gaps(self):
+        cases = (
+            (
+                lambda m: m["query_evidence"]["plans"].pop(
+                    next(iter(m["query_evidence"]["plans"]))
+                ),
+                "query evidence IDs mismatch",
+            ),
+            (
+                lambda m: m["query_evidence"]["query_details"].pop(
+                    next(iter(m["query_evidence"]["query_details"]))
+                ),
+                "query evidence IDs mismatch",
+            ),
+            (
+                lambda m: m["query_evidence"]["query_finish"].pop(
+                    next(iter(m["query_evidence"]["query_finish"]))
+                ),
+                "query evidence IDs mismatch",
+            ),
+            (
+                lambda m: next(
+                    iter(m["query_evidence"]["query_details"].values())
+                ).__setitem__("kind", "batch"),
+                "query detail evidence is invalid",
+            ),
+            (
+                lambda m: next(
+                    iter(m["query_evidence"]["query_details"].values())
+                ).__setitem__("scanned_rows", 3),
+                "query evidence is inconsistent",
+            ),
+            (
+                lambda m: next(
+                    iter(m["query_evidence"]["query_finish"].values())
+                ).__setitem__("exception_code", 1),
+                "QueryFinish evidence is invalid",
+            ),
+            (
+                lambda m: next(
+                    iter(m["query_evidence"]["query_finish"].values())
+                ).__setitem__("read_rows", 0),
+                "query evidence is inconsistent",
+            ),
+        )
+        for mutate, message in cases:
+            with self.subTest(message=message):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_interference_phase_both(
+                        runs[0], "quiet", mutate
+                    ),
+                    message,
+                )
+        self.reject(
+            lambda runs: rewrite_interference_raw(
+                runs[0], "quiet", "measurement",
+                lambda rows: rows[0]["sample"].__setitem__(
+                    "query_id", "same_table-quiet-warmup-list-0"
+                ),
+            ),
+            "query IDs are duplicated across segments",
+        )
+
+    def test_rejects_continuous_ingest_block_gaps(self):
+        def continuous_sample(rows):
+            return next(row for row in rows if row["stream"] == "continuous_ingest")["sample"]
+
+        cases = (
+            lambda rows: continuous_sample(rows).__setitem__("watermark", 27905),
+            lambda rows: continuous_sample(rows).__setitem__("rows", 255),
+            lambda rows: continuous_sample(rows).__setitem__("watermarks", {"events": 27905}),
+            lambda rows: continuous_sample(rows).__setitem__("watermarks", {"other": 27904}),
+            lambda rows: continuous_sample(rows).__setitem__("watermarks", {}),
+        )
+        for mutate in cases:
+            with self.subTest(mutate=mutate):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_interference_raw(
+                        runs[0], "continuous_ingest", "measurement", mutate
+                    ),
+                    "continuous_ingest success lacks BlockResult",
+                )
+
+    def test_rejects_publication_gaps(self):
+        cases = (
+            (
+                lambda m: m["statistics"]["list"].__setitem__("successful_requests", 7),
+                "raw and summary counts mismatch",
+            ),
+            (
+                lambda m: m["warmup"]["list"].__setitem__("dropped_requests", 1),
+                "raw and summary counts mismatch",
+            ),
+            (
+                lambda m: m["statistics"]["list"].__setitem__("late_requests", True),
+                "raw and summary counts mismatch",
+            ),
+            (
+                lambda m: m["statistics"]["list"].__setitem__(
+                    "completed_throughput_requests_s", 1.0
+                ),
+                "summary publication evidence is invalid",
+            ),
+            (
+                lambda m: m["statistics"]["list"]["latency_ms"].update(
+                    {"p99": 100.0, "p99_status": "publishable"}
+                ),
+                "summary publication evidence is invalid",
+            ),
+            (
+                lambda m: m["statistics"]["list"]["latency_ms"].__setitem__("p50", 99.0),
+                "summary publication evidence is invalid",
+            ),
+            (
+                lambda m: m["statistics"]["list"].__setitem__("offered_rate_requests_s", 99.0),
+                "summary publication evidence is invalid",
+            ),
+            (
+                lambda m: m["statistics"]["list"].__setitem__("phase_wall_seconds", 0.0),
+                "summary publication evidence is invalid",
+            ),
+            (
+                lambda m: m["statistics"]["list"].pop("latency_ms"),
+                "summary publication evidence is invalid",
+            ),
+            (lambda m: m["statistics"].pop("preview"), "summary streams mismatch"),
+        )
+        for mutate, message in cases:
+            with self.subTest(message=message):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_interference_phase_both(
+                        runs[0], "quiet", mutate
+                    ),
+                    message,
+                )
+
+    def test_rejects_dropped_requests_published_as_failures(self):
+        def drop_first_list_row(phase, rows):
+            if phase == "quiet":
+                rows["measurement"]["list"][0] = interference_row(
+                    "list", 0, "same_table", "quiet", "measurement", status="dropped"
+                )
+
+        self.reject(
+            lambda runs: rewrite_interference_phase_both(
+                runs[0], "quiet",
+                lambda m: m["statistics"]["list"].update(
+                    {"dropped_requests": 0, "failed_requests": 1}
+                ),
+            ),
+            "raw and summary counts mismatch",
+            spec_factory=lambda layout: interference_spec(
+                layout, row_mutate=drop_first_list_row if layout == "same_table" else None
+            ),
+        )
 
 
 if __name__ == "__main__":
