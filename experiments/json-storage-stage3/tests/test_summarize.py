@@ -1,3 +1,4 @@
+import hashlib
 import json
 import os
 import stat
@@ -265,6 +266,250 @@ def drift_input(manifest):
         for record in state["rounds"]:
             record["input"]["identity_sha256"] = "5" * 64
             record["correctness"]["truth_identity"] = "5" * 64
+
+
+PART_STATE_STATES = ("fragmented", "merging", "stable", "single_part")
+PART_STATE_SCENARIOS = (
+    "batch:main",
+    "detail:entropy_512k",
+    "detail:text_2m",
+    "detail:text_512k",
+    "detail:text_64k",
+    "list:first",
+    "list:middle",
+    "preview:first",
+    "preview:middle",
+    "trace:p25",
+    "trace:p50",
+    "trace:p95",
+)
+PART_STATE_KINDS = {scenario: scenario.split(":", 1)[0] for scenario in PART_STATE_SCENARIOS}
+PART_STATE_SAMPLES_PER_QUERY = 30
+PART_STATE_TARGETS = {
+    "same_table": ["events"],
+    "separate": ["events_analytics", "event_payloads"],
+    "full_core": ["events_full", "events_core"],
+    "asset_ref": ["events_analytics", "assets"],
+}
+PART_STATE_CONTROLLED = {
+    "same_table": "events",
+    "separate": "events_analytics",
+    "full_core": "events_core",
+    "asset_ref": "events_analytics",
+}
+PART_STATE_CODE_ROLES = (
+    "run_stage3", "production", "generator", "layout_runner",
+    "part_state_runner", "common", "assets",
+)
+
+
+def part_state_sample(layout, state, scenario, number, latency=10):
+    """构造一条已通过 truth 校验的 part-state 查询样本。"""
+    return {
+        "scenario": scenario,
+        "kind": PART_STATE_KINDS[scenario],
+        "status": "success",
+        "error": None,
+        "query_id": f"{layout}-{state}-{scenario}-{number}",
+        "query_complete_ms": latency,
+        "recovery_ms": latency + 1,
+        "validation_ms": latency + 2,
+        "application_ready_ms": latency + 3,
+        "response_bytes": 100,
+        "database_response_bytes": 100,
+        "resolver_payload_bytes": 0,
+        "database_protocol_bytes": 100,
+        "request_count": 1,
+        "validation": {"row_count": 1, "validated_payload_bytes": 100},
+    }
+
+
+def part_state_state(layout, name):
+    """构造一个满足真实状态谓词与固定 scenario 覆盖的最小状态证据。"""
+    targets = PART_STATE_TARGETS[layout]
+    controlled = PART_STATE_CONTROLLED[layout]
+    counts = {table: 190 for table in targets}
+    if name == "stable":
+        counts = {table: (3 if table == controlled else 7) for table in targets}
+    elif name == "single_part":
+        counts = {table: 1 for table in targets}
+    observation = {"active_part_counts": dict(counts), "active_merges": []}
+    samples = [
+        part_state_sample(layout, name, scenario, number)
+        for scenario in PART_STATE_SCENARIOS
+        for number in range(PART_STATE_SAMPLES_PER_QUERY)
+    ]
+    query_ids = [item["query_id"] for item in samples]
+    return {
+        "name": name,
+        "controlled_table": controlled,
+        "predicate_proven": True,
+        "tables": {
+            table: {
+                "part_count": counts[table],
+                "marks": counts[table] * 2,
+                "compressed_bytes": 100 * counts[table],
+                "uncompressed_bytes": 200 * counts[table],
+            }
+            for table in targets
+        },
+        "active_merges": [{"table": controlled, "num_parts": 20}] if name == "merging" else [],
+        "asset_store": (
+            {
+                "available_object_count": 160,
+                "available_bytes": 128450560,
+                "orphan_object_count": 0,
+                "orphan_bytes": 0,
+            }
+            if layout == "asset_ref" else None
+        ),
+        "observations": [observation] * (3 if name == "stable" else 1),
+        "query_samples": samples,
+        "query_plans": {query_id: "observed scan" for query_id in query_ids},
+        "query_details": {
+            query_id: {
+                "kind": sample["kind"],
+                "statement": "SELECT 1",
+                "declared_source": "events",
+                "scanned_rows": 2,
+                "scanned_bytes": 2,
+            }
+            for query_id, sample in zip(query_ids, samples)
+        },
+        "query_finish": {
+            query_id: {"type": "QueryFinish", "exception_code": 0, "read_rows": 2, "read_bytes": 2}
+            for query_id in query_ids
+        },
+        "successful_samples": len(samples),
+        "failed_samples": 0,
+        "query_finish_count": len(samples),
+        "optimized_targets": list(targets) if name == "single_part" else [],
+        "error": None,
+    }
+
+
+def part_state_child(layout):
+    """构造一个与生产 child schema 一致的最小 part-state manifest。"""
+    targets = PART_STATE_TARGETS[layout]
+    namespace = f"jsons3_parts_{layout}_0123456789"
+    return {
+        "format": "agent-trace-json-storage-stage3-clickhouse-part-states",
+        "format_version": 1,
+        "run_id": f"jsons3-clickhouse-parts-{layout}",
+        "status": "complete",
+        "layout": layout,
+        "physical_targets": list(targets),
+        "controlled_table": PART_STATE_CONTROLLED[layout],
+        "state_order": list(PART_STATE_STATES),
+        "cache_limits": "ordered-control-warm-cache-no-os-cache-drop-not-main-matrix-paired",
+        "samples_per_query": PART_STATE_SAMPLES_PER_QUERY,
+        "states": [part_state_state(layout, name) for name in PART_STATE_STATES],
+        "restoration": {
+            "attempted": True,
+            "restored": True,
+            "targets": ([PART_STATE_CONTROLLED[layout]] if layout == "asset_ref" else list(targets)),
+        },
+        "cleanup": {"namespace": f"{namespace}_{layout}", "removed": True},
+    }
+
+
+def part_state_envelope(layout, content, child):
+    """构造一个与生产 envelope schema 一致的最小 part-state 运行结果。"""
+    namespace = f"jsons3_parts_{layout}_0123456789"
+    return {
+        "format": "agent-trace-json-storage-stage3-production-run",
+        "format_version": 1,
+        "run_id": f"jsons3-production-part-states-{layout}",
+        "status": "complete",
+        "operation": "part-states",
+        "command": ["python3", "run_stage3.py", "part-states"],
+        "namespace_policy": {
+            "strategy": "unique-random-suffix",
+            "prefix": f"jsons3_parts_{layout}_",
+            "namespace": namespace,
+            "reuse": False,
+        },
+        "code": {
+            role: {"path": f"/source/{role}.py", "bytes": 10, "sha256": character * 64}
+            for role, character in zip(PART_STATE_CODE_ROLES, "1234567")
+        },
+        "input": json.loads(json.dumps(INPUT_IDENTITY)),
+        "truth": {
+            "seed": 20260907,
+            "identity_sha256": IDENTITY,
+            "record_count": 48534,
+            "block_size": 256,
+            "block_count": 190,
+        },
+        "query_catalog_sha256": "f" * 64,
+        "runtime": {
+            "operation": "part-states",
+            "engine": "clickhouse",
+            "layout": layout,
+            "endpoint": {"host": "127.0.0.1", "port": 18123},
+            "container": {
+                "container": "agent-trace-clickhouse-25-12",
+                "image": "clickhouse/clickhouse-server:25.12",
+                "image_id": "sha256:" + "0" * 64,
+            },
+            "engine_runtime": {"version": "25.12.11.4", "source": "database-query"},
+            "host": {
+                "platform": "Linux", "machine": "x86_64",
+                "cpu_count": 8, "memory_total_kib": 16291948,
+            },
+        },
+        "child": {
+            "path": "child/run-manifest.json",
+            "bytes": len(content),
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "format": child["format"],
+            "format_version": child["format_version"],
+            "status": child["status"],
+            "run_id": child["run_id"],
+        },
+        "cleanup": {
+            "namespace": child["cleanup"]["namespace"],
+            "removed": True,
+            "asset_directory_removed": True,
+            "asset_directory_applicable": layout == "asset_ref",
+        },
+    }
+
+
+def write_part_state_run(root, layout, child=None):
+    """写入一个最小 part-state production 目录并返回其路径。"""
+    run = Path(root) / layout
+    (run / "child").mkdir(parents=True)
+    child = part_state_child(layout) if child is None else child
+    content = json.dumps(child, separators=(",", ":")).encode("utf-8")
+    (run / "child" / "run-manifest.json").write_bytes(content)
+    envelope = part_state_envelope(layout, content, child)
+    (run / "run-manifest.json").write_text(json.dumps(envelope), encoding="utf-8")
+    return run
+
+
+def rewrite_part_state_child(run, mutate):
+    """改写 child 并同步 envelope 中由实际 bytes 形成的身份。"""
+    path = Path(run) / "child" / "run-manifest.json"
+    child = json.loads(path.read_text(encoding="utf-8"))
+    mutate(child)
+    content = json.dumps(child, separators=(",", ":")).encode("utf-8")
+    path.write_bytes(content)
+    envelope_path = Path(run) / "run-manifest.json"
+    envelope = json.loads(envelope_path.read_text(encoding="utf-8"))
+    envelope["child"]["bytes"] = len(content)
+    envelope["child"]["sha256"] = hashlib.sha256(content).hexdigest()
+    envelope_path.write_text(json.dumps(envelope), encoding="utf-8")
+    return child
+
+
+def rewrite_part_state_envelope(run, mutate):
+    """改写 part-state production envelope。"""
+    path = Path(run) / "run-manifest.json"
+    envelope = json.loads(path.read_text(encoding="utf-8"))
+    mutate(envelope)
+    path.write_text(json.dumps(envelope), encoding="utf-8")
+    return envelope
 
 
 class StageThreeSummaryTest(unittest.TestCase):
@@ -925,6 +1170,818 @@ class StageThreeMatrixShardTest(unittest.TestCase):
             )
             with self.assertRaisesRegex(ValueError, "sample evidence"):
                 report.summarize(shards)
+
+
+class StageThreePartStateSummaryTest(unittest.TestCase):
+    """验证四布局 part-state 控制的跨运行身份、状态门禁与独立统计。"""
+
+    def runs(self, directory):
+        """写入四个布局各一个最小正式 part-state 目录。"""
+        return [write_part_state_run(directory, layout) for layout in LAYOUTS]
+
+    def test_summarizes_four_layout_controls_in_stable_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            summary = report.summarize_part_states(runs)
+            self.assertEqual(
+                summary["format"], "agent-trace-json-storage-stage3-part-states-summary"
+            )
+            self.assertEqual(summary["format_version"], 1)
+            self.assertEqual(summary["statistics_boundary"], "raw-query-sample-distribution")
+            self.assertEqual(summary["state_order"], list(PART_STATE_STATES))
+            self.assertEqual(summary["scenarios"], list(PART_STATE_SCENARIOS))
+            self.assertEqual(summary["input"], INPUT_IDENTITY)
+            self.assertEqual([item["layout"] for item in summary["part_states"]], list(LAYOUTS))
+            for target in summary["part_states"]:
+                layout = target["layout"]
+                self.assertEqual(target["physical_targets"], PART_STATE_TARGETS[layout])
+                self.assertEqual(target["controlled_table"], PART_STATE_CONTROLLED[layout])
+                self.assertEqual(target["samples_per_query"], 30)
+                self.assertEqual(
+                    [state["name"] for state in target["states"]], list(PART_STATE_STATES)
+                )
+                for state in target["states"]:
+                    self.assertEqual(list(state["scenarios"]), list(PART_STATE_SCENARIOS))
+            self.assertEqual(summary, report.summarize_part_states(list(reversed(runs))))
+
+    def test_rejects_missing_or_duplicated_layout(self):
+        with self.assertRaisesRegex(ValueError, "at least one part-state run directory"):
+            report.summarize_part_states([])
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            with self.assertRaisesRegex(ValueError, "coverage is incomplete"):
+                report.summarize_part_states(runs[:-1])
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            runs.append(write_part_state_run(Path(directory) / "duplicate", "same_table"))
+            with self.assertRaisesRegex(ValueError, "duplicate part-state layout"):
+                report.summarize_part_states(runs)
+
+    def test_rejects_formal_input_truth_and_query_catalog_drift(self):
+        for case, message in (
+            ("input", "input identity differs between runs"),
+            ("truth", "truth identity differs between runs"),
+            ("query", "query catalog identity differs between runs"),
+        ):
+            with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
+                runs = self.runs(directory)
+                if case == "input":
+                    rewrite_part_state_envelope(
+                        runs[1],
+                        lambda envelope: envelope["input"]["events"].__setitem__("sha256", "9" * 64),
+                    )
+                elif case == "truth":
+                    rewrite_part_state_envelope(
+                        runs[2], lambda envelope: envelope["truth"].__setitem__("record_count", 1)
+                    )
+                else:
+                    rewrite_part_state_envelope(
+                        runs[3],
+                        lambda envelope: envelope.__setitem__("query_catalog_sha256", "8" * 64),
+                    )
+                with self.assertRaisesRegex(ValueError, message):
+                    report.summarize_part_states(runs)
+
+    def test_keeps_per_layout_code_provenance_and_accepts_divergent_code(self):
+        """asset_ref 修复后的 runner 摘要与前三布局不同，结果树保留各自 code。"""
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            rewrite_part_state_envelope(
+                runs[3],
+                lambda envelope: envelope["code"]["part_state_runner"].__setitem__(
+                    "sha256", "9" * 64
+                ),
+            )
+            summary = report.summarize_part_states(runs)
+            codes = {item["layout"]: item["code"] for item in summary["part_states"]}
+            self.assertEqual(codes["asset_ref"]["part_state_runner"]["sha256"], "9" * 64)
+            self.assertEqual(codes["same_table"]["part_state_runner"]["sha256"], "5" * 64)
+
+    def test_rejects_envelope_identity_runtime_and_code_gaps(self):
+        cases = (
+            (lambda envelope: envelope.__setitem__("format", "other"), "format/version is invalid"),
+            (lambda envelope: envelope.__setitem__("format_version", 2), "format/version is invalid"),
+            (lambda envelope: envelope.__setitem__("status", "running"), "status is not complete"),
+            (lambda envelope: envelope.__setitem__("operation", "candidate"), "operation is invalid"),
+            (lambda envelope: envelope.__setitem__("run_id", ""), "run identity is missing"),
+            (
+                lambda envelope: envelope["runtime"].__setitem__("engine", "opengauss"),
+                "runtime identity mismatch",
+            ),
+            (
+                lambda envelope: envelope["runtime"].__setitem__("layout", "bogus"),
+                "runtime identity mismatch",
+            ),
+            (
+                lambda envelope: envelope["runtime"].__setitem__("operation", "candidate"),
+                "runtime identity mismatch",
+            ),
+            (
+                lambda envelope: envelope["runtime"].__setitem__("container", {}),
+                "runtime evidence is invalid",
+            ),
+            (
+                lambda envelope: envelope["runtime"]["engine_runtime"].__setitem__(
+                    "source", "static"
+                ),
+                "runtime evidence is invalid",
+            ),
+            (
+                lambda envelope: envelope["runtime"]["host"].__setitem__("cpu_count", True),
+                "runtime evidence is invalid",
+            ),
+            (lambda envelope: envelope.pop("namespace_policy"), "namespace evidence is missing"),
+            (lambda envelope: envelope["code"].pop("part_state_runner"), "code evidence is incomplete"),
+            (
+                lambda envelope: envelope["code"]["common"].__setitem__("sha256", "x" * 64),
+                "code evidence is incomplete",
+            ),
+            (
+                lambda envelope: envelope["code"]["assets"].__setitem__("bytes", 0),
+                "code evidence is incomplete",
+            ),
+            (
+                lambda envelope: envelope["input"].__setitem__("kind", "smoke"),
+                "truth/input identity is missing",
+            ),
+            (lambda envelope: envelope["truth"].pop("block_count"), "truth identity is invalid"),
+            (
+                lambda envelope: envelope["truth"].__setitem__("identity_sha256", "7" * 64),
+                "truth identity is invalid",
+            ),
+            (
+                lambda envelope: envelope.__setitem__("query_catalog_sha256", "not-a-digest"),
+                "query catalog identity is invalid",
+            ),
+            (
+                lambda envelope: envelope["cleanup"].__setitem__("removed", False),
+                "cleanup evidence is missing",
+            ),
+            (
+                lambda envelope: envelope["cleanup"].__setitem__("asset_directory_removed", False),
+                "cleanup evidence is missing",
+            ),
+            (
+                lambda envelope: envelope["cleanup"].__setitem__(
+                    "asset_directory_applicable", True
+                ),
+                "cleanup evidence is missing",
+            ),
+        )
+        for index, (mutate, message) in enumerate(cases):
+            with self.subTest(case=index), tempfile.TemporaryDirectory() as directory:
+                runs = self.runs(directory)
+                rewrite_part_state_envelope(runs[0], mutate)
+                with self.assertRaisesRegex(ValueError, message):
+                    report.summarize_part_states(runs)
+
+    def test_rejects_child_identity_bytes_and_path_gaps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            rewrite_part_state_envelope(
+                runs[0], lambda envelope: envelope["child"].__setitem__("sha256", "9" * 64)
+            )
+            with self.assertRaisesRegex(ValueError, "child identity mismatch"):
+                report.summarize_part_states(runs)
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            path = runs[1] / "child" / "run-manifest.json"
+            child = json.loads(path.read_text(encoding="utf-8"))
+            child["run_id"] = "jsons3-clickhouse-parts-replaced"
+            path.write_text(json.dumps(child), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "child identity mismatch"):
+                report.summarize_part_states(runs)
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            rewrite_part_state_envelope(
+                runs[2],
+                lambda envelope: envelope["child"].__setitem__(
+                    "path", "../escape/run-manifest.json"
+                ),
+            )
+            with self.assertRaisesRegex(ValueError, "child path escapes the run directory"):
+                report.summarize_part_states(runs)
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            (runs[3] / "child" / "run-manifest.json").unlink()
+            with self.assertRaisesRegex(ValueError, "child manifest is unavailable"):
+                report.summarize_part_states(runs)
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            rewrite_part_state_envelope(
+                runs[0], lambda envelope: envelope["child"].__setitem__("status", "failed")
+            )
+            with self.assertRaisesRegex(ValueError, "child format/status mismatch"):
+                report.summarize_part_states(runs)
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            rewrite_part_state_envelope(runs[1], lambda envelope: envelope["child"].pop("bytes"))
+            with self.assertRaisesRegex(ValueError, "child evidence is incomplete"):
+                report.summarize_part_states(runs)
+
+
+def _part_state_mutate_state(child, name):
+    """取得 child 中指定名称的状态，供反例直接改写。"""
+    return next(state for state in child["states"] if state["name"] == name)
+
+
+def _mutate_first_sample(child, name, scenario, mutate):
+    """改写一个状态内首个匹配 scenario 的样本。"""
+    state = _part_state_mutate_state(child, name)
+    sample = next(item for item in state["query_samples"] if item["scenario"] == scenario)
+    mutate(sample)
+
+
+def _mutate_named_samples(child, name, scenario, mutate):
+    """改写一个状态内某个 scenario 的全部样本。"""
+    state = _part_state_mutate_state(child, name)
+    for sample in state["query_samples"]:
+        if sample["scenario"] == scenario:
+            mutate(sample)
+
+
+class StageThreePartStateGateTest(unittest.TestCase):
+    """验证 part-state child、scenario 与访问证据的反例全部 fail closed。"""
+
+    def runs(self, directory):
+        return [write_part_state_run(directory, layout) for layout in LAYOUTS]
+
+    def test_rejects_child_physical_state_gaps(self):
+        cases = (
+            (lambda child: child["state_order"].reverse(), "state order mismatch"),
+            (lambda child: child.__setitem__("samples_per_query", 29), "samples_per_query mismatch"),
+            (lambda child: child.__setitem__("physical_targets", []), "physical targets mismatch"),
+            (lambda child: child.__setitem__("controlled_table", "other"), "controlled table mismatch"),
+            (lambda child: child.__setitem__("layout", "separate"), "format/status/layout mismatch"),
+            (lambda child: child.__setitem__("errors", ["boom"]), "child contains errors"),
+            (lambda child: child.__setitem__("states", child["states"][:3]), "states are incomplete"),
+            (
+                lambda child: _part_state_mutate_state(child, "stable").__setitem__(
+                    "predicate_proven", False
+                ),
+                "predicate evidence is inconsistent",
+            ),
+            (
+                lambda child: _part_state_mutate_state(child, "stable").__setitem__("error", "timeout"),
+                "predicate evidence is inconsistent",
+            ),
+            (
+                lambda child: _part_state_mutate_state(child, "fragmented").__setitem__(
+                    "active_merges", [{"table": child["controlled_table"]}]
+                ),
+                "predicate evidence is inconsistent",
+            ),
+            (
+                lambda child: _part_state_mutate_state(child, "merging").__setitem__(
+                    "active_merges", [{"table": "other"}]
+                ),
+                "predicate evidence is inconsistent",
+            ),
+            (
+                lambda child: _part_state_mutate_state(child, "stable")["observations"][-1][
+                    "active_part_counts"
+                ].__setitem__(child["controlled_table"], 999),
+                "predicate evidence is inconsistent",
+            ),
+            (
+                lambda child: _part_state_mutate_state(child, "single_part")["tables"][
+                    child["controlled_table"]
+                ].__setitem__("part_count", 2),
+                "predicate evidence is inconsistent",
+            ),
+            (
+                lambda child: child["restoration"].__setitem__("restored", False),
+                "restoration evidence is invalid",
+            ),
+            (
+                lambda child: child["restoration"].__setitem__("attempted", False),
+                "restoration evidence is invalid",
+            ),
+            (
+                lambda child: child["restoration"].__setitem__("targets", []),
+                "restoration evidence is invalid",
+            ),
+            (
+                lambda child: child["cleanup"].__setitem__("removed", False),
+                "child cleanup evidence is invalid",
+            ),
+            (
+                lambda child: child["cleanup"].__setitem__("namespace", ""),
+                "child cleanup evidence is invalid",
+            ),
+            (
+                lambda child: child["cleanup"].__setitem__("namespace", "other-namespace"),
+                "child cleanup evidence is invalid",
+            ),
+        )
+        for index, (mutate, message) in enumerate(cases):
+            with self.subTest(case=index), tempfile.TemporaryDirectory() as directory:
+                runs = self.runs(directory)
+                rewrite_part_state_child(runs[3], mutate)
+                with self.assertRaisesRegex(ValueError, message):
+                    report.summarize_part_states(runs)
+
+    def test_rejects_table_merge_and_observation_type_gaps(self):
+        def first_table(state):
+            return next(iter(state["tables"].values()))
+
+        cases = (
+            (
+                lambda state: state["tables"].pop(next(iter(state["tables"]))),
+                "table evidence is incomplete",
+            ),
+            (
+                lambda state: first_table(state).__setitem__("part_count", True),
+                "table metrics are invalid",
+            ),
+            (
+                lambda state: first_table(state).__setitem__("marks", -1),
+                "table metrics are invalid",
+            ),
+            (
+                lambda state: first_table(state).__setitem__("compressed_bytes", 1.5),
+                "table metrics are invalid",
+            ),
+            (lambda state: state.__setitem__("active_merges", {}), "merge evidence is invalid"),
+            (
+                lambda state: state.__setitem__("active_merges", [{"num_parts": 1}]),
+                "merge evidence is invalid",
+            ),
+            (lambda state: state.__setitem__("observations", []), "observations evidence is invalid"),
+            (
+                lambda state: state.__setitem__("observations", [{"active_merges": []}]),
+                "observations evidence is invalid",
+            ),
+            (
+                lambda state: state["observations"][0].__setitem__(
+                    "active_part_counts", {"unknown": 1}
+                ),
+                "observations evidence is invalid",
+            ),
+            (
+                lambda state: state.__setitem__("optimized_targets", ["events"]),
+                "optimized targets mismatch",
+            ),
+        )
+        for index, (mutate, message) in enumerate(cases):
+            with self.subTest(case=index), tempfile.TemporaryDirectory() as directory:
+                runs = self.runs(directory)
+                rewrite_part_state_child(
+                    runs[0],
+                    lambda child: mutate(_part_state_mutate_state(child, "fragmented")),
+                )
+                with self.assertRaisesRegex(ValueError, message):
+                    report.summarize_part_states(runs)
+
+    def test_rejects_scenario_and_sample_gaps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+
+            def drop_scenario(child):
+                state = _part_state_mutate_state(child, "fragmented")
+                state["query_samples"] = [
+                    item for item in state["query_samples"] if item["scenario"] != "batch:main"
+                ]
+
+            rewrite_part_state_child(runs[0], drop_scenario)
+            with self.assertRaisesRegex(ValueError, "query sample count mismatch"):
+                report.summarize_part_states(runs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            rewrite_part_state_child(
+                runs[1],
+                lambda child: _mutate_named_samples(
+                    child, "stable", "trace:p95",
+                    lambda sample: sample.__setitem__("scenario", "trace:p50"),
+                ),
+            )
+            with self.assertRaisesRegex(ValueError, "scenario coverage is incomplete"):
+                report.summarize_part_states(runs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            rewrite_part_state_child(
+                runs[2],
+                lambda child: _mutate_named_samples(
+                    child, "merging", "list:first",
+                    lambda sample: sample.__setitem__("scenario", "preview:first"),
+                ),
+            )
+            with self.assertRaisesRegex(ValueError, "scenario/kind evidence is inconsistent"):
+                report.summarize_part_states(runs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            rewrite_part_state_child(
+                runs[3],
+                lambda child: _mutate_named_samples(
+                    child, "single_part", "list:middle",
+                    lambda sample: sample.__setitem__("scenario", "bogus:scenario"),
+                ),
+            )
+            with self.assertRaisesRegex(ValueError, "scenario evidence is invalid"):
+                report.summarize_part_states(runs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+
+            def duplicate_query_id(child):
+                state = _part_state_mutate_state(child, "fragmented")
+                state["query_samples"][1]["query_id"] = state["query_samples"][0]["query_id"]
+
+            rewrite_part_state_child(runs[0], duplicate_query_id)
+            with self.assertRaisesRegex(ValueError, "query IDs are duplicated"):
+                report.summarize_part_states(runs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            rewrite_part_state_child(
+                runs[0],
+                lambda child: _mutate_first_sample(
+                    child, "fragmented", "list:first",
+                    lambda sample: sample.__setitem__("query_id", ""),
+                ),
+            )
+            with self.assertRaisesRegex(ValueError, "query ID evidence is invalid"):
+                report.summarize_part_states(runs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            rewrite_part_state_child(
+                runs[1],
+                lambda child: _mutate_first_sample(
+                    child, "stable", "preview:middle",
+                    lambda sample: sample.__setitem__("status", "failed"),
+                ),
+            )
+            with self.assertRaisesRegex(ValueError, "failed sample is present"):
+                report.summarize_part_states(runs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            rewrite_part_state_child(
+                runs[2],
+                lambda child: _mutate_first_sample(
+                    child, "merging", "trace:p50",
+                    lambda sample: sample.__setitem__("error", "connection reset"),
+                ),
+            )
+            with self.assertRaisesRegex(ValueError, "failed sample is present"):
+                report.summarize_part_states(runs)
+
+
+class StageThreePartStateSampleGateTest(unittest.TestCase):
+    """验证样本计数、数值类型、访问证据与 Asset 水位的 fail-closed 边界。"""
+
+    def runs(self, directory):
+        return [write_part_state_run(directory, layout) for layout in LAYOUTS]
+
+    def test_rejects_sample_totals(self):
+        cases = (
+            ("successful_samples", 359),
+            ("failed_samples", 1),
+            ("query_finish_count", 1),
+        )
+        for field, value in cases:
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                runs = self.runs(directory)
+                rewrite_part_state_child(
+                    runs[0],
+                    lambda child: _part_state_mutate_state(child, "stable").__setitem__(field, value),
+                )
+                with self.assertRaisesRegex(ValueError, "sample totals are invalid"):
+                    report.summarize_part_states(runs)
+
+    def test_rejects_non_negative_numeric_gates(self):
+        cases = (
+            (lambda sample: sample.__setitem__("recovery_ms", -1), "recovery_ms is invalid"),
+            (
+                lambda sample: sample.__setitem__("validation_ms", float("nan")),
+                "child manifest",
+            ),
+            (
+                lambda sample: sample.__setitem__("application_ready_ms", True),
+                "application_ready_ms is invalid",
+            ),
+            (lambda sample: sample.__setitem__("response_bytes", 0), "response bytes are invalid"),
+            (lambda sample: sample.__setitem__("response_bytes", 150), "response bytes are invalid"),
+            (lambda sample: sample.__setitem__("request_count", 1.5), "request count is invalid"),
+            (
+                lambda sample: sample.__setitem__(
+                    "validation", {"row_count": 1.5, "validated_payload_bytes": 1}
+                ),
+                "validation evidence is invalid",
+            ),
+            (lambda sample: sample.__setitem__("validation", None), "validation evidence is invalid"),
+            (
+                lambda sample: sample.__setitem__("database_protocol_bytes", 1.5),
+                "response bytes are invalid",
+            ),
+        )
+        for index, (mutate, message) in enumerate(cases):
+            with self.subTest(case=index), tempfile.TemporaryDirectory() as directory:
+                runs = self.runs(directory)
+                rewrite_part_state_child(
+                    runs[0],
+                    lambda child: _mutate_first_sample(child, "fragmented", "batch:main", mutate),
+                )
+                with self.assertRaisesRegex(ValueError, message):
+                    report.summarize_part_states(runs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            rewrite_part_state_child(
+                runs[1],
+                lambda child: _mutate_first_sample(
+                    child, "stable", "batch:main",
+                    lambda sample: sample.__setitem__("application_ready_ms", 0),
+                ),
+            )
+            with self.assertRaisesRegex(ValueError, "batch application_ready_ms must be positive"):
+                report.summarize_part_states(runs)
+
+    def test_rejects_access_evidence_gaps_and_inconsistencies(self):
+        def mutate_access(child, name, scenario, mutate):
+            state = _part_state_mutate_state(child, name)
+            sample = next(item for item in state["query_samples"] if item["scenario"] == scenario)
+            mutate(state, sample)
+
+        cases = (
+            (
+                lambda state, sample: state["query_plans"].pop(sample["query_id"]),
+                "access evidence is incomplete",
+            ),
+            (
+                lambda state, sample: state["query_details"].pop(sample["query_id"]),
+                "access evidence is incomplete",
+            ),
+            (
+                lambda state, sample: state["query_finish"].pop(sample["query_id"]),
+                "access evidence is incomplete",
+            ),
+            (
+                lambda state, sample: state["query_plans"].__setitem__(sample["query_id"], "   "),
+                "query plan is invalid",
+            ),
+            (
+                lambda state, sample: state["query_details"][sample["query_id"]].__setitem__(
+                    "declared_source", ""
+                ),
+                "query detail evidence is invalid",
+            ),
+            (
+                lambda state, sample: state["query_details"][sample["query_id"]].__setitem__(
+                    "statement", " "
+                ),
+                "query detail evidence is invalid",
+            ),
+            (
+                lambda state, sample: state["query_details"][sample["query_id"]].__setitem__(
+                    "scanned_rows", -1
+                ),
+                "query detail evidence is invalid",
+            ),
+            (
+                lambda state, sample: state["query_details"][sample["query_id"]].__setitem__(
+                    "scanned_bytes", True
+                ),
+                "query detail evidence is invalid",
+            ),
+            (
+                lambda state, sample: state["query_details"][sample["query_id"]].__setitem__(
+                    "kind", "preview"
+                ),
+                "query evidence is inconsistent",
+            ),
+            (
+                lambda state, sample: state["query_details"][sample["query_id"]].__setitem__(
+                    "scanned_rows", 3
+                ),
+                "query evidence is inconsistent",
+            ),
+            (
+                lambda state, sample: state["query_details"][sample["query_id"]].__setitem__(
+                    "scanned_bytes", 3
+                ),
+                "query evidence is inconsistent",
+            ),
+            (
+                lambda state, sample: state["query_finish"][sample["query_id"]].__setitem__(
+                    "read_rows", 0
+                ),
+                "query evidence is inconsistent",
+            ),
+            (
+                lambda state, sample: state["query_finish"][sample["query_id"]].__setitem__(
+                    "exception_code", 1
+                ),
+                "QueryFinish evidence is invalid",
+            ),
+            (
+                lambda state, sample: state["query_finish"][sample["query_id"]].__setitem__(
+                    "type", "QueryStart"
+                ),
+                "QueryFinish evidence is invalid",
+            ),
+            (
+                lambda state, sample: state["query_finish"][sample["query_id"]].__setitem__(
+                    "read_bytes", 1.5
+                ),
+                "QueryFinish evidence is invalid",
+            ),
+        )
+        for index, (mutate, message) in enumerate(cases):
+            with self.subTest(case=index), tempfile.TemporaryDirectory() as directory:
+                runs = self.runs(directory)
+                rewrite_part_state_child(
+                    runs[3],
+                    lambda child: mutate_access(
+                        child, "single_part", "detail:text_2m", mutate
+                    ),
+                )
+                with self.assertRaisesRegex(ValueError, message):
+                    report.summarize_part_states(runs)
+
+    def test_rejects_asset_store_gaps_and_watermark_drift(self):
+        for field in (
+            "available_object_count", "available_bytes", "orphan_object_count", "orphan_bytes",
+        ):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                runs = self.runs(directory)
+                rewrite_part_state_child(
+                    runs[3],
+                    lambda child: _part_state_mutate_state(child, "fragmented")[
+                        "asset_store"
+                    ].pop(field),
+                )
+                with self.assertRaisesRegex(ValueError, "asset store evidence is invalid"):
+                    report.summarize_part_states(runs)
+
+        for field, value in (("orphan_object_count", 1), ("orphan_bytes", 5)):
+            with self.subTest(orphan=field), tempfile.TemporaryDirectory() as directory:
+                runs = self.runs(directory)
+                rewrite_part_state_child(
+                    runs[3],
+                    lambda child: _part_state_mutate_state(child, "merging")[
+                        "asset_store"
+                    ].__setitem__(field, value),
+                )
+                with self.assertRaisesRegex(ValueError, "asset store evidence is invalid"):
+                    report.summarize_part_states(runs)
+
+        for field, value in (("available_object_count", True), ("available_bytes", -1)):
+            with self.subTest(type=field), tempfile.TemporaryDirectory() as directory:
+                runs = self.runs(directory)
+                rewrite_part_state_child(
+                    runs[3],
+                    lambda child: _part_state_mutate_state(child, "stable")[
+                        "asset_store"
+                    ].__setitem__(field, value),
+                )
+                with self.assertRaisesRegex(ValueError, "asset store evidence is invalid"):
+                    report.summarize_part_states(runs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            rewrite_part_state_child(
+                runs[3],
+                lambda child: _part_state_mutate_state(child, "stable").__setitem__(
+                    "asset_store", None
+                ),
+            )
+            with self.assertRaisesRegex(ValueError, "asset store evidence is invalid"):
+                report.summarize_part_states(runs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            rewrite_part_state_child(
+                runs[3],
+                lambda child: _part_state_mutate_state(child, "single_part")[
+                    "asset_store"
+                ].__setitem__("available_object_count", 159),
+            )
+            with self.assertRaisesRegex(ValueError, "asset store watermarks differ between states"):
+                report.summarize_part_states(runs)
+
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            rewrite_part_state_child(
+                runs[0],
+                lambda child: _part_state_mutate_state(child, "fragmented").__setitem__(
+                    "asset_store",
+                    {
+                        "available_object_count": 1, "available_bytes": 1,
+                        "orphan_object_count": 0, "orphan_bytes": 0,
+                    },
+                ),
+            )
+            with self.assertRaisesRegex(ValueError, "asset store evidence is invalid"):
+                report.summarize_part_states(runs)
+
+
+class StageThreePartStateResultTest(unittest.TestCase):
+    """验证控制结果直接来自 raw samples、保留机制证据且不含矩阵配对字段。"""
+
+    def runs(self, directory):
+        return [write_part_state_run(directory, layout) for layout in LAYOUTS]
+
+    def test_recomputes_raw_distributions_without_mixing_state_or_scenario(self):
+        def configure(child):
+            state = _part_state_mutate_state(child, "stable")
+            samples = [item for item in state["query_samples"] if item["scenario"] == "trace:p95"]
+            for sample in samples:
+                sample["application_ready_ms"] = 1000
+                sample["database_response_bytes"] = 1000
+                sample["resolver_payload_bytes"] = 500
+                sample["response_bytes"] = 1500
+                sample["request_count"] = 2
+                sample["validation"]["validated_payload_bytes"] = 2048
+            samples[0]["application_ready_ms"] = 2000
+
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            rewrite_part_state_child(
+                runs[0],
+                lambda child: _mutate_named_samples(
+                    child, "fragmented", "list:first",
+                    lambda sample: sample.__setitem__("application_ready_ms", 7),
+                ),
+            )
+            rewrite_part_state_child(runs[0], configure)
+            summary = report.summarize_part_states(runs)
+            target = next(item for item in summary["part_states"] if item["layout"] == "same_table")
+            states = {state["name"]: state for state in target["states"]}
+            stable = states["stable"]["scenarios"]["trace:p95"]
+            self.assertEqual(stable["application_ready_ms"], {
+                "minimum": 1000.0, "p50": 1000.0, "p95": 1000.0, "maximum": 2000.0,
+            })
+            self.assertEqual(stable["response_bytes"], {
+                "database": 30000, "resolver_payload": 15000, "total": 45000,
+                "validated_payload": 61440, "database_protocol": 3000, "request_count": 60,
+            })
+            self.assertEqual(
+                states["stable"]["scenarios"]["list:first"]["application_ready_ms"]["p50"], 13.0
+            )
+            self.assertEqual(
+                states["fragmented"]["scenarios"]["list:first"]["application_ready_ms"]["p50"], 7.0
+            )
+            self.assertEqual(
+                states["stable"]["scenarios"]["list:first"]["response_bytes"]["total"], 3000
+            )
+            self.assertIn("throughput_mib_s", states["stable"]["scenarios"]["batch:main"])
+            self.assertNotIn("throughput_mib_s", stable)
+            separate = next(item for item in summary["part_states"] if item["layout"] == "separate")
+            other = {state["name"]: state for state in separate["states"]}
+            self.assertEqual(
+                other["stable"]["scenarios"]["trace:p95"]["application_ready_ms"]["p50"], 13.0
+            )
+
+    def test_result_tree_keeps_state_mechanism_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            summary = report.summarize_part_states(self.runs(directory))
+            asset_ref = next(
+                item for item in summary["part_states"] if item["layout"] == "asset_ref"
+            )
+            states = {state["name"]: state for state in asset_ref["states"]}
+            self.assertEqual(
+                states["fragmented"]["tables"]["events_analytics"]["part_count"], 190
+            )
+            self.assertEqual(states["stable"]["tables"]["events_analytics"]["part_count"], 3)
+            self.assertEqual(states["merging"]["active_merge_count"], 1)
+            self.assertEqual(states["fragmented"]["active_merge_count"], 0)
+            self.assertEqual(
+                states["single_part"]["optimized_targets"], PART_STATE_TARGETS["asset_ref"]
+            )
+            self.assertEqual(states["stable"]["asset_store"]["available_object_count"], 160)
+            self.assertEqual(asset_ref["controlled_table"], "events_analytics")
+            same_table = next(
+                item for item in summary["part_states"] if item["layout"] == "same_table"
+            )
+            self.assertEqual(same_table["states"][0]["tables"]["events"]["part_count"], 190)
+            self.assertIsNone(same_table["states"][0]["asset_store"])
+
+    def test_summary_contains_no_main_matrix_pairing_fields(self):
+        forbidden = {
+            "rounds", "round_index", "round_statistic_median", "main_matrix", "delta",
+            "paired", "pairing", "main_pair", "main_vs_part", "difference",
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            summary = report.summarize_part_states(self.runs(directory))
+
+        def collect(value):
+            found = set()
+            if isinstance(value, dict):
+                for key, item in value.items():
+                    found.add(key)
+                    found |= collect(item)
+            elif isinstance(value, list):
+                for item in value:
+                    found |= collect(item)
+            return found
+
+        self.assertEqual(collect(summary) & forbidden, set())
+        self.assertEqual(summary["statistics_boundary"], "raw-query-sample-distribution")
 
 
 if __name__ == "__main__":
