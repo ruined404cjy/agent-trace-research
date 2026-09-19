@@ -13,11 +13,11 @@ from pathlib import Path
 FORMAT = "agent-trace-json-storage-stage3-layout-matrix"
 FORMAT_VERSION = 1
 LAYOUTS = ("same_table", "separate", "full_core", "asset_ref")
-WATERMARK_TARGETS = {
-    "same_table": {"events"},
-    "separate": {"events_analytics", "event_payloads"},
-    "full_core": {"events_full", "events_core"},
-    "asset_ref": {"events_analytics", "assets"},
+LAYOUT_TARGETS = {
+    "same_table": ("events",),
+    "separate": ("events_analytics", "event_payloads"),
+    "full_core": ("events_full", "events_core"),
+    "asset_ref": ("events_analytics", "assets"),
 }
 PERFORMANCE_WORKLOADS = (
     "main", "equal_total_few_large", "equal_total_many_medium",
@@ -51,12 +51,6 @@ PART_STATE_SCENARIO_KINDS = {
 }
 PART_STATE_SAMPLES_PER_QUERY = 30
 PART_STATE_TABLE_METRICS = ("part_count", "marks", "compressed_bytes", "uncompressed_bytes")
-PART_STATE_TARGETS = {
-    "same_table": ("events",),
-    "separate": ("events_analytics", "event_payloads"),
-    "full_core": ("events_full", "events_core"),
-    "asset_ref": ("events_analytics", "assets"),
-}
 PART_STATE_CONTROLLED_TABLES = {
     "same_table": "events",
     "separate": "events_analytics",
@@ -71,6 +65,13 @@ PART_STATE_ASSET_FIELDS = (
     "available_object_count", "available_bytes", "orphan_object_count", "orphan_bytes",
 )
 PART_STATE_STATISTICS_BOUNDARY = "raw-query-sample-distribution"
+PART_STATE_CACHE_LIMITS = "ordered-control-warm-cache-no-os-cache-drop-not-main-matrix-paired"
+FORMAL_TRUTH = {
+    "seed": 20260907,
+    "record_count": 48534,
+    "block_size": 256,
+    "block_count": 190,
+}
 
 
 def _require(value, message):
@@ -330,7 +331,7 @@ def _validate_round(manifest, workload, record, seen_positions):
             _integer(value, "watermark evidence is incomplete", 1)
     if (
         not isinstance(watermarks, dict)
-        or set(watermarks) != WATERMARK_TARGETS[layout]
+        or set(watermarks) != set(LAYOUT_TARGETS[layout])
         or set(watermarks.values()) != {write["final_watermark"]}
     ):
         raise ValueError("watermark evidence is incomplete")
@@ -338,7 +339,7 @@ def _validate_round(manifest, workload, record, seen_positions):
     if (
         not isinstance(storage, dict)
         or not isinstance(storage.get("tables"), dict)
-        or set(storage["tables"]) != WATERMARK_TARGETS[layout]
+        or set(storage["tables"]) != set(LAYOUT_TARGETS[layout])
     ):
         raise ValueError("storage evidence is missing")
     storage_fields = (
@@ -753,8 +754,7 @@ def _validate_part_state_envelope(envelope):
     if (
         not isinstance(truth, dict)
         or set(truth) != {"seed", "identity_sha256", "record_count", "block_size", "block_count"}
-        or not isinstance(truth.get("seed"), int)
-        or isinstance(truth.get("seed"), bool)
+        or any(truth.get(field) != value for field, value in FORMAL_TRUTH.items())
         or not _sha256(truth.get("identity_sha256"))
         or truth["identity_sha256"] != envelope["input"]["identity_sha256"]
     ):
@@ -933,6 +933,8 @@ def _part_state_sample_numbers(sample, scenario):
     _integer(sample.get("request_count"), "part-state request count is invalid", 1)
     if sample.get("database_protocol_bytes") is not None:
         _integer(sample["database_protocol_bytes"], "part-state response bytes are invalid")
+    _integer(sample.get("resolver_requests"), "part-state resolver_requests is invalid")
+    _number(sample.get("resolver_read_ms"), "part-state resolver_read_ms is invalid")
     validation = sample.get("validation")
     if not isinstance(validation, dict):
         raise ValueError("part-state validation evidence is invalid")
@@ -1027,12 +1029,23 @@ def _part_state_scenarios(state):
         or state.get("query_finish_count") != expected_count
     ):
         raise ValueError("part-state sample totals are invalid")
-    return {scenario: _round_summary(grouped[scenario]) for scenario in PART_STATE_SCENARIOS}
+    summaries = {}
+    for scenario in PART_STATE_SCENARIOS:
+        values = grouped[scenario]
+        summary = _round_summary(values)
+        summary["resolver_requests"] = _distribution([
+            sample["resolver_requests"] for sample in values
+        ])
+        summary["resolver_read_ms"] = _distribution([
+            sample["resolver_read_ms"] for sample in values
+        ])
+        summaries[scenario] = summary
+    return summaries
 
 
 def _validate_part_state_child(manifest, layout):
     """按真实 production 门禁等价核对 child 的物理、恢复与查询证据。"""
-    targets = PART_STATE_TARGETS[layout]
+    targets = LAYOUT_TARGETS[layout]
     controlled = PART_STATE_CONTROLLED_TABLES[layout]
     if (
         manifest.get("format") != PART_STATE_FORMAT
@@ -1049,6 +1062,8 @@ def _validate_part_state_child(manifest, layout):
         raise ValueError("part-state child state order mismatch")
     if manifest.get("samples_per_query") != PART_STATE_SAMPLES_PER_QUERY:
         raise ValueError("part-state samples_per_query mismatch")
+    if manifest.get("cache_limits") != PART_STATE_CACHE_LIMITS:
+        raise ValueError("part-state cache limits mismatch")
     if "errors" in manifest:
         raise ValueError("part-state child contains errors")
     states = manifest.get("states")
@@ -1124,6 +1139,18 @@ def summarize_part_states(runs: list[Path]) -> dict[str, object]:
     ):
         if any(envelopes[layout][1][field] != first[field] for layout in LAYOUTS):
             raise ValueError(f"part-state {name} identity differs between runs")
+    runtime_identity = (
+        first["runtime"]["engine_runtime"]["version"],
+        first["runtime"]["container"]["image_id"],
+    )
+    if any(
+        (
+            envelopes[layout][1]["runtime"]["engine_runtime"]["version"],
+            envelopes[layout][1]["runtime"]["container"]["image_id"],
+        ) != runtime_identity
+        for layout in LAYOUTS
+    ):
+        raise ValueError("part-state runtime identity differs between runs")
     targets = []
     for layout in LAYOUTS:
         run, envelope = envelopes[layout]
@@ -1136,8 +1163,10 @@ def summarize_part_states(runs: list[Path]) -> dict[str, object]:
             "run_id": envelope["run_id"],
             "code": envelope["code"],
             "child": envelope["child"],
-            "physical_targets": list(PART_STATE_TARGETS[layout]),
+            "runtime": envelope["runtime"],
+            "physical_targets": list(LAYOUT_TARGETS[layout]),
             "controlled_table": PART_STATE_CONTROLLED_TABLES[layout],
+            "cache_limits": PART_STATE_CACHE_LIMITS,
             "samples_per_query": PART_STATE_SAMPLES_PER_QUERY,
             "cleanup": envelope["cleanup"],
             "states": states,

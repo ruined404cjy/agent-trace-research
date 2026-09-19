@@ -27,7 +27,7 @@ INPUT_IDENTITY = {
     "events": {"bytes": 1, "sha256": "d" * 64},
     "identity_sha256": IDENTITY,
 }
-WATERMARK_TARGETS = {
+LAYOUT_TARGETS = {
     "same_table": ("events",),
     "separate": ("events_analytics", "event_payloads"),
     "full_core": ("events_full", "events_core"),
@@ -157,7 +157,7 @@ def formal_target(root, engine="opengauss", layout="same_table"):
                 "write": {"final_watermark": 10, "wall_ms": 1.0},
                 "maintenance": {
                     "completed": True,
-                    "watermarks": {name: 10 for name in WATERMARK_TARGETS[layout]},
+                    "watermarks": {name: 10 for name in LAYOUT_TARGETS[layout]},
                     "natural_stable_parts": engine == "clickhouse",
                     "optimize_final": False,
                 },
@@ -175,7 +175,7 @@ def formal_target(root, engine="opengauss", layout="same_table"):
                                 "toast_bytes": 40, "total_bytes": 100,
                             }
                         )
-                        for name in WATERMARK_TARGETS[layout]
+                        for name in LAYOUT_TARGETS[layout]
                     },
                     "merges": [],
                 },
@@ -285,12 +285,6 @@ PART_STATE_SCENARIOS = (
 )
 PART_STATE_KINDS = {scenario: scenario.split(":", 1)[0] for scenario in PART_STATE_SCENARIOS}
 PART_STATE_SAMPLES_PER_QUERY = 30
-PART_STATE_TARGETS = {
-    "same_table": ["events"],
-    "separate": ["events_analytics", "event_payloads"],
-    "full_core": ["events_full", "events_core"],
-    "asset_ref": ["events_analytics", "assets"],
-}
 PART_STATE_CONTROLLED = {
     "same_table": "events",
     "separate": "events_analytics",
@@ -318,6 +312,8 @@ def part_state_sample(layout, state, scenario, number, latency=10):
         "response_bytes": 100,
         "database_response_bytes": 100,
         "resolver_payload_bytes": 0,
+        "resolver_requests": 0,
+        "resolver_read_ms": 0.0,
         "database_protocol_bytes": 100,
         "request_count": 1,
         "validation": {"row_count": 1, "validated_payload_bytes": 100},
@@ -326,7 +322,7 @@ def part_state_sample(layout, state, scenario, number, latency=10):
 
 def part_state_state(layout, name):
     """构造一个满足真实状态谓词与固定 scenario 覆盖的最小状态证据。"""
-    targets = PART_STATE_TARGETS[layout]
+    targets = LAYOUT_TARGETS[layout]
     controlled = PART_STATE_CONTROLLED[layout]
     counts = {table: 190 for table in targets}
     if name == "stable":
@@ -390,7 +386,7 @@ def part_state_state(layout, name):
 
 def part_state_child(layout):
     """构造一个与生产 child schema 一致的最小 part-state manifest。"""
-    targets = PART_STATE_TARGETS[layout]
+    targets = LAYOUT_TARGETS[layout]
     namespace = f"jsons3_parts_{layout}_0123456789"
     return {
         "format": "agent-trace-json-storage-stage3-clickhouse-part-states",
@@ -1194,9 +1190,15 @@ class StageThreePartStateSummaryTest(unittest.TestCase):
             self.assertEqual([item["layout"] for item in summary["part_states"]], list(LAYOUTS))
             for target in summary["part_states"]:
                 layout = target["layout"]
-                self.assertEqual(target["physical_targets"], PART_STATE_TARGETS[layout])
+                self.assertEqual(target["physical_targets"], list(LAYOUT_TARGETS[layout]))
                 self.assertEqual(target["controlled_table"], PART_STATE_CONTROLLED[layout])
                 self.assertEqual(target["samples_per_query"], 30)
+                self.assertEqual(
+                    target["cache_limits"],
+                    "ordered-control-warm-cache-no-os-cache-drop-not-main-matrix-paired",
+                )
+                self.assertEqual(target["runtime"]["operation"], "part-states")
+                self.assertEqual(target["runtime"]["layout"], layout)
                 self.assertEqual(
                     [state["name"] for state in target["states"]], list(PART_STATE_STATES)
                 )
@@ -1220,7 +1222,7 @@ class StageThreePartStateSummaryTest(unittest.TestCase):
     def test_rejects_formal_input_truth_and_query_catalog_drift(self):
         for case, message in (
             ("input", "input identity differs between runs"),
-            ("truth", "truth identity differs between runs"),
+            ("truth", "truth identity is invalid"),
             ("query", "query catalog identity differs between runs"),
         ):
             with self.subTest(case=case), tempfile.TemporaryDirectory() as directory:
@@ -1256,6 +1258,49 @@ class StageThreePartStateSummaryTest(unittest.TestCase):
             codes = {item["layout"]: item["code"] for item in summary["part_states"]}
             self.assertEqual(codes["asset_ref"]["part_state_runner"]["sha256"], "9" * 64)
             self.assertEqual(codes["same_table"]["part_state_runner"]["sha256"], "5" * 64)
+
+    def test_rejects_cross_layout_runtime_version_and_image_drift(self):
+        """四布局必须来自同一 ClickHouse 版本和容器镜像 identity。"""
+        for field, value in (("version", "25.12.12.1"), ("image_id", "sha256:" + "9" * 64)):
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                runs = self.runs(directory)
+                if field == "version":
+                    rewrite_part_state_envelope(
+                        runs[1],
+                        lambda envelope: envelope["runtime"]["engine_runtime"].__setitem__(
+                            field, value
+                        ),
+                    )
+                else:
+                    rewrite_part_state_envelope(
+                        runs[2],
+                        lambda envelope: envelope["runtime"]["container"].__setitem__(
+                            field, value
+                        ),
+                    )
+                with self.assertRaisesRegex(ValueError, "runtime identity differs between runs"):
+                    report.summarize_part_states(runs)
+
+    def test_rejects_non_formal_truth_dimensions_even_when_all_runs_match(self):
+        """跨布局一致的缩减 truth 仍不得冒充固定正式输入。"""
+        cases = (
+            ("seed", 20260908),
+            ("record_count", 1),
+            ("block_size", 128),
+            ("block_count", 1),
+        )
+        for field, value in cases:
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                runs = self.runs(directory)
+                for run in runs:
+                    rewrite_part_state_envelope(
+                        run,
+                        lambda envelope, field=field, value=value: envelope["truth"].__setitem__(
+                            field, value
+                        ),
+                    )
+                with self.assertRaisesRegex(ValueError, "truth identity is invalid"):
+                    report.summarize_part_states(runs)
 
     def test_rejects_envelope_identity_runtime_and_code_gaps(self):
         cases = (
@@ -1408,6 +1453,10 @@ class StageThreePartStateGateTest(unittest.TestCase):
 
     def test_rejects_child_physical_state_gaps(self):
         cases = (
+            (
+                lambda child: child.__setitem__("cache_limits", "warm-cache"),
+                "cache limits mismatch",
+            ),
             (lambda child: child["state_order"].reverse(), "state order mismatch"),
             (lambda child: child.__setitem__("samples_per_query", 29), "samples_per_query mismatch"),
             (lambda child: child.__setitem__("physical_targets", []), "physical targets mismatch"),
@@ -1678,6 +1727,22 @@ class StageThreePartStateSampleGateTest(unittest.TestCase):
                 lambda sample: sample.__setitem__("database_protocol_bytes", 1.5),
                 "response bytes are invalid",
             ),
+            (
+                lambda sample: sample.__setitem__("resolver_requests", True),
+                "resolver_requests is invalid",
+            ),
+            (
+                lambda sample: sample.__setitem__("resolver_requests", -1),
+                "resolver_requests is invalid",
+            ),
+            (
+                lambda sample: sample.__setitem__("resolver_read_ms", float("inf")),
+                "child manifest",
+            ),
+            (
+                lambda sample: sample.__setitem__("resolver_read_ms", -0.1),
+                "resolver_read_ms is invalid",
+            ),
         )
         for index, (mutate, message) in enumerate(cases):
             with self.subTest(case=index), tempfile.TemporaryDirectory() as directory:
@@ -1896,8 +1961,12 @@ class StageThreePartStateResultTest(unittest.TestCase):
                 sample["resolver_payload_bytes"] = 500
                 sample["response_bytes"] = 1500
                 sample["request_count"] = 2
+                sample["resolver_requests"] = 4
+                sample["resolver_read_ms"] = 8.0
                 sample["validation"]["validated_payload_bytes"] = 2048
             samples[0]["application_ready_ms"] = 2000
+            samples[0]["resolver_requests"] = 10
+            samples[0]["resolver_read_ms"] = 20.0
 
         with tempfile.TemporaryDirectory() as directory:
             runs = self.runs(directory)
@@ -1919,6 +1988,12 @@ class StageThreePartStateResultTest(unittest.TestCase):
             self.assertEqual(stable["response_bytes"], {
                 "database": 30000, "resolver_payload": 15000, "total": 45000,
                 "validated_payload": 61440, "database_protocol": 3000, "request_count": 60,
+            })
+            self.assertEqual(stable["resolver_requests"], {
+                "minimum": 4, "p50": 4.0, "p95": 4.0, "maximum": 10,
+            })
+            self.assertEqual(stable["resolver_read_ms"], {
+                "minimum": 8.0, "p50": 8.0, "p95": 8.0, "maximum": 20.0,
             })
             self.assertEqual(
                 states["stable"]["scenarios"]["list:first"]["application_ready_ms"]["p50"], 13.0
@@ -1951,7 +2026,7 @@ class StageThreePartStateResultTest(unittest.TestCase):
             self.assertEqual(states["merging"]["active_merge_count"], 1)
             self.assertEqual(states["fragmented"]["active_merge_count"], 0)
             self.assertEqual(
-                states["single_part"]["optimized_targets"], PART_STATE_TARGETS["asset_ref"]
+                states["single_part"]["optimized_targets"], list(LAYOUT_TARGETS["asset_ref"])
             )
             self.assertEqual(states["stable"]["asset_store"]["available_object_count"], 160)
             self.assertEqual(asset_ref["controlled_table"], "events_analytics")
