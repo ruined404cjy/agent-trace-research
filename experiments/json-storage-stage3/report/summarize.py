@@ -483,8 +483,8 @@ def _validate_samples(manifest, samples):
             raise ValueError("sample validation evidence is missing")
         _integer(validation.get("validated_payload_bytes"), "validated payload bytes are invalid")
         grouped[(workload, round_index, scenario)].append(sample)
-    for workload in ALL_WORKLOADS:
-        for record in records[workload]:
+    for workload, workload_records in records.items():
+        for record in workload_records:
             round_groups = [items for (name, index_value, _), items in grouped.items()
                             if name == workload and index_value == record["round_index"]]
             if not round_groups:

@@ -786,6 +786,55 @@ class StageThreeMatrixShardTest(unittest.TestCase):
                 )
             self.assertEqual(summary, report.summarize(list(reversed(shards))))
 
+    def test_validates_samples_within_single_shard_workload_scope(self):
+        """raw sample 验证只迭代 shard 实际声明的 workload。"""
+        with tempfile.TemporaryDirectory() as directory:
+            _, manifest, samples = formal_shard(
+                directory, "equal_total_few_large", layout="asset_ref"
+            )
+            try:
+                grouped = report._validate_samples(manifest, samples)
+            except KeyError as error:
+                self.fail(f"single-workload sample validation escaped its scope: {error}")
+            self.assertEqual(
+                {workload for workload, _, _ in grouped},
+                {"equal_total_few_large"},
+            )
+
+    def test_assembles_multiple_shard_targets_in_stable_order(self):
+        """多组纯 shard 按 engine/layout 稳定排序，输入顺序不改变结果。"""
+        with tempfile.TemporaryDirectory() as directory:
+            opengauss = self.shards(
+                Path(directory) / "opengauss", "opengauss", "asset_ref"
+            )
+            clickhouse = self.shards(
+                Path(directory) / "clickhouse", "clickhouse", "separate"
+            )
+            runs = opengauss[1::2] + clickhouse[::2] + opengauss[::2] + clickhouse[1::2]
+            summary = report.summarize(runs)
+            self.assertEqual(
+                [(item["engine"], item["layout"]) for item in summary["matrix"]],
+                [("clickhouse", "separate"), ("opengauss", "asset_ref")],
+            )
+            self.assertEqual(summary, report.summarize(list(reversed(runs))))
+
+    def test_mixes_aggregate_target_with_another_shard_target(self):
+        """旧聚合 target 与另一 engine/layout 的四 shard 可共同汇总。"""
+        with tempfile.TemporaryDirectory() as directory:
+            aggregate = formal_target(
+                Path(directory) / "aggregate", "opengauss", "same_table"
+            )[0]
+            shards = self.shards(
+                Path(directory) / "shards", "clickhouse", "full_core"
+            )
+            runs = [shards[2], aggregate, shards[0], shards[3], shards[1]]
+            summary = report.summarize(runs)
+            self.assertEqual(
+                [(item["engine"], item["layout"]) for item in summary["matrix"]],
+                [("clickhouse", "full_core"), ("opengauss", "same_table")],
+            )
+            self.assertEqual(summary, report.summarize(list(reversed(runs))))
+
     def test_keeps_shard_workload_samples_separate(self):
         """组装按 workload 保留各自的四轮统计，不做跨 shard 池化。"""
         offsets = {
