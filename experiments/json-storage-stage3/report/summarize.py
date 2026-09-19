@@ -754,13 +754,13 @@ def _validate_part_state_envelope(envelope):
     if (
         not isinstance(truth, dict)
         or set(truth) != {"seed", "identity_sha256", "record_count", "block_size", "block_count"}
-        or any(truth.get(field) != value for field, value in FORMAL_TRUTH.items())
         or not _sha256(truth.get("identity_sha256"))
         or truth["identity_sha256"] != envelope["input"]["identity_sha256"]
     ):
         raise ValueError("part-state truth identity is invalid")
-    for field in ("record_count", "block_size", "block_count"):
-        _integer(truth.get(field), "part-state truth identity is invalid", 1)
+    for field, expected in FORMAL_TRUTH.items():
+        if _integer(truth.get(field), "part-state truth identity is invalid", 1) != expected:
+            raise ValueError("part-state truth identity is invalid")
     if not _sha256(envelope.get("query_catalog_sha256")):
         raise ValueError("part-state query catalog identity is invalid")
     code = envelope.get("code")

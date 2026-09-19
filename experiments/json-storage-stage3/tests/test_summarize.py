@@ -1285,6 +1285,7 @@ class StageThreePartStateSummaryTest(unittest.TestCase):
         """跨布局一致的缩减 truth 仍不得冒充固定正式输入。"""
         cases = (
             ("seed", 20260908),
+            ("seed", 20260907.0),
             ("record_count", 1),
             ("block_size", 128),
             ("block_count", 1),
