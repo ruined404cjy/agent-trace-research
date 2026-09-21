@@ -2,7 +2,7 @@
 
 > 状态：设计重构完成，待实现与执行
 >
-> 初始设计日期：2026-09-07；文档修订日期：2026-09-14
+> 初始设计日期：2026-09-07；文档修订日期：2026-09-20
 >
 > 数据路径：独立载入程序
 >
@@ -52,7 +52,7 @@ experiments/json-storage-stage3/
 实验按以下顺序执行：
 
 1. 生成冻结输入和独立 truth，完成四种布局的小规模正确性穿刺；
-2. 运行一轮性能试验，确认查询返回、访问路径、读取字节和维护状态具有解释能力；
+2. 执行一轮 ClickHouse `asset_ref` 候选轮，使用 Latin square 的第一个运行位置、`main` workload 和标准的 30 次非批量、5 次批量测量。该轮的 truth identity、完整响应与已验证 payload 字节、访问计划与查询详情、每个 `QueryFinish`、写入水位与查询就绪水位、无强制合并的自然稳定 part、空间证据和清理全部成立时，正式矩阵才继续；候选轮只作为矩阵门禁，不进入比较性汇总；
 3. 执行四轮主矩阵、ClickHouse part 状态控制和混合负载；
 4. 物理布局主矩阵通过后，独立执行 Asset 故障实验；
 5. 汇总器只接受正确性、机制证据和清理门禁全部通过的运行。
@@ -68,7 +68,7 @@ event_id, trace_id, project_id, start_time, profile,
 payload, preview, content_type, encoding, content_length, sha256
 ```
 
-`profile` 是实验生成器写入的 payload 分类，只用于分层选择详情样本和汇总，不作为列表查询的业务过滤条件。`content_type` 固定为 `application/json`，`encoding` 固定为 `utf-8`。preview 从 payload 的逻辑文本内容起始位置按 Unicode code point 截取 200 个字符，不按 UTF-8 bytes 截断。正确性样本另覆盖截断边界处的多字节字符，但不进入性能汇总。
+`profile` 是实验生成器写入的 payload 分类，只用于分层选择详情样本和汇总，不作为列表查询的业务过滤条件。`content_type` 固定为 `application/json`，`encoding` 固定为 `utf-8`。preview 从 payload 的逻辑文本内容起始位置按 Unicode code point 截取 200 个字符，不按 UTF-8 bytes 截断。名为 `correctness_only` 的穿刺 workload 覆盖 preview 截断边界处的多字节字符，在每个引擎和每种布局上执行一轮；它不是性能 workload，不进入性能汇总与排名。
 
 ### 3.1 主 payload 集合
 
@@ -76,16 +76,18 @@ seed 固定为 `20260907`。主集合包含 160 个彼此不同的 payload，确
 
 | profile | 数量 | 每条原始 bytes | 内容特征 | 用途 |
 |---|---:|---:|---|---|
-| `text_64k` | 40 | 65,536 | 可压缩 Agent 文本 | 当前 64 KiB 截断边界和小型长值 |
-| `text_512k` | 40 | 524,288 | 可压缩 Agent 文本 | 中型详情恢复 |
-| `text_2m` | 40 | 2,097,152 | 可压缩 Agent 文本 | 大型详情恢复与外置候选 |
+| `text_64k` | 40 | 65,536 | 可压缩重复文本 | 当前 64 KiB 截断边界和小型长值 |
+| `text_512k` | 40 | 524,288 | 可压缩重复文本 | 中型详情恢复 |
+| `text_2m` | 40 | 2,097,152 | 可压缩重复文本 | 大型详情恢复与外置候选 |
 | `entropy_512k` | 40 | 524,288 | 高熵 ASCII | 压缩机制控制 |
 
-可压缩内容由固定词表、确定性结构和每条记录的唯一字段生成；高熵内容由 seed、event ID 和 counter 经 SHA-256 扩展生成。两类内容都保持每个 payload 唯一，避免内容寻址去重改变主矩阵空间。生成器调整尾部字段，使序列化前的原始 UTF-8 bytes 达到精确目标长度。
+可压缩 profile 的内容由一个 116 bytes 基本块重复到目标长度后截断构成，基本块为 64 字符的 SHA-256 标记加固定的 52 字符短语，实测 zlib-6 压缩比为 64 KiB 191.1x、512 KiB 276.1x、2 MiB 289.9x，而生产 Agent 文本约为 3–6x。高熵内容由 seed、event ID 和 counter 经 SHA-256 扩展生成，实测压缩比为 1.3x。两类内容都保持每个 payload 唯一，避免内容寻址去重改变主矩阵空间。生成器调整尾部字段，使序列化前的原始 UTF-8 bytes 达到精确目标长度。
 
 ### 3.2 等总字节分布控制
 
-布局收益还可能取决于 payload 出现行数。补充控制使用相同的 80 MiB 原始内容总量，比较 40 条 2 MiB payload 与 1,280 条 64 KiB payload。两组使用相同的可压缩内容生成规则，不与高熵控制做全组合。
+布局收益还可能取决于 payload 出现行数。补充控制使用相同的 80 MiB 原始内容总量，比较 40 条 2 MiB payload 的 `equal_total_few_large` 与 1,280 条 64 KiB payload 的 `equal_total_many_medium`。两组使用相同的可压缩内容生成规则，不与高熵控制做全组合。
+
+主集合对应的 `main` 与上述两组构成三个性能 workload。它们在同一 48,534 条 identity 和同一 190 个 block 边界上分别独立载入和测量，载入时不属于当前 workload 的 payload 字段写入 SQL NULL。一次载入全部 1,481 个 payload 会改变被测物理变量，因此三个性能 workload 之间不共享载入。
 
 该控制用于区分“少量大值”和“较多中等值”带来的 heap/TOAST 指针、payload 表行数、ClickHouse mark 覆盖和 Asset 文件数量差异，不用于推导生产环境的 payload 密度阈值。它使用与主矩阵相同的四种布局、两个引擎和四阶 Latin square，但只执行载入、空间、列表、单条详情和批量恢复，不重复 Asset 故障与混合负载。
 
@@ -128,6 +130,8 @@ Asset reference 固定为：
 
 运行时 resolver 根据事件引用和数据库 `assets` 行定位内容，核对两者的 content type、encoding、长度和 SHA-256，再读取本地对象。truth 只在独立验证阶段判断最终结果，不参与定位、状态转换或错误分类。
 
+`asset_ref` 对每个被引用对象执行一次 catalog 查询；同一个逻辑查询内的全部 catalog 查询在两个引擎上复用同一个查询范围的 catalog 连接。该契约保持查询真值、对象数量、resolver 的本地文件读取次数和 catalog 与内容目录的归属边界不变，同时不让连接建立与拆除的传输开销随对象数量放大。
+
 ## 5. 写入、维护与计时口径
 
 ### 5.1 写入状态
@@ -160,13 +164,15 @@ ClickHouse 主矩阵使用自然稳定的少量 part 作为查询就绪状态，
 
 主矩阵复用连接，不主动清除操作系统缓存，属于固定顺序的热查询对照。首读成本如需观察，使用全新 namespace 的独立运行，不与热查询样本混合。p99 只在固定 offered load 的混合负载中报告，并要求每个目标至少产生 1,000 个成功样本。
 
+批量恢复的峰值内存在全部正式时延样本之外，由一次独立的、通过正确性校验的诊断采集给出，并标注实际观测方法。正式的应用可用样本不启用 Python 分配跟踪，因为逐样本跟踪会按布局改变分配成本。
+
 点查不计算“请求等价速率”。批量恢复吞吐按客户端实际接收的 payload bytes 除以阶段 wall time；混合负载吞吐按成功完成数除以阶段 wall time，并同时报告失败数和 offered load。
 
 ## 6. 场景化测试
 
 ### 6.1 载入、维护与空间
 
-**场景设计。** 四种布局按固定的 190 个 block 写入，分别记录写入完成和查询就绪。ClickHouse 主矩阵保持后台 merge 开启；part 状态控制另比较暂停 merge 后的碎片态、恢复后的合并中、自然稳定态和单 part 态。
+**场景设计。** 四种布局按固定的 190 个 block 写入，分别记录写入完成和查询就绪。主矩阵的每一轮固定一个引擎、一种布局和一个性能 workload。ClickHouse 主矩阵保持后台 merge 开启；part 状态控制另比较暂停 merge 后的碎片态、恢复后的合并中、自然稳定态和单 part 态。
 
 **目的与预期。** 该场景比较完整方案的写入、异步维护和空间成本。双表、Core 复制和 Asset 发布预计增加必要写入步骤；压缩率和 payload 出现分布可能改变空间及 merge 成本，结果必须由分项字节和后台状态验证。
 
@@ -218,6 +224,10 @@ LIMIT :page_size;
 
 **场景设计。** 每个目标先预热 30 秒，再测量 300 秒。列表和 preview 各以 20 requests/s 的固定到达率运行，分别使用两个并发 worker；随后保持该前台负载，依次加入 1 request/s 的 2 MiB 单条详情、0.2 requests/s 的长 Trace 恢复、一个持续循环的批量恢复 worker，或 1 block/s 的持续写入。每类干扰独立运行，使用全新 namespace 和相同随机种子，避免上一类干扰留下的 part、缓存或写入状态进入下一类结果。
 
+持续写入只循环完整的 256 行 block：该 block 的全部记录位于前台查询窗口之外，且至少包含一条 `main` payload。冻结输入中满足条件的 block 共 45 个，首个 block 索引为 108。写入流按载入顺序循环重放这 45 个 block，使前台列表与预览的 truth 保持固定，同时写入路径仍然携带长 payload。run manifest 记录选择规则、45 个 block 索引、每个 block 的摘要和循环重放标记。无法构成该集合、集合身份发生变化或前台 truth 受影响时，该阶段不启动。
+
+正式干扰运行的每个阶段使用一个由父进程持有的子进程：子进程执行负载并输出有序事件，父进程负责有界的 terminate、kill 与 join 生命周期，并发布全部产物。内联执行只用于诊断，不产生正式结果。
+
 **目的与预期。** 该场景验证物理分层是否降低大内容读取或写入对分析查询的干扰。报告列表与 preview 的 p50、p95、p99、超时和完成吞吐，同时记录详情吞吐、block 延迟、CPU、内存、I/O、part backlog 和 active merge。没有该场景时，列表列裁剪成功只能证明单查询读取范围，不能证明工作集隔离。
 
 ### 6.8 ClickHouse part 状态控制
@@ -236,6 +246,8 @@ part 状态是载入、列表、详情和混合负载的跨场景因素，不构
 - `separate` 的联合水位、Full/Core 的 Core 水位和 Asset 引用水位覆盖本轮全部成功写入；
 - Asset 引用、catalog、对象路径和实际 bytes 相互一致；
 - 失败运行完成临时 schema、database、暂停 merge 和 Asset 目录清理，或明确记录无法清理的对象。
+
+`correctness_only` workload 与其他穿刺样本一同通过上述门禁，其截断边界结果只用于判定正确性。
 
 openGauss 保存 DDL、`EXPLAIN ANALYZE`、实际索引扫描统计，以及引擎可提供的缓冲和 relation 访问证据。ClickHouse 保存 DDL、查询计划、`system.query_log` 中正式样本的 `QueryFinish`、read rows/bytes、active part、mark 和 merge 记录。客户端保存响应 bytes、解析或组合时间、resolver 请求和校验时间。
 
@@ -273,6 +285,8 @@ Asset catalog 至少保存 `asset_id`、SHA-256、content type、encoding、cont
 - resolver 请求数、本地读取 bytes、内容校验时间和错误分类；
 - 数据库备份范围内 bytes、外部 Asset bytes 和两者总量；两引擎空间口径分别解释，不建立类型级压缩排名。
 
+提交字节与返回字节各发布两个显式字段：一个是跨引擎确定性的逻辑编码字节，按该次操作实际涉及的行与列计算；另一个是引擎协议层的 body 字节计数，只在客户端暴露该计数时发布。协议计数不可观测时——openGauss 不暴露该计数——发布 `unavailable`，不使用估算值，也不把两个字段合并或改写为单一的“实际字节数”。
+
 写入放大分别报告客户端提交字节与 truth 原始字节之比、数据库加 Asset 的总物理占用与 truth 原始字节之比。压缩后的物理占用可能小于原始字节，报告使用“物理占用比”，不强行称为放大。
 
 run manifest 至少记录 run ID、状态、完整复现命令、输入与 truth SHA-256、代码/DDL/查询 catalog SHA-256、数据库版本与镜像 digest、宿主资源、layout、轮次、布局顺序、缓存状态、测量次数、访问结构、写入和查询水位、part/merge 状态、正确性结果和清理状态。
@@ -289,7 +303,7 @@ run manifest 至少记录 run ID、状态、完整复现命令、输入与 truth
 - 临时数据库对象、本轮 Asset 目录或暂停的 merge 状态清理失败；
 - 继续运行需要改变冻结输入、数据库版本、宿主资源或输出契约。
 
-一轮性能试验若显示某场景没有区分度，先核对机制证据和样本规模。访问路径正确且读取量符合预期时保留该结果；缺少必要控制时先修改设计和 truth，再启动正式矩阵。
+候选轮若显示某场景没有区分度，先核对机制证据和样本规模。访问路径正确且读取量符合预期时保留该结果；缺少必要控制时先修改设计和 truth，再启动正式矩阵。
 
 阶段三报告只记录当前数据契约、四种布局、场景结果、机制证据、正确性、Asset 故障、适用范围和建议。JSONB、Native JSON、TOAST、MergeTree 与 part 的一般原理引用原理文档；阶段二结果只用于说明已复用的输入和实验口径，不重复搬运。
 
