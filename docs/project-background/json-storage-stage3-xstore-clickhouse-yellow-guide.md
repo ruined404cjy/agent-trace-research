@@ -1061,7 +1061,7 @@ XStore 与 openGauss 同源，adapter 默认实现直接复用 openGauss adapter
 | 卡 | 蓝区实现 | 探测 | 不一致时的参考改法 | 允许改动 | 禁止改动 |
 |---|---|---|---|---|---|
 | 一 驱动与认证 | psycopg 3.3.5 直连，md5 认证 | 建立一次连接并读取服务端版本 | openGauss 默认 sha256 认证与 psycopg 不兼容。把运行账号的 password_encryption_type 设为 1 并重建密码，或改用官方 Python 连接器，任选其一并记录 | 连接参数与驱动导入 | SQL 文本与查询语义 |
-| 二 参数绑定 | 全部参数经驱动绑定，含 NULL | 对 workload 隔离使用的 NULL 参数执行一次写入 | GaussVector 对 NULL 参数的类型推断与 PostgreSQL 不同；把 NULL 参数内联为 SQL 字面量，其余参数保持绑定。该改法已在黄区实测有效 | 参数构造 | 写入的列集合与取值 |
+| 二 参数绑定 | 空 error_category 已内联为 NULL 字面量，其余参数经驱动绑定 | 对 asset 状态转换与 workload 隔离各执行一次写入 | 该改法已随基线提交进入 adapter，无需再改。其他位置出现同类类型推断失败时按同一方式内联，并记录语句与列名 | 参数构造 | 写入的列集合与取值 |
 | 三 表存储形态 | 裸 CREATE TABLE 落在行存，reltoastrelid 非零 | SELECT relname, reloptions, reltoastrelid FROM pg_class | 记录实际形态，按卡四处理索引，并在报告中声明 XStore 的空间模型与 openGauss 的 TOAST 模型不可直接对齐 | 无 | 建表语句的列定义 |
 | 四 索引形态 | 两条复合 btree：(project_id,start_time,event_id) 与 (project_id,trace_id,start_time,event_id) | SELECT indexname, indexdef FROM pg_indexes | 按实际存储形态所需的索引类型创建，列顺序保持不变；列存时先补 cstore schema 权限 | 索引类型与建索引语法 | 索引列与列顺序 |
 | 五 索引使用统计 | SELECT indexrelname, idx_scan FROM pg_stat_user_indexes | 同左 | 该视图不可用时改用 XStore 的等价统计并记录来源；无等价统计时把该字段记为 unavailable | 统计来源 | 把缺失记为通过 |
