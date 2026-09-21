@@ -192,6 +192,109 @@ INTERFERENCE_RAW_FIELDS = frozenset({
     "late_by_ms", "sample", "error",
 })
 
+ASSET_FAILURE_FORMAT = "agent-trace-json-storage-stage3-asset-failure-run"
+ASSET_FAILURE_SUMMARY_FORMAT = "agent-trace-json-storage-stage3-asset-failures-summary"
+ASSET_FAILURE_ENGINES = ("opengauss", "clickhouse")
+ASSET_FAILURE_LAYOUT = "asset_ref"
+ASSET_FAILURE_CASE_ORDER = (
+    "missing", "corrupt", "metadata_mismatch",
+    "upload_then_db_failure", "publish_failure", "delete_failure",
+)
+ASSET_FAILURE_STATISTICS_BOUNDARY = "classification-and-evidence-only-no-timing-statistic"
+ASSET_FAILURE_NAMESPACE_STRATEGY = "runner-fixed-case-unique"
+ASSET_FAILURE_NAMESPACE_PREFIX = "jsons3_af_<case>_"
+ASSET_FAILURE_CODE_ROLES = (
+    "asset_failure_runner", "assets", "common", "generator",
+    "layout_runner", "production", "run_stage3",
+)
+ASSET_FAILURE_NAMESPACE_POLICY_FIELDS = frozenset({
+    "strategy", "reuse", "case_order", "namespace_prefix", "namespaces",
+})
+# 六个案例的固定契约：注入点与注入前目录状态、解析器分类、终态、事件可见性、注入后孤儿
+# 对象数、恢复动作与恢复解析结果、对象存在性与发布尝试次数；恢复后孤儿数固定为 0。
+ASSET_FAILURE_CLASSIFICATION = {
+    "missing": {
+        "injection_point": "remove_published_object", "injection_before": "available",
+        "resolver_error": "missing", "final_status": "available",
+        "event_visible": True, "orphan_count": 0,
+        "recovery_actions": ["restore_missing_object"],
+        "recovery_error": None, "recovery_visible": True,
+        "object_exists": False, "publish_attempts": 0,
+    },
+    "corrupt": {
+        "injection_point": "modify_published_bytes", "injection_before": "available",
+        "resolver_error": "corrupt", "final_status": "available",
+        "event_visible": True, "orphan_count": 0,
+        "recovery_actions": ["replace_corrupt_object"],
+        "recovery_error": None, "recovery_visible": True,
+        "object_exists": True, "publish_attempts": 0,
+    },
+    "metadata_mismatch": {
+        "injection_point": "replace_catalog_metadata", "injection_before": "available",
+        "resolver_error": "metadata_mismatch", "final_status": "available",
+        "event_visible": True, "orphan_count": 0,
+        "recovery_actions": ["restore_catalog_metadata"],
+        "recovery_error": None, "recovery_visible": True,
+        "object_exists": True, "publish_attempts": 0,
+    },
+    "upload_then_db_failure": {
+        "injection_point": "fail_after_object_upload", "injection_before": "absent",
+        "resolver_error": "missing", "final_status": "absent",
+        "event_visible": False, "orphan_count": 1,
+        "recovery_actions": ["remove_orphan_object"],
+        "recovery_error": "missing", "recovery_visible": False,
+        "object_exists": True, "publish_attempts": 1,
+    },
+    "publish_failure": {
+        "injection_point": "fail_pending_publication", "injection_before": "pending",
+        "resolver_error": "failed", "final_status": "failed",
+        "event_visible": True, "orphan_count": 0,
+        "recovery_actions": ["confirm_failed_publication"],
+        "recovery_error": "failed", "recovery_visible": False,
+        "object_exists": False, "publish_attempts": 1,
+    },
+    "delete_failure": {
+        "injection_point": "fail_deleting_object_removal", "injection_before": "available",
+        "resolver_error": "deleting", "final_status": "deleting",
+        "event_visible": True, "orphan_count": 0,
+        "recovery_actions": ["confirm_delete_failure_state"],
+        "recovery_error": "deleting", "recovery_visible": False,
+        "object_exists": True, "publish_attempts": 0,
+    },
+}
+ASSET_FAILURE_RESULT_FIELDS = frozenset({
+    "asset_id", "case", "catalog_transitions", "cleanup", "event_visible",
+    "execution_error", "final_status", "injection_point", "namespace", "reconcile",
+    "reconcile_after_recovery", "recovery_actions", "recovery_resolver", "resolver",
+    "sha256", "store_observation", "validation_errors",
+})
+ASSET_FAILURE_RESOLVER_FIELDS = frozenset({
+    "content_length", "content_visible", "error", "preview", "sha256",
+})
+ASSET_FAILURE_RECONCILE_FIELDS = frozenset({"orphan_count", "orphan_paths"})
+ASSET_FAILURE_TRANSITION_FIELDS = frozenset({
+    "after", "asset_id", "before", "phase", "sha256",
+})
+ASSET_FAILURE_TRANSITION_PHASES = ("injection", "recovery")
+ASSET_FAILURE_STORE_FIELDS = frozenset({
+    "object_exists", "object_path", "publish_attempts",
+})
+ASSET_FAILURE_ATTEMPT_FIELDS = frozenset({"asset_id", "error", "final_object_exists"})
+ASSET_FAILURE_CASE_CLEANUP_FIELDS = frozenset({
+    "adapter_cleanup_target", "errors", "namespace", "namespace_removed",
+    "object_directory", "object_directory_removed",
+})
+ASSET_FAILURE_BLOCK_FIELDS = frozenset({
+    "case_order", "cleanup", "engine", "namespaces", "results",
+})
+ASSET_FAILURE_CHILD_FIELDS = frozenset({
+    "bytes", "format", "format_version", "path", "run_id", "sha256", "status",
+})
+ASSET_FAILURE_CLEANUP_FIELDS = frozenset({
+    "namespaces", "namespaces_removed", "object_directories_removed",
+    "runtime_probe_directory", "runtime_probe_directory_removed",
+})
+
 
 def _require(value, message):
     """在缺少正式证据时抛出可定位的门禁错误。"""
@@ -2394,6 +2497,513 @@ def _summarize_interference(runs, *, schedules, segment_seconds):
         "phase_order": list(INTERFERENCE_PHASE_ORDER),
         "layouts": layouts,
     }
+
+
+def _asset_failure_runtime(envelope):
+    """验证 asset-failure envelope 的固定操作、引擎与 asset_ref 布局身份。"""
+    runtime = envelope.get("runtime")
+    if (
+        not isinstance(runtime, dict)
+        or runtime.get("operation") != "asset-failures"
+        or runtime.get("engine") not in ASSET_FAILURE_ENGINES
+        or runtime.get("layout") != ASSET_FAILURE_LAYOUT
+    ):
+        raise ValueError("asset-failure runtime identity mismatch")
+    endpoint = runtime.get("endpoint")
+    if (
+        not isinstance(endpoint, dict)
+        or not isinstance(endpoint.get("host"), str) or not endpoint["host"]
+    ):
+        raise ValueError("asset-failure runtime evidence is invalid")
+    _integer(endpoint.get("port"), "asset-failure runtime evidence is invalid", 1)
+    container = runtime.get("container")
+    if not isinstance(container, dict) or any(
+        not isinstance(container.get(field), str) or not container[field]
+        for field in ("container", "image", "image_id")
+    ):
+        raise ValueError("asset-failure runtime evidence is invalid")
+    engine_runtime = runtime.get("engine_runtime")
+    if (
+        not isinstance(engine_runtime, dict)
+        or not isinstance(engine_runtime.get("version"), str) or not engine_runtime["version"]
+        or engine_runtime.get("source") != "database-query"
+    ):
+        raise ValueError("asset-failure runtime evidence is invalid")
+    host = runtime.get("host")
+    if (
+        not isinstance(host, dict)
+        or not isinstance(host.get("platform"), str) or not host["platform"]
+        or not isinstance(host.get("machine"), str) or not host["machine"]
+    ):
+        raise ValueError("asset-failure runtime evidence is invalid")
+    for field in ("cpu_count", "memory_total_kib"):
+        _integer(host.get(field), "asset-failure runtime evidence is invalid", 1)
+    return runtime["engine"]
+
+
+def _asset_failure_code(code):
+    """核对 asset-failure runner 及其依赖的代码身份证据。"""
+    if not isinstance(code, dict) or set(code) != set(ASSET_FAILURE_CODE_ROLES):
+        raise ValueError("asset-failure code evidence is incomplete")
+    for evidence in code.values():
+        if (
+            not isinstance(evidence, dict)
+            or set(evidence) != {"path", "bytes", "sha256"}
+            or not isinstance(evidence.get("path"), str)
+            or not evidence["path"]
+            or not _sha256(evidence.get("sha256"))
+        ):
+            raise ValueError("asset-failure code evidence is incomplete")
+        _integer(evidence.get("bytes"), "asset-failure code evidence is incomplete", 1)
+
+
+def _asset_failure_namespaces(value, message):
+    """核对按案例数量给出的互不相同的命名空间列表。"""
+    if (
+        not isinstance(value, list)
+        or len(value) != len(ASSET_FAILURE_CASE_ORDER)
+        or any(not isinstance(item, str) or not item for item in value)
+        or len(set(value)) != len(value)
+    ):
+        raise ValueError(message)
+    return list(value)
+
+
+def _asset_failure_cleanup(cleanup):
+    """核对 envelope 级命名空间、对象目录与运行探针目录的清理证据。"""
+    if not isinstance(cleanup, dict) or set(cleanup) != ASSET_FAILURE_CLEANUP_FIELDS:
+        raise ValueError("asset-failure cleanup evidence is invalid")
+    if (
+        cleanup["namespaces_removed"] is not True
+        or cleanup["object_directories_removed"] is not True
+        or cleanup["runtime_probe_directory_removed"] is not True
+        or not isinstance(cleanup["runtime_probe_directory"], str)
+        or not cleanup["runtime_probe_directory"]
+    ):
+        raise ValueError("asset-failure cleanup evidence is invalid")
+    return _asset_failure_namespaces(
+        cleanup["namespaces"], "asset-failure cleanup evidence is invalid"
+    )
+
+
+def _asset_failure_policy(policy):
+    """核对 runner 固定的按案例唯一命名空间策略。"""
+    if (
+        not isinstance(policy, dict)
+        or set(policy) != ASSET_FAILURE_NAMESPACE_POLICY_FIELDS
+        or not _matches_contract(policy.get("strategy"), ASSET_FAILURE_NAMESPACE_STRATEGY)
+        or not _matches_contract(
+            policy.get("namespace_prefix"), ASSET_FAILURE_NAMESPACE_PREFIX
+        )
+        or not _matches_contract(policy.get("reuse"), False)
+        or not _matches_contract(policy.get("case_order"), list(ASSET_FAILURE_CASE_ORDER))
+    ):
+        raise ValueError("asset-failure namespace policy evidence is invalid")
+    return _asset_failure_namespaces(
+        policy.get("namespaces"), "asset-failure namespace policy evidence is invalid"
+    )
+
+
+def _asset_failure_block(envelope, engine, namespaces):
+    """核对 envelope 内嵌的 asset_failures 汇总块与运行身份一致。"""
+    block = envelope.get("asset_failures")
+    if (
+        not isinstance(block, dict)
+        or set(block) != ASSET_FAILURE_BLOCK_FIELDS
+        or block["engine"] != engine
+        or not _matches_contract(block["case_order"], list(ASSET_FAILURE_CASE_ORDER))
+        or not _matches_contract(
+            block["cleanup"],
+            {"namespaces_removed": True, "object_directories_removed": True},
+        )
+        or block["namespaces"] != namespaces
+    ):
+        raise ValueError("asset-failure envelope evidence is invalid")
+    return block
+
+
+def _asset_failure_truth(truth, input_identity):
+    """在 envelope 发布正式 truth 时核对其固定维度与输入身份。"""
+    if (
+        not isinstance(truth, dict)
+        or set(truth) != {"seed", "identity_sha256", "record_count", "block_size", "block_count"}
+        or not _sha256(truth.get("identity_sha256"))
+        or (
+            isinstance(input_identity, dict)
+            and truth["identity_sha256"] != input_identity.get("identity_sha256")
+        )
+    ):
+        raise ValueError("asset-failure truth identity is invalid")
+    for field, expected in FORMAL_TRUTH.items():
+        if _integer(truth.get(field), "asset-failure truth identity is invalid", 1) != expected:
+            raise ValueError("asset-failure truth identity is invalid")
+
+
+def _asset_failure_child_evidence(evidence):
+    """核对 envelope 记录的 child 身份字段齐备。"""
+    if not isinstance(evidence, dict) or set(evidence) != ASSET_FAILURE_CHILD_FIELDS:
+        raise ValueError("asset-failure child evidence is incomplete")
+    if (
+        not isinstance(evidence["path"], str) or not evidence["path"]
+        or not _sha256(evidence["sha256"])
+    ):
+        raise ValueError("asset-failure child evidence is incomplete")
+    _integer(evidence["bytes"], "asset-failure child evidence is incomplete", 1)
+
+
+def _validate_asset_failure_envelope(envelope):
+    """验证一个 asset-failure production envelope 的格式、身份、策略与清理证据。"""
+    if (
+        not _matches_contract(envelope.get("format"), PRODUCTION_FORMAT)
+        or not _matches_contract(envelope.get("format_version"), FORMAT_VERSION)
+    ):
+        raise ValueError("asset-failure production envelope format/version is invalid")
+    if not _matches_contract(envelope.get("status"), "complete"):
+        raise ValueError("asset-failure production envelope status is not complete")
+    if not _matches_contract(envelope.get("operation"), "asset-failures"):
+        raise ValueError("asset-failure operation is invalid")
+    if not isinstance(envelope.get("run_id"), str) or not envelope["run_id"]:
+        raise ValueError("asset-failure run identity is missing")
+    engine = _asset_failure_runtime(envelope)
+    _asset_failure_code(envelope.get("code"))
+    namespaces = _asset_failure_cleanup(envelope.get("cleanup"))
+    if _asset_failure_policy(envelope.get("namespace_policy")) != namespaces:
+        raise ValueError("asset-failure namespace policy evidence is invalid")
+    _asset_failure_block(envelope, engine, namespaces)
+    _asset_failure_child_evidence(envelope.get("child"))
+    # 该控制不依赖正式输入身份；envelope 发布时才按固定维度核对。
+    if "input" in envelope:
+        _identity(envelope["input"])
+    if "truth" in envelope:
+        _asset_failure_truth(envelope["truth"], envelope.get("input"))
+    return engine
+
+
+def _read_asset_failure_child(run, envelope):
+    """从运行目录重算 child 的 bytes 与 SHA-256，并核对 envelope 记录的身份。"""
+    evidence = envelope["child"]
+    root = Path(run).resolve()
+    path = (root / evidence["path"]).resolve()
+    try:
+        path.relative_to(root)
+    except ValueError as error:
+        raise ValueError("asset-failure child path escapes the run directory") from error
+    try:
+        content = path.read_bytes()
+    except OSError as error:
+        raise ValueError("asset-failure child manifest is unavailable") from error
+    if (
+        evidence["bytes"] != len(content)
+        or evidence["sha256"] != hashlib.sha256(content).hexdigest()
+    ):
+        raise ValueError("asset-failure child identity mismatch")
+    manifest = _read_json_object(path, "asset-failure child manifest")
+    for key in ("format", "format_version", "status", "run_id"):
+        if evidence[key] != manifest.get(key):
+            raise ValueError("asset-failure child format/status mismatch")
+    return manifest
+
+
+def _asset_failure_namespace(result, case):
+    """把案例命名空间绑定到 jsons3_af_<case>_ 前缀和该案例的清理记录。"""
+    namespace = result["namespace"]
+    prefix = f"jsons3_af_{case}_"
+    cleanup = result["cleanup"]
+    suffix = namespace[len(prefix):] if isinstance(namespace, str) else None
+    if (
+        not isinstance(namespace, str)
+        or not namespace.startswith(prefix)
+        or len(suffix) != 10
+        or any(character not in "0123456789abcdef" for character in suffix)
+        or not isinstance(cleanup, dict)
+        or cleanup.get("namespace") != namespace
+    ):
+        raise ValueError("asset-failure namespace evidence is invalid")
+    return namespace
+
+
+def _asset_failure_resolver(value):
+    """核对 resolver 或 recovery_resolver 的字段类型，不在此判定分类取值。"""
+    if not isinstance(value, dict) or set(value) != ASSET_FAILURE_RESOLVER_FIELDS:
+        raise ValueError("asset-failure resolver evidence is invalid")
+    error, preview = value["error"], value["preview"]
+    if (
+        not isinstance(value["content_visible"], bool)
+        or not (error is None or (isinstance(error, str) and error))
+        or not (preview is None or isinstance(preview, str))
+        or not (value["sha256"] is None or _sha256(value["sha256"]))
+        or not (value["content_length"] is None or _is_integer(value["content_length"]))
+    ):
+        raise ValueError("asset-failure resolver evidence is invalid")
+    return value
+
+
+def _asset_failure_resolver_content(value, asset_id):
+    """核对内容可见性与分类一致：可见须给出内容身份，不可见须全部为空。"""
+    if value["content_visible"] != (value["error"] is None):
+        raise ValueError("asset-failure resolver evidence is invalid")
+    if value["content_visible"]:
+        if (
+            value["sha256"] != asset_id
+            or not _is_integer(value["content_length"], 1)
+            or not isinstance(value["preview"], str)
+        ):
+            raise ValueError("asset-failure resolver evidence is invalid")
+    elif any(
+        value[field] is not None for field in ("content_length", "preview", "sha256")
+    ):
+        raise ValueError("asset-failure resolver evidence is invalid")
+    return value
+
+
+def _asset_failure_reconcile(value, expected):
+    """核对孤儿对象计数与路径证据自洽，并匹配该案例的固定孤儿数。"""
+    if not isinstance(value, dict) or set(value) != ASSET_FAILURE_RECONCILE_FIELDS:
+        raise ValueError("asset-failure reconcile evidence is invalid")
+    count, paths = value["orphan_count"], value["orphan_paths"]
+    if (
+        not _is_integer(count)
+        or not isinstance(paths, list)
+        or count != len(paths)
+        or any(not isinstance(path, str) or not path for path in paths)
+    ):
+        raise ValueError("asset-failure reconcile evidence is invalid")
+    if count != expected:
+        raise ValueError("asset-failure orphan evidence mismatch")
+    return {"orphan_count": count, "orphan_paths": list(paths)}
+
+
+def _asset_failure_transitions(value, result, expected):
+    """核对注入与恢复两次目录状态跃迁自该案例的注入前状态首尾相接并落在其终态。"""
+    if not isinstance(value, list) or len(value) != len(ASSET_FAILURE_TRANSITION_PHASES):
+        raise ValueError("asset-failure catalog transition evidence is invalid")
+    previous = None
+    for phase, transition in zip(ASSET_FAILURE_TRANSITION_PHASES, value):
+        if (
+            not isinstance(transition, dict)
+            or set(transition) != ASSET_FAILURE_TRANSITION_FIELDS
+            or transition["phase"] != phase
+            or transition["asset_id"] != result["asset_id"]
+            or transition["sha256"] != result["sha256"]
+            or not isinstance(transition["before"], str) or not transition["before"]
+            or not isinstance(transition["after"], str) or not transition["after"]
+            or transition["before"] != (
+                expected["injection_before"] if previous is None else previous
+            )
+        ):
+            raise ValueError("asset-failure catalog transition evidence is invalid")
+        previous = transition["after"]
+    if previous != result["final_status"]:
+        raise ValueError("asset-failure catalog transition evidence is invalid")
+    return list(value)
+
+
+def _asset_failure_store_observation(value, asset_id, expected):
+    """核对对象存在性观测与发布尝试证据，并匹配该案例的固定取值与尝试次数。"""
+    if not isinstance(value, dict) or set(value) != ASSET_FAILURE_STORE_FIELDS:
+        raise ValueError("asset-failure store observation evidence is invalid")
+    attempts = value["publish_attempts"]
+    if (
+        not isinstance(value["object_exists"], bool)
+        or value["object_exists"] is not expected["object_exists"]
+        or not isinstance(value["object_path"], str) or not value["object_path"]
+        or not isinstance(attempts, list)
+        or len(attempts) != expected["publish_attempts"]
+    ):
+        raise ValueError("asset-failure store observation evidence is invalid")
+    for attempt in attempts:
+        error = attempt.get("error") if isinstance(attempt, dict) else None
+        if (
+            not isinstance(attempt, dict)
+            or set(attempt) != ASSET_FAILURE_ATTEMPT_FIELDS
+            or attempt["asset_id"] != asset_id
+            or not isinstance(attempt["final_object_exists"], bool)
+            or not (error is None or (isinstance(error, str) and error))
+        ):
+            raise ValueError("asset-failure store observation evidence is invalid")
+    return value
+
+
+def _asset_failure_case_cleanup(value, namespace):
+    """核对单个案例的命名空间与对象目录清理证据。"""
+    if set(value) != ASSET_FAILURE_CASE_CLEANUP_FIELDS:
+        raise ValueError("asset-failure case cleanup evidence is invalid")
+    if (
+        value["namespace_removed"] is not True
+        or value["object_directory_removed"] is not True
+        or value["errors"] != []
+        or not isinstance(value["adapter_cleanup_target"], str)
+        or not value["adapter_cleanup_target"].startswith(namespace)
+        or not isinstance(value["object_directory"], str) or not value["object_directory"]
+    ):
+        raise ValueError("asset-failure case cleanup evidence is invalid")
+    return value
+
+
+def _asset_failure_result(result, case):
+    """按固定分类契约核对单个案例的分类与证据，只汇总分类与证据。"""
+    if not isinstance(result, dict) or set(result) != ASSET_FAILURE_RESULT_FIELDS:
+        raise ValueError("asset-failure result evidence is incomplete")
+    if result["case"] != case:
+        raise ValueError("asset-failure case identity mismatch")
+    if (
+        not _sha256(result["asset_id"])
+        or result["sha256"] != result["asset_id"]
+        or not isinstance(result["event_visible"], bool)
+        or not isinstance(result["final_status"], str) or not result["final_status"]
+        or not isinstance(result["injection_point"], str) or not result["injection_point"]
+        or not isinstance(result["validation_errors"], list)
+    ):
+        raise ValueError("asset-failure result evidence is incomplete")
+    if result["validation_errors"]:
+        raise ValueError("asset-failure validation errors are present")
+    if result["execution_error"] is not None:
+        raise ValueError("asset-failure execution error is present")
+    namespace = _asset_failure_namespace(result, case)
+    expected = ASSET_FAILURE_CLASSIFICATION[case]
+    resolver = _asset_failure_resolver(result["resolver"])
+    recovery_resolver = _asset_failure_resolver(result["recovery_resolver"])
+    if resolver["error"] != expected["resolver_error"]:
+        raise ValueError("asset-failure resolver classification mismatch")
+    if result["final_status"] != expected["final_status"]:
+        raise ValueError("asset-failure final status mismatch")
+    if result["event_visible"] is not expected["event_visible"]:
+        raise ValueError("asset-failure event visibility mismatch")
+    _asset_failure_resolver_content(resolver, result["asset_id"])
+    _asset_failure_resolver_content(recovery_resolver, result["asset_id"])
+    # 恢复后的解析结果必须落在该案例的预期终态，否则失败的恢复会被当作成功发布。
+    if (
+        recovery_resolver["error"] != expected["recovery_error"]
+        or recovery_resolver["content_visible"] is not expected["recovery_visible"]
+    ):
+        raise ValueError("asset-failure recovery classification mismatch")
+    if result["injection_point"] != expected["injection_point"]:
+        raise ValueError("asset-failure injection point mismatch")
+    reconcile = _asset_failure_reconcile(result["reconcile"], expected["orphan_count"])
+    reconcile_after = _asset_failure_reconcile(result["reconcile_after_recovery"], 0)
+    actions = result["recovery_actions"]
+    if not isinstance(actions, list) or not actions or any(
+        not isinstance(action, str) or not action for action in actions
+    ):
+        raise ValueError("asset-failure recovery evidence is invalid")
+    if actions != expected["recovery_actions"]:
+        raise ValueError("asset-failure recovery action mismatch")
+    return {
+        "case": case,
+        "namespace": namespace,
+        "asset_id": result["asset_id"],
+        "sha256": result["sha256"],
+        "injection_point": result["injection_point"],
+        "resolver": resolver,
+        "final_status": result["final_status"],
+        "event_visible": result["event_visible"],
+        "catalog_transitions": _asset_failure_transitions(
+            result["catalog_transitions"], result, expected
+        ),
+        "orphan_count": reconcile["orphan_count"],
+        "orphan_count_after_recovery": reconcile_after["orphan_count"],
+        "reconcile": reconcile,
+        "reconcile_after_recovery": reconcile_after,
+        "recovery_actions": list(actions),
+        "recovery_resolver": recovery_resolver,
+        "store_observation": _asset_failure_store_observation(
+            result["store_observation"], result["asset_id"], expected
+        ),
+        "cleanup": _asset_failure_case_cleanup(result["cleanup"], namespace),
+        "validation_errors": list(result["validation_errors"]),
+        "execution_error": result["execution_error"],
+    }
+
+
+def _validate_asset_failure_child(manifest):
+    """核对 child 的固定格式、六案例定序覆盖与逐案例分类证据。"""
+    if (
+        not _matches_contract(manifest.get("format"), ASSET_FAILURE_FORMAT)
+        or not _matches_contract(manifest.get("format_version"), FORMAT_VERSION)
+        or not _matches_contract(manifest.get("status"), "complete")
+    ):
+        raise ValueError("asset-failure child format/version/status is invalid")
+    if not isinstance(manifest.get("run_id"), str) or not manifest["run_id"]:
+        raise ValueError("asset-failure child run identity is missing")
+    results = manifest.get("results")
+    if (
+        not _matches_contract(manifest.get("case_order"), list(ASSET_FAILURE_CASE_ORDER))
+        or not isinstance(results, list)
+        or len(results) != len(ASSET_FAILURE_CASE_ORDER)
+    ):
+        raise ValueError("asset-failure case order mismatch")
+    return [
+        _asset_failure_result(result, case)
+        for case, result in zip(ASSET_FAILURE_CASE_ORDER, results)
+    ]
+
+
+def summarize_asset_failures(runs: list[Path]) -> dict[str, object]:
+    """汇总两个引擎各一个正式 asset-failure 控制的分类与证据，不产出时延统计。"""
+    if not runs:
+        raise ValueError("at least one asset-failure run directory is required")
+    envelopes = {}
+    for run in runs:
+        envelope = _read_json_object(
+            Path(run) / "run-manifest.json", "asset-failure production envelope"
+        )
+        engine = _validate_asset_failure_envelope(envelope)
+        if engine in envelopes:
+            raise ValueError(f"duplicate asset-failure engine: {engine}")
+        envelopes[engine] = (Path(run), envelope)
+    if set(envelopes) != set(ASSET_FAILURE_ENGINES):
+        raise ValueError("asset-failure engine coverage is incomplete")
+    first = envelopes[ASSET_FAILURE_ENGINES[0]][1]
+    for name, field in (
+        ("input identity", "input"), ("truth identity", "truth"),
+        ("query catalog identity", "query_catalog_sha256"),
+    ):
+        if any(
+            envelopes[engine][1].get(field) != first.get(field)
+            for engine in ASSET_FAILURE_ENGINES
+        ):
+            raise ValueError(f"asset-failure {name} differs between runs")
+    identities = [
+        (envelopes[engine][1]["run_id"], envelopes[engine][1]["child"]["run_id"])
+        for engine in ASSET_FAILURE_ENGINES
+    ]
+    if any(len({item[index] for item in identities}) != len(identities) for index in (0, 1)):
+        raise ValueError("asset-failure run identity is duplicated between runs")
+    engines = []
+    for engine in ASSET_FAILURE_ENGINES:
+        run, envelope = envelopes[engine]
+        manifest = _read_asset_failure_child(run, envelope)
+        cases = _validate_asset_failure_child(manifest)
+        if (
+            envelope["asset_failures"]["results"] != manifest["results"]
+            or envelope["cleanup"]["namespaces"] != [case["namespace"] for case in cases]
+        ):
+            raise ValueError("asset-failure envelope and child evidence differ")
+        engines.append({
+            "engine": engine,
+            "run_id": envelope["run_id"],
+            "code": envelope["code"],
+            "child": envelope["child"],
+            "runtime": envelope["runtime"],
+            "namespace_policy": envelope["namespace_policy"],
+            "cleanup": envelope["cleanup"],
+            "cases": cases,
+        })
+    namespaces = [case["namespace"] for item in engines for case in item["cases"]]
+    if len(set(namespaces)) != len(namespaces):
+        raise ValueError("asset-failure namespaces are reused between runs")
+    summary = {
+        "format": ASSET_FAILURE_SUMMARY_FORMAT,
+        "format_version": FORMAT_VERSION,
+        "statistics_boundary": ASSET_FAILURE_STATISTICS_BOUNDARY,
+        "case_order": list(ASSET_FAILURE_CASE_ORDER),
+        "engines": engines,
+    }
+    # 该控制的 envelope 不强制发布正式输入身份，发布时才携带进汇总。
+    for field in ("input", "truth", "query_catalog_sha256"):
+        if field in first:
+            summary[field] = first[field]
+    return summary
 
 
 def _fsync_directory(directory: Path) -> None:

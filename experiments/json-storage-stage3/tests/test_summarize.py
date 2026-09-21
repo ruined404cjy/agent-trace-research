@@ -3814,5 +3814,1007 @@ class StageThreeInterferenceGateTest(unittest.TestCase):
         self.reject(symlink_child, "child directory is a symlink")
 
 
+ASSET_FAILURE_ENGINES = ("opengauss", "clickhouse")
+ASSET_FAILURE_CASES = (
+    "missing", "corrupt", "metadata_mismatch",
+    "upload_then_db_failure", "publish_failure", "delete_failure",
+)
+ASSET_FAILURE_CODE_ROLES = (
+    "asset_failure_runner", "assets", "common", "generator",
+    "layout_runner", "production", "run_stage3",
+)
+ASSET_FAILURE_SPECS = {
+    "missing": {
+        "injection_point": "remove_published_object",
+        "recovery_action": "restore_missing_object",
+        "resolver_error": "missing", "recovery_error": None,
+        "before": "available", "final_status": "available",
+        "event_visible": True, "orphan_count": 0,
+        "object_exists": False, "publish_attempt": False, "publish_error": None,
+    },
+    "corrupt": {
+        "injection_point": "modify_published_bytes",
+        "recovery_action": "replace_corrupt_object",
+        "resolver_error": "corrupt", "recovery_error": None,
+        "before": "available", "final_status": "available",
+        "event_visible": True, "orphan_count": 0,
+        "object_exists": True, "publish_attempt": False, "publish_error": None,
+    },
+    "metadata_mismatch": {
+        "injection_point": "replace_catalog_metadata",
+        "recovery_action": "restore_catalog_metadata",
+        "resolver_error": "metadata_mismatch", "recovery_error": None,
+        "before": "available", "final_status": "available",
+        "event_visible": True, "orphan_count": 0,
+        "object_exists": True, "publish_attempt": False, "publish_error": None,
+    },
+    "upload_then_db_failure": {
+        "injection_point": "fail_after_object_upload",
+        "recovery_action": "remove_orphan_object",
+        "resolver_error": "missing", "recovery_error": "missing",
+        "before": "absent", "final_status": "absent",
+        "event_visible": False, "orphan_count": 1,
+        "object_exists": True, "publish_attempt": True, "publish_error": None,
+    },
+    "publish_failure": {
+        "injection_point": "fail_pending_publication",
+        "recovery_action": "confirm_failed_publication",
+        "resolver_error": "failed", "recovery_error": "failed",
+        "before": "pending", "final_status": "failed",
+        "event_visible": True, "orphan_count": 0,
+        "object_exists": False, "publish_attempt": True, "publish_error": "failed",
+    },
+    "delete_failure": {
+        "injection_point": "fail_deleting_object_removal",
+        "recovery_action": "confirm_delete_failure_state",
+        "resolver_error": "deleting", "recovery_error": "deleting",
+        "before": "available", "final_status": "deleting",
+        "event_visible": True, "orphan_count": 0,
+        "object_exists": True, "publish_attempt": False, "publish_error": None,
+    },
+}
+ASSET_FAILURE_SUMMARY_FIELDS = frozenset({
+    "case_order", "engines", "format", "format_version", "statistics_boundary",
+})
+ASSET_FAILURE_ENGINE_FIELDS = frozenset({
+    "cases", "child", "cleanup", "code", "engine", "namespace_policy", "run_id", "runtime",
+})
+ASSET_FAILURE_CASE_FIELDS = frozenset({
+    "asset_id", "case", "catalog_transitions", "cleanup", "event_visible", "execution_error",
+    "final_status", "injection_point", "namespace", "orphan_count",
+    "orphan_count_after_recovery", "recovery_actions", "recovery_resolver", "reconcile",
+    "reconcile_after_recovery", "resolver", "sha256", "store_observation", "validation_errors",
+})
+ASSET_FAILURE_RUNTIME_FIELDS = frozenset({
+    "container", "endpoint", "engine", "engine_runtime", "host", "layout", "operation",
+})
+ASSET_FAILURE_POLICY_FIELDS = frozenset({
+    "case_order", "namespace_prefix", "namespaces", "reuse", "strategy",
+})
+ASSET_FAILURE_RUN_CLEANUP_FIELDS = frozenset({
+    "namespaces", "namespaces_removed", "object_directories_removed",
+    "runtime_probe_directory", "runtime_probe_directory_removed",
+})
+ASSET_FAILURE_RUNTIMES = {
+    "opengauss": {
+        "endpoint": {"host": "127.0.0.1", "port": 15432},
+        "container": {
+            "container": "agent-trace-opengauss-v6",
+            "image": "enmotech/opengauss:6.0.0",
+            "image_id": "sha256:" + "6" * 64,
+        },
+        "engine_runtime": {"source": "database-query", "version": "openGauss 6.0.0"},
+    },
+    "clickhouse": {
+        "endpoint": {"host": "127.0.0.1", "port": 18123},
+        "container": {
+            "container": "agent-trace-clickhouse-25-12",
+            "image": "clickhouse/clickhouse-server:25.12",
+            "image_id": "sha256:" + "0" * 64,
+        },
+        "engine_runtime": {"source": "database-query", "version": "25.12.11.4"},
+    },
+}
+
+
+def asset_failure_resolver(error, asset_id, content):
+    """构造 resolver / recovery_resolver 证据，按可见性决定内容字段。"""
+    if error is None:
+        return {
+            "content_length": len(content), "content_visible": True,
+            "error": None, "preview": content, "sha256": asset_id,
+        }
+    return {
+        "content_length": None, "content_visible": False,
+        "error": error, "preview": None, "sha256": None,
+    }
+
+
+def asset_failure_result(engine, case):
+    """构造一个与生产 child schema 一致的最小 asset-failure case 结果。"""
+    spec = ASSET_FAILURE_SPECS[case]
+    asset_id = hashlib.sha256(f"{engine}:{case}".encode("utf-8")).hexdigest()
+    namespace = f"jsons3_af_{case}_{asset_id[:10]}"
+    root = f"/runs/{engine}/child/asset-failure-cases/{case}"
+    object_path = f"{root}/objects/{asset_id[:2]}/{asset_id}"
+    content = '{"content":"asset failure %s"}' % case
+    return {
+        "asset_id": asset_id,
+        "case": case,
+        "catalog_transitions": [
+            {
+                "after": spec["final_status"], "asset_id": asset_id,
+                "before": spec["before"], "phase": "injection", "sha256": asset_id,
+            },
+            {
+                "after": spec["final_status"], "asset_id": asset_id,
+                "before": spec["final_status"], "phase": "recovery", "sha256": asset_id,
+            },
+        ],
+        "cleanup": {
+            "adapter_cleanup_target": f"{namespace}_asset_ref",
+            "errors": [],
+            "namespace": namespace,
+            "namespace_removed": True,
+            "object_directory": f"{root}/objects",
+            "object_directory_removed": True,
+        },
+        "event_visible": spec["event_visible"],
+        "execution_error": None,
+        "final_status": spec["final_status"],
+        "injection_point": spec["injection_point"],
+        "namespace": namespace,
+        "reconcile": {
+            "orphan_count": spec["orphan_count"],
+            "orphan_paths": [object_path] if spec["orphan_count"] else [],
+        },
+        "reconcile_after_recovery": {"orphan_count": 0, "orphan_paths": []},
+        "recovery_actions": [spec["recovery_action"]],
+        "recovery_resolver": asset_failure_resolver(spec["recovery_error"], asset_id, content),
+        "resolver": asset_failure_resolver(spec["resolver_error"], asset_id, content),
+        "sha256": asset_id,
+        "store_observation": {
+            "object_exists": spec["object_exists"],
+            "object_path": object_path,
+            "publish_attempts": [
+                {
+                    "asset_id": asset_id, "error": spec["publish_error"],
+                    "final_object_exists": spec["object_exists"],
+                }
+            ] if spec["publish_attempt"] else [],
+        },
+        "validation_errors": [],
+    }
+
+
+def asset_failure_child(engine):
+    """构造一个与生产 child schema 一致的最小 asset-failure manifest。"""
+    return {
+        "case_order": list(ASSET_FAILURE_CASES),
+        "format": "agent-trace-json-storage-stage3-asset-failure-run",
+        "format_version": 1,
+        "results": [asset_failure_result(engine, case) for case in ASSET_FAILURE_CASES],
+        "run_id": f"jsons3-asset-failures-{engine}",
+        "status": "complete",
+    }
+
+
+def asset_failure_envelope(engine, content, child):
+    """构造一个与生产 envelope schema 一致的最小 asset-failure 运行结果。"""
+    namespaces = [result["namespace"] for result in child["results"]]
+    return {
+        "asset_failures": {
+            "case_order": list(child["case_order"]),
+            "cleanup": {"namespaces_removed": True, "object_directories_removed": True},
+            "engine": engine,
+            "namespaces": namespaces,
+            "results": json.loads(json.dumps(child["results"])),
+        },
+        "child": {
+            "bytes": len(content),
+            "format": child["format"],
+            "format_version": child["format_version"],
+            "path": "child/run-manifest.json",
+            "run_id": child["run_id"],
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "status": child["status"],
+        },
+        "cleanup": {
+            "namespaces": namespaces,
+            "namespaces_removed": True,
+            "object_directories_removed": True,
+            "runtime_probe_directory": f"/runs/{engine}/runtime-probe-assets",
+            "runtime_probe_directory_removed": True,
+        },
+        "code": {
+            role: {"path": f"/source/{role}.py", "bytes": 10, "sha256": character * 64}
+            for role, character in zip(ASSET_FAILURE_CODE_ROLES, "1234567")
+        },
+        "command": ["python3", "run_stage3.py", "asset-failures", "--engine", engine],
+        "format": "agent-trace-json-storage-stage3-production-run",
+        "format_version": 1,
+        "namespace_policy": {
+            "case_order": list(child["case_order"]),
+            "namespace_prefix": "jsons3_af_<case>_",
+            "namespaces": namespaces,
+            "reuse": False,
+            "strategy": "runner-fixed-case-unique",
+        },
+        "operation": "asset-failures",
+        "run_id": f"jsons3-production-asset-failures-{engine}",
+        "runtime": {
+            "operation": "asset-failures",
+            "engine": engine,
+            "layout": "asset_ref",
+            "host": {
+                "platform": "Linux", "machine": "x86_64",
+                "cpu_count": 8, "memory_total_kib": 16291948,
+            },
+            **json.loads(json.dumps(ASSET_FAILURE_RUNTIMES[engine])),
+        },
+        "status": "complete",
+    }
+
+
+def write_asset_failure_run(root, engine, child=None):
+    """写入一个最小 asset-failure production 目录并返回其路径。"""
+    run = Path(root) / engine
+    (run / "child").mkdir(parents=True)
+    child = asset_failure_child(engine) if child is None else child
+    content = json.dumps(child, separators=(",", ":")).encode("utf-8")
+    (run / "child" / "run-manifest.json").write_bytes(content)
+    envelope = asset_failure_envelope(engine, content, child)
+    (run / "run-manifest.json").write_text(json.dumps(envelope), encoding="utf-8")
+    return run
+
+
+def rewrite_asset_failure_child(run, mutate):
+    """改写 child 并同步 envelope 中由实际 bytes 与结果形成的镜像证据。"""
+    path = Path(run) / "child" / "run-manifest.json"
+    child = json.loads(path.read_text(encoding="utf-8"))
+    mutate(child)
+    content = json.dumps(child, separators=(",", ":")).encode("utf-8")
+    path.write_bytes(content)
+    envelope_path = Path(run) / "run-manifest.json"
+    envelope = json.loads(envelope_path.read_text(encoding="utf-8"))
+    envelope["child"]["bytes"] = len(content)
+    envelope["child"]["sha256"] = hashlib.sha256(content).hexdigest()
+    for key in ("format", "format_version", "status", "run_id"):
+        if key in child:
+            envelope["child"][key] = child[key]
+    envelope["asset_failures"]["results"] = json.loads(json.dumps(child["results"]))
+    envelope_path.write_text(json.dumps(envelope), encoding="utf-8")
+    return child
+
+
+def rewrite_asset_failure_envelope(run, mutate):
+    """改写 asset-failure production envelope。"""
+    path = Path(run) / "run-manifest.json"
+    envelope = json.loads(path.read_text(encoding="utf-8"))
+    mutate(envelope)
+    path.write_text(json.dumps(envelope), encoding="utf-8")
+    return envelope
+
+
+class StageThreeAssetFailureSummaryTest(unittest.TestCase):
+    """验证双引擎 asset-failure 控制只汇总分类与证据，不产出任何时延统计。"""
+
+    def runs(self, directory):
+        """写入两个引擎各一个最小正式 asset-failure 目录。"""
+        return [write_asset_failure_run(directory, engine) for engine in ASSET_FAILURE_ENGINES]
+
+    def test_summarizes_two_engine_controls_in_fixed_case_order(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            summary = report.summarize_asset_failures(runs)
+            self.assertEqual(
+                summary["format"], "agent-trace-json-storage-stage3-asset-failures-summary"
+            )
+            self.assertEqual(summary["format_version"], 1)
+            self.assertEqual(summary["case_order"], list(ASSET_FAILURE_CASES))
+            self.assertEqual(
+                [item["engine"] for item in summary["engines"]], list(ASSET_FAILURE_ENGINES)
+            )
+            for item in summary["engines"]:
+                self.assertEqual(
+                    [case["case"] for case in item["cases"]], list(ASSET_FAILURE_CASES)
+                )
+                self.assertEqual(item["runtime"]["layout"], "asset_ref")
+                self.assertEqual(item["runtime"]["engine"], item["engine"])
+            self.assertEqual(summary, report.summarize_asset_failures(list(reversed(runs))))
+
+    def test_carries_classification_and_recovery_evidence_per_case(self):
+        with tempfile.TemporaryDirectory() as directory:
+            summary = report.summarize_asset_failures(self.runs(directory))
+            for item in summary["engines"]:
+                cases = {case["case"]: case for case in item["cases"]}
+                for name, spec in ASSET_FAILURE_SPECS.items():
+                    case = cases[name]
+                    self.assertEqual(case["resolver"]["error"], spec["resolver_error"])
+                    self.assertEqual(case["final_status"], spec["final_status"])
+                    self.assertEqual(case["event_visible"], spec["event_visible"])
+                    self.assertEqual(case["orphan_count"], spec["orphan_count"])
+                    self.assertEqual(case["orphan_count_after_recovery"], 0)
+                    self.assertEqual(case["injection_point"], spec["injection_point"])
+                    self.assertEqual(case["recovery_actions"], [spec["recovery_action"]])
+                    self.assertEqual(
+                        case["recovery_resolver"]["error"], spec["recovery_error"]
+                    )
+                    self.assertEqual(
+                        case["store_observation"]["object_exists"], spec["object_exists"]
+                    )
+                    self.assertEqual(case["validation_errors"], [])
+                    self.assertIsNone(case["execution_error"])
+                    self.assertTrue(case["cleanup"]["namespace_removed"])
+                    self.assertEqual(len(case["catalog_transitions"]), 2)
+
+    def test_publishes_exactly_the_contracted_keys_at_every_level(self):
+        """该控制的设计边界禁止时延统计与引擎排名：逐层键集须与契约完全一致。"""
+        with tempfile.TemporaryDirectory() as directory:
+            summary = report.summarize_asset_failures(self.runs(directory))
+            self.assertEqual(set(summary), set(ASSET_FAILURE_SUMMARY_FIELDS))
+            for item in summary["engines"]:
+                self.assertEqual(set(item), set(ASSET_FAILURE_ENGINE_FIELDS))
+                self.assertEqual(set(item["runtime"]), set(ASSET_FAILURE_RUNTIME_FIELDS))
+                self.assertEqual(set(item["namespace_policy"]), set(ASSET_FAILURE_POLICY_FIELDS))
+                self.assertEqual(set(item["cleanup"]), set(ASSET_FAILURE_RUN_CLEANUP_FIELDS))
+                self.assertEqual(
+                    set(item["child"]),
+                    {"bytes", "format", "format_version", "path", "run_id", "sha256", "status"},
+                )
+                self.assertEqual(set(item["code"]), set(ASSET_FAILURE_CODE_ROLES))
+                for evidence in item["code"].values():
+                    self.assertEqual(set(evidence), {"bytes", "path", "sha256"})
+                for case in item["cases"]:
+                    self.assertEqual(set(case), set(ASSET_FAILURE_CASE_FIELDS))
+                    for name in ("resolver", "recovery_resolver"):
+                        self.assertEqual(
+                            set(case[name]),
+                            {"content_length", "content_visible", "error", "preview", "sha256"},
+                        )
+                    for name in ("reconcile", "reconcile_after_recovery"):
+                        self.assertEqual(set(case[name]), {"orphan_count", "orphan_paths"})
+                    for transition in case["catalog_transitions"]:
+                        self.assertEqual(
+                            set(transition), {"after", "asset_id", "before", "phase", "sha256"}
+                        )
+                    observation = case["store_observation"]
+                    self.assertEqual(
+                        set(observation), {"object_exists", "object_path", "publish_attempts"}
+                    )
+                    for attempt in observation["publish_attempts"]:
+                        self.assertEqual(
+                            set(attempt), {"asset_id", "error", "final_object_exists"}
+                        )
+                    self.assertEqual(
+                        set(case["cleanup"]),
+                        {
+                            "adapter_cleanup_target", "errors", "namespace", "namespace_removed",
+                            "object_directory", "object_directory_removed",
+                        },
+                    )
+
+    def test_carries_optional_input_and_truth_identity_when_published(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            for run in runs:
+                rewrite_asset_failure_envelope(
+                    run,
+                    lambda envelope: envelope.update({
+                        "input": json.loads(json.dumps(INPUT_IDENTITY)),
+                        "truth": {
+                            "seed": 20260907, "identity_sha256": IDENTITY,
+                            "record_count": 48534, "block_size": 256, "block_count": 190,
+                        },
+                    }),
+                )
+            summary = report.summarize_asset_failures(runs)
+            self.assertEqual(summary["input"], INPUT_IDENTITY)
+            self.assertEqual(summary["truth"]["record_count"], 48534)
+
+    def test_rejects_input_identity_drift_between_engines(self):
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            for index, run in enumerate(runs):
+                rewrite_asset_failure_envelope(
+                    run,
+                    lambda envelope, index=index: envelope.__setitem__(
+                        "input", json.loads(json.dumps(INPUT_IDENTITY))
+                    ),
+                )
+            rewrite_asset_failure_envelope(
+                runs[1],
+                lambda envelope: envelope["input"]["events"].__setitem__("sha256", "9" * 64),
+            )
+            with self.assertRaisesRegex(ValueError, "input identity differs between runs"):
+                report.summarize_asset_failures(runs)
+
+
+class StageThreeAssetFailureGateTest(unittest.TestCase):
+    """验证 asset-failure 控制的覆盖、身份、分类与证据门禁全部 fail closed。"""
+
+    def runs(self, directory):
+        return [write_asset_failure_run(directory, engine) for engine in ASSET_FAILURE_ENGINES]
+
+    def reject(self, mutate, message):
+        """写入双引擎 fixture，施加指定的反例后要求门禁拒绝。"""
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            mutate(runs)
+            with self.assertRaisesRegex(ValueError, message):
+                report.summarize_asset_failures(runs)
+
+    def test_rejects_missing_duplicated_or_extra_engine(self):
+        with self.assertRaisesRegex(ValueError, "at least one asset-failure run directory"):
+            report.summarize_asset_failures([])
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            with self.assertRaisesRegex(ValueError, "engine coverage is incomplete"):
+                report.summarize_asset_failures(runs[:1])
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            runs.append(write_asset_failure_run(Path(directory) / "duplicate", "opengauss"))
+            with self.assertRaisesRegex(
+                ValueError, "duplicate asset-failure engine: opengauss"
+            ):
+                report.summarize_asset_failures(runs)
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            extra = write_asset_failure_run(Path(directory) / "extra", "opengauss")
+            rewrite_asset_failure_envelope(
+                extra, lambda envelope: envelope["runtime"].__setitem__("engine", "duckdb")
+            )
+            runs.append(extra)
+            with self.assertRaisesRegex(ValueError, "runtime identity mismatch"):
+                report.summarize_asset_failures(runs)
+
+    def test_rejects_envelope_format_status_and_operation_drift(self):
+        cases = (
+            ("format", "layout-matrix", "envelope format/version is invalid"),
+            ("format_version", 2, "envelope format/version is invalid"),
+            ("format_version", True, "envelope format/version is invalid"),
+            ("status", "partial", "envelope status is not complete"),
+            ("operation", "interference", "asset-failure operation is invalid"),
+            ("run_id", "", "asset-failure run identity is missing"),
+        )
+        for field, value, message in cases:
+            with self.subTest(field=field, value=value):
+                self.reject(
+                    lambda runs, field=field, value=value: rewrite_asset_failure_envelope(
+                        runs[1], lambda envelope: envelope.__setitem__(field, value)
+                    ),
+                    message,
+                )
+
+    def test_rejects_child_identity_and_format_mismatch(self):
+        def rewrite_bytes_only(runs):
+            path = runs[0] / "child" / "run-manifest.json"
+            path.write_bytes(path.read_bytes() + b" ")
+
+        def drop_child(runs):
+            (runs[1] / "child" / "run-manifest.json").unlink()
+
+        def escape_child(runs):
+            rewrite_asset_failure_envelope(
+                runs[0], lambda envelope: envelope["child"].__setitem__(
+                    "path", "../../escape.json"
+                ),
+            )
+
+        def declared_status(runs):
+            rewrite_asset_failure_envelope(
+                runs[1], lambda envelope: envelope["child"].__setitem__("status", "partial")
+            )
+
+        for mutate, message in (
+            (rewrite_bytes_only, "child identity mismatch"),
+            (drop_child, "child manifest is unavailable"),
+            (escape_child, "child path escapes the run directory"),
+            (declared_status, "child format/status mismatch"),
+        ):
+            with self.subTest(mutate=mutate.__name__):
+                self.reject(mutate, message)
+
+    def test_rejects_child_format_version_and_status_drift(self):
+        cases = (
+            ("format", "agent-trace-json-storage-stage3-interference-run"),
+            ("format_version", 2),
+            ("status", "partial"),
+        )
+        for field, value in cases:
+            with self.subTest(field=field):
+                self.reject(
+                    lambda runs, field=field, value=value: rewrite_asset_failure_child(
+                        runs[0], lambda child: child.__setitem__(field, value)
+                    ),
+                    "asset-failure child format/version/status is invalid",
+                )
+
+    def test_rejects_missing_duplicated_extra_or_reordered_case(self):
+        def drop_case(child):
+            child["case_order"] = child["case_order"][:-1]
+            child["results"] = child["results"][:-1]
+
+        def duplicate_case(child):
+            child["case_order"][1] = child["case_order"][0]
+            child["results"][1] = json.loads(json.dumps(child["results"][0]))
+
+        def extra_case(child):
+            child["case_order"].append("unknown")
+            child["results"].append(json.loads(json.dumps(child["results"][0])))
+
+        def reorder_case(child):
+            child["case_order"][0], child["case_order"][1] = (
+                child["case_order"][1], child["case_order"][0]
+            )
+            child["results"][0], child["results"][1] = (
+                child["results"][1], child["results"][0]
+            )
+
+        def empty_results(child):
+            child["results"] = []
+
+        for mutate in (drop_case, duplicate_case, extra_case, reorder_case, empty_results):
+            with self.subTest(mutate=mutate.__name__):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_asset_failure_child(runs[0], mutate),
+                    "asset-failure case order mismatch",
+                )
+
+    def test_rejects_result_order_that_contradicts_the_declared_case_order(self):
+        def swap_results(child):
+            child["results"][0], child["results"][1] = (
+                child["results"][1], child["results"][0]
+            )
+
+        self.reject(
+            lambda runs: rewrite_asset_failure_child(runs[1], swap_results),
+            "asset-failure case identity mismatch",
+        )
+
+    def test_rejects_namespace_not_bound_to_the_case_prefix(self):
+        def rename(child):
+            child["results"][2]["namespace"] = "jsons3_af_missing_0123456789"
+
+        def rename_cleanup(child):
+            child["results"][3]["cleanup"]["namespace"] = "jsons3_if_quiet_0123456789"
+
+        for mutate in (rename, rename_cleanup):
+            with self.subTest(mutate=mutate.__name__):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_asset_failure_child(runs[0], mutate),
+                    "asset-failure namespace evidence is invalid",
+                )
+
+    def test_rejects_resolver_classification_drift(self):
+        cases = (
+            (0, "corrupt"), (1, "missing"), (2, None),
+            (3, "corrupt"), (4, "deleting"), (5, "failed"),
+        )
+        for index, value in cases:
+            with self.subTest(index=index, value=value):
+                self.reject(
+                    lambda runs, index=index, value=value: rewrite_asset_failure_child(
+                        runs[index % 2],
+                        lambda child: child["results"][index]["resolver"].__setitem__(
+                            "error", value
+                        ),
+                    ),
+                    "asset-failure resolver classification mismatch",
+                )
+
+    def test_rejects_final_status_event_visibility_and_orphan_drift(self):
+        cases = (
+            (
+                lambda child: child["results"][0].__setitem__("final_status", "failed"),
+                "asset-failure final status mismatch",
+            ),
+            (
+                lambda child: child["results"][3].__setitem__("event_visible", True),
+                "asset-failure event visibility mismatch",
+            ),
+            (
+                lambda child: child["results"][0].__setitem__("event_visible", False),
+                "asset-failure event visibility mismatch",
+            ),
+            (
+                lambda child: child["results"][3].__setitem__(
+                    "reconcile", {"orphan_count": 0, "orphan_paths": []}
+                ),
+                "asset-failure orphan evidence mismatch",
+            ),
+            (
+                lambda child: child["results"][0].__setitem__(
+                    "reconcile", {"orphan_count": 1, "orphan_paths": ["/objects/aa"]}
+                ),
+                "asset-failure orphan evidence mismatch",
+            ),
+            (
+                lambda child: child["results"][3].__setitem__(
+                    "reconcile_after_recovery",
+                    {"orphan_count": 1, "orphan_paths": ["/objects/aa"]},
+                ),
+                "asset-failure orphan evidence mismatch",
+            ),
+        )
+        for mutate, message in cases:
+            with self.subTest(message=message):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_asset_failure_child(runs[0], mutate),
+                    message,
+                )
+
+    def test_rejects_orphan_count_that_contradicts_the_listed_paths(self):
+        def forge_count(child):
+            child["results"][3]["reconcile"]["orphan_paths"] = []
+
+        self.reject(
+            lambda runs: rewrite_asset_failure_child(runs[1], forge_count),
+            "asset-failure reconcile evidence is invalid",
+        )
+
+    def test_rejects_boolean_posing_as_orphan_count(self):
+        def forge_bool(child):
+            child["results"][3]["reconcile"]["orphan_count"] = True
+
+        self.reject(
+            lambda runs: rewrite_asset_failure_child(runs[0], forge_bool),
+            "asset-failure reconcile evidence is invalid",
+        )
+
+    def test_rejects_non_boolean_event_visibility(self):
+        def forge_visibility(child):
+            child["results"][0]["event_visible"] = 1
+
+        self.reject(
+            lambda runs: rewrite_asset_failure_child(runs[0], forge_visibility),
+            "asset-failure result evidence is incomplete",
+        )
+
+    def test_rejects_missing_result_keys_and_wrong_types(self):
+        cases = (
+            (lambda child: child["results"][0].pop("injection_point"), "result evidence is incomplete"),
+            (lambda child: child["results"][0].__setitem__("asset_id", 1), "result evidence is incomplete"),
+            (lambda child: child["results"][0].__setitem__("extra", 1), "result evidence is incomplete"),
+            (lambda child: child["results"][0].__setitem__("resolver", []), "resolver evidence is invalid"),
+            (lambda child: child["results"][0]["resolver"].pop("preview"), "resolver evidence is invalid"),
+            (lambda child: child["results"][0]["store_observation"].pop("object_exists"), "store observation evidence is invalid"),
+            (lambda child: child["results"][0]["cleanup"].pop("errors"), "case cleanup evidence is invalid"),
+            (lambda child: child["results"][0].__setitem__("catalog_transitions", []), "catalog transition evidence is invalid"),
+            (lambda child: child["results"][0].__setitem__("recovery_actions", []), "recovery evidence is invalid"),
+            (lambda child: child["results"][0].__setitem__("recovery_actions", ["", "x"]), "recovery evidence is invalid"),
+        )
+        for mutate, message in cases:
+            with self.subTest(message=message):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_asset_failure_child(runs[0], mutate),
+                    message,
+                )
+
+    def test_rejects_resolver_content_that_contradicts_the_classification(self):
+        cases = (
+            lambda child: child["results"][0]["resolver"].__setitem__("content_visible", True),
+            lambda child: child["results"][0]["resolver"].__setitem__("sha256", "9" * 64),
+            lambda child: child["results"][0]["recovery_resolver"].__setitem__(
+                "content_visible", False
+            ),
+        )
+        for index, mutate in enumerate(cases):
+            with self.subTest(index=index):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_asset_failure_child(runs[0], mutate),
+                    "asset-failure resolver evidence is invalid",
+                )
+
+    def test_rejects_catalog_transitions_that_do_not_chain_to_the_final_status(self):
+        cases = (
+            lambda child: child["results"][0]["catalog_transitions"][1].__setitem__(
+                "before", "failed"
+            ),
+            lambda child: child["results"][0]["catalog_transitions"][1].__setitem__(
+                "after", "deleting"
+            ),
+            lambda child: child["results"][0]["catalog_transitions"][0].__setitem__(
+                "phase", "recovery"
+            ),
+            lambda child: child["results"][0]["catalog_transitions"][0].__setitem__(
+                "asset_id", "9" * 64
+            ),
+        )
+        for index, mutate in enumerate(cases):
+            with self.subTest(index=index):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_asset_failure_child(runs[0], mutate),
+                    "asset-failure catalog transition evidence is invalid",
+                )
+
+    def test_rejects_validation_errors_and_execution_errors(self):
+        cases = (
+            (
+                lambda child: child["results"][2].__setitem__(
+                    "validation_errors", ["sha256 mismatch"]
+                ),
+                "asset-failure validation errors are present",
+            ),
+            (
+                lambda child: child["results"][2].__setitem__("execution_error", "timeout"),
+                "asset-failure execution error is present",
+            ),
+        )
+        for mutate, message in cases:
+            with self.subTest(message=message):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_asset_failure_child(runs[0], mutate),
+                    message,
+                )
+
+    def test_rejects_incomplete_cleanup_evidence(self):
+        cases = (
+            (
+                lambda runs: rewrite_asset_failure_child(
+                    runs[0],
+                    lambda child: child["results"][4]["cleanup"].__setitem__(
+                        "namespace_removed", False
+                    ),
+                ),
+                "asset-failure case cleanup evidence is invalid",
+            ),
+            (
+                lambda runs: rewrite_asset_failure_child(
+                    runs[0],
+                    lambda child: child["results"][4]["cleanup"].__setitem__(
+                        "errors", ["drop failed"]
+                    ),
+                ),
+                "asset-failure case cleanup evidence is invalid",
+            ),
+            (
+                lambda runs: rewrite_asset_failure_envelope(
+                    runs[1],
+                    lambda envelope: envelope["cleanup"].__setitem__(
+                        "namespaces_removed", False
+                    ),
+                ),
+                "asset-failure cleanup evidence is invalid",
+            ),
+            (
+                lambda runs: rewrite_asset_failure_envelope(
+                    runs[1],
+                    lambda envelope: envelope["cleanup"].__setitem__("namespaces", []),
+                ),
+                "asset-failure cleanup evidence is invalid",
+            ),
+        )
+        for mutate, message in cases:
+            with self.subTest(message=message):
+                self.reject(mutate, message)
+
+    def test_rejects_namespace_policy_drift(self):
+        cases = (
+            lambda envelope: envelope["namespace_policy"].__setitem__(
+                "namespace_prefix", "jsons3_if_<phase>_"
+            ),
+            lambda envelope: envelope["namespace_policy"].__setitem__("reuse", True),
+            lambda envelope: envelope["namespace_policy"].__setitem__(
+                "strategy", "unique-random-suffix"
+            ),
+            lambda envelope: envelope["namespace_policy"].__setitem__(
+                "namespaces", envelope["namespace_policy"]["namespaces"][:-1]
+            ),
+        )
+        for index, mutate in enumerate(cases):
+            with self.subTest(index=index):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_asset_failure_envelope(runs[0], mutate),
+                    "asset-failure namespace policy evidence is invalid",
+                )
+
+    def test_rejects_envelope_results_that_differ_from_the_child(self):
+        cases = (
+            lambda envelope: envelope["asset_failures"]["results"][0].__setitem__(
+                "final_status", "failed"
+            ),
+            lambda envelope: envelope["asset_failures"].__setitem__("results", []),
+        )
+        for index, mutate in enumerate(cases):
+            with self.subTest(index=index):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_asset_failure_envelope(runs[0], mutate),
+                    "asset-failure envelope and child evidence differ",
+                )
+
+    def test_rejects_envelope_asset_failure_block_drift(self):
+        cases = (
+            lambda envelope: envelope["asset_failures"].__setitem__("engine", "clickhouse"),
+            lambda envelope: envelope["asset_failures"].pop("namespaces"),
+            lambda envelope: envelope["asset_failures"]["cleanup"].__setitem__(
+                "namespaces_removed", False
+            ),
+            lambda envelope: envelope["asset_failures"]["case_order"].reverse(),
+        )
+        for index, mutate in enumerate(cases):
+            with self.subTest(index=index):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_asset_failure_envelope(runs[0], mutate),
+                    "asset-failure envelope evidence is invalid",
+                )
+
+    def test_rejects_incomplete_code_provenance(self):
+        cases = (
+            lambda envelope: envelope["code"].pop("asset_failure_runner"),
+            lambda envelope: envelope["code"]["assets"].__setitem__("sha256", "zz"),
+            lambda envelope: envelope["code"]["common"].__setitem__("bytes", 0),
+        )
+        for index, mutate in enumerate(cases):
+            with self.subTest(index=index):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_asset_failure_envelope(runs[0], mutate),
+                    "asset-failure code evidence is incomplete",
+                )
+
+    def test_rejects_duplicated_run_identity_between_engines(self):
+        def share_envelope_run_id(runs):
+            envelope = json.loads((runs[0] / "run-manifest.json").read_text(encoding="utf-8"))
+            rewrite_asset_failure_envelope(
+                runs[1], lambda other: other.__setitem__("run_id", envelope["run_id"])
+            )
+
+        def share_child_run_id(runs):
+            child = json.loads(
+                (runs[0] / "child" / "run-manifest.json").read_text(encoding="utf-8")
+            )
+            rewrite_asset_failure_child(
+                runs[1], lambda other: other.__setitem__("run_id", child["run_id"])
+            )
+            rewrite_asset_failure_envelope(
+                runs[1], lambda envelope: envelope["child"].__setitem__(
+                    "run_id", child["run_id"]
+                ),
+            )
+
+        for mutate in (share_envelope_run_id, share_child_run_id):
+            with self.subTest(mutate=mutate.__name__):
+                self.reject(mutate, "run identity is duplicated between runs")
+
+    def test_rejects_recovery_evidence_that_contradicts_the_case(self):
+        cases = (
+            (
+                lambda child: child["results"][0].__setitem__(
+                    "recovery_resolver",
+                    {
+                        "content_length": None, "content_visible": False,
+                        "error": "missing", "preview": None, "sha256": None,
+                    },
+                ),
+                "asset-failure recovery classification mismatch",
+            ),
+            (
+                lambda child: child["results"][3]["recovery_resolver"].__setitem__(
+                    "error", "corrupt"
+                ),
+                "asset-failure recovery classification mismatch",
+            ),
+            (
+                lambda child: child["results"][0].__setitem__("injection_point", "whatever"),
+                "asset-failure injection point mismatch",
+            ),
+            (
+                lambda child: child["results"][0].__setitem__(
+                    "injection_point", "modify_published_bytes"
+                ),
+                "asset-failure injection point mismatch",
+            ),
+            (
+                lambda child: child["results"][0].__setitem__(
+                    "recovery_actions", ["did_nothing"]
+                ),
+                "asset-failure recovery action mismatch",
+            ),
+            (
+                lambda child: child["results"][4].__setitem__(
+                    "recovery_actions",
+                    ["confirm_failed_publication", "confirm_failed_publication"],
+                ),
+                "asset-failure recovery action mismatch",
+            ),
+        )
+        for mutate, message in cases:
+            with self.subTest(message=message):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_asset_failure_child(runs[0], mutate),
+                    message,
+                )
+
+    def test_rejects_store_observation_that_contradicts_the_case(self):
+        cases = (
+            lambda child: child["results"][0]["store_observation"].__setitem__(
+                "object_exists", True
+            ),
+            lambda child: child["results"][1]["store_observation"].__setitem__(
+                "object_exists", False
+            ),
+            lambda child: child["results"][4]["store_observation"].__setitem__(
+                "publish_attempts", []
+            ),
+            lambda child: child["results"][0]["store_observation"]["publish_attempts"].append(
+                {
+                    "asset_id": child["results"][0]["asset_id"],
+                    "error": None, "final_object_exists": False,
+                }
+            ),
+        )
+        for index, mutate in enumerate(cases):
+            with self.subTest(index=index):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_asset_failure_child(runs[0], mutate),
+                    "asset-failure store observation evidence is invalid",
+                )
+
+    def test_rejects_injection_starting_state_that_contradicts_the_case(self):
+        cases = ((0, "deleting"), (3, "available"), (4, "available"))
+        for index, value in cases:
+            with self.subTest(index=index, value=value):
+                self.reject(
+                    lambda runs, index=index, value=value: rewrite_asset_failure_child(
+                        runs[0],
+                        lambda child: child["results"][index]["catalog_transitions"][0].__setitem__(
+                            "before", value
+                        ),
+                    ),
+                    "asset-failure catalog transition evidence is invalid",
+                )
+
+    def test_rejects_namespaces_reused_between_engines(self):
+        def reuse_namespaces(runs):
+            source = json.loads(
+                (runs[0] / "child" / "run-manifest.json").read_text(encoding="utf-8")
+            )
+            names = [result["namespace"] for result in source["results"]]
+
+            def rename(child):
+                for result, namespace in zip(child["results"], names):
+                    result["namespace"] = namespace
+                    result["cleanup"]["namespace"] = namespace
+                    result["cleanup"]["adapter_cleanup_target"] = f"{namespace}_asset_ref"
+
+            rewrite_asset_failure_child(runs[1], rename)
+            rewrite_asset_failure_envelope(runs[1], lambda envelope: [
+                envelope["cleanup"].__setitem__("namespaces", list(names)),
+                envelope["namespace_policy"].__setitem__("namespaces", list(names)),
+                envelope["asset_failures"].__setitem__("namespaces", list(names)),
+            ])
+
+        self.reject(reuse_namespaces, "asset-failure namespaces are reused between runs")
+
+    def test_rejects_unknown_fields_in_envelope_code_and_namespace_policy(self):
+        cases = (
+            (
+                lambda envelope: envelope["code"].__setitem__(
+                    "bogus",
+                    {
+                        "path": "/source/bogus.py", "bytes": 10,
+                        "sha256": "8" * 64, "p99_ms": 12.5,
+                    },
+                ),
+                "asset-failure code evidence is incomplete",
+            ),
+            (
+                lambda envelope: envelope["code"]["assets"].__setitem__("p99_ms", 12.5),
+                "asset-failure code evidence is incomplete",
+            ),
+            (
+                lambda envelope: envelope["namespace_policy"].__setitem__(
+                    "query_complete_p99", 12.5
+                ),
+                "asset-failure namespace policy evidence is invalid",
+            ),
+        )
+        for mutate, message in cases:
+            with self.subTest(message=message):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_asset_failure_envelope(runs[0], mutate),
+                    message,
+                )
+
 if __name__ == "__main__":
     unittest.main()
