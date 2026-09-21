@@ -22,7 +22,7 @@ ASSESSMENT = (
 REQUIRED_SECTIONS = (
     "范围与证据等级",
     "四种布局表示什么",
-    "部分切片中的观测区分度",
+    "完整矩阵中的观测区分度",
     "合成数据的区分能力与边界",
     "Extension 方案对比",
     "最小后续实验集合",
@@ -35,7 +35,7 @@ REQUIRED_TERMS = (
     "full_core",
     "asset_ref",
     "db_lob_ref",
-    "部分正式切片",
+    "全部正式运行",
     "N+1",
 )
 
@@ -51,9 +51,11 @@ FORBIDDEN_COMPLETION_CLAIMS = (
     "可以发布",
 )
 
-# "完成" 只能用于描述操作、门禁、水位、block 或样本，或用于否定整体完成状态。
+# "完成" 只能用于描述操作、正式运行、计时阶段、门禁、水位、block 或样本，或用于否定整体完成状态。
 COMPLETION_SCOPES = (
     "操作",
+    "正式运行",
+    "查询完成",
     "门禁",
     "水位",
     "block",
@@ -68,10 +70,10 @@ MARKDOWN_LINK = re.compile(r"\[[^\]]*\]\(([^)]+)\)")
 
 # 批量恢复的数值必须与产生它的字段标注在同一行，避免把恢复总耗时写成 resolver 读取。
 BATCH_METRIC_ATTRIBUTION = (
-    ("1,984.5", "`recovery_ms`"),
-    ("1,284.1", "`recovery_ms`"),
-    ("384 ms", "`resolver.read_ms`"),
-    ("392 ms", "`resolver.read_ms`"),
+    ("430.62", "`recovery_ms`"),
+    ("7,713.97", "`recovery_ms`"),
+    ("250.20", "`recovery_ms`"),
+    ("1,772.09", "`recovery_ms`"),
 )
 
 # 黄区交接指南、文档索引与指南内清单契约。
@@ -372,7 +374,7 @@ class AssessmentDocumentContractTest(unittest.TestCase):
             self.assertNotIn(claim, content, f"评估出现完成声明：{claim}")
 
     def test_completion_wording_stays_scoped(self):
-        """评估只在操作、门禁、水位、block、样本或否定整体状态时使用“完成”。"""
+        """评估只在操作、正式运行、计时阶段、门禁、水位、block、样本或否定整体状态时使用“完成”。"""
         content = self.read_document()
         for number, line in enumerate(content.splitlines(), start=1):
             if "完成" not in line:
@@ -413,7 +415,7 @@ class AssessmentDocumentContractTest(unittest.TestCase):
                 )
 
     def test_document_names_median_fields_and_summarizer_scope(self):
-        """中位数表标注 latency_ms 与 application_ready_ms，恢复阶段表述与汇总器调用范围明确。"""
+        """中位数表标注 latency_ms 与 application_ready_ms，恢复阶段表述与汇总范围明确。"""
         content = self.read_document()
         self.assertNotIn(
             "批量恢复总耗时", content, "recovery_ms 描述的是查询后结果恢复阶段，不是批量场景总耗时",
@@ -422,8 +424,8 @@ class AssessmentDocumentContractTest(unittest.TestCase):
         self.assertIn("`latency_ms`", content, "中位数表未标注轮次 result.json 的 latency_ms 字段")
         self.assertIn("`application_ready_ms`", content, "评估未标注 application_ready_ms 口径")
         self.assertIn(
-            "以单个 target 目录（main-matrix-attempt-1/opengauss/same_table）调用", content,
-            "汇总器调用范围必须写明是单个 target 目录",
+            "参与合并的目录为", content,
+            "汇总范围必须写明参与合并的运行目录",
         )
 
 

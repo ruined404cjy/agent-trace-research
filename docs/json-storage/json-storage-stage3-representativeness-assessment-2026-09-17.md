@@ -65,7 +65,7 @@
 | 网络响应 | `response_bytes`（`database` 与 `resolver_payload`）、`database_protocol_bytes` | 详情与批量恢复的传输量随布局变化 |
 | 校验 | `validation_ms` | 四布局一致：客户端长度、SHA-256 与 truth 行对比 |
 
-`application_ready_ms` 是应用可用边界，覆盖上述全部分项；ClickHouse 的 `recovery_ms` 还包含 HTTP 响应体解析，openGauss 只包含行归一化。以下各表的应用可用 p50 均为该字段的四轮轮级中位数。
+`recovery_ms` 覆盖查询后结果恢复阶段，`application_ready_ms` 是应用可用边界，覆盖上述全部分项；ClickHouse 的 `recovery_ms` 还包含 HTTP 响应体解析，openGauss 只包含行归一化。以下各表的应用可用 p50 取自样本字段 `application_ready_ms`，在轮次 `result.json` 中以 `latency_ms` 发布，均为四轮轮级中位数。
 
 ## 3. 完整矩阵中的观测区分度
 
@@ -91,7 +91,7 @@
 | 跨组比值 | 同一布局 `many_medium` p50 除以 `few_large` p50，度量对分布变化的敏感度 | 3.67（`asset_ref`） | 10.40（`asset_ref`） |
 | 组内最大最小比 | 同一组内最慢布局除以最快布局，度量在给定分布下选错布局的代价 | `many_medium` 3.567（`asset_ref` 2,137.03 对 `same_table` 599.05）；`few_large` 1.074 | `many_medium` 7.554（`asset_ref` 8,085.18 对 `full_core` 1,070.27）；`few_large` 1.718 |
 
-两组的原始内容总量、resolver 传输字节（均为 419,430,400 bytes）和校验成本几乎相同，唯一显著变化是对象数量由 40 变为 1,280，resolver 请求数由 200 增至 6,400。客户端恢复 p50 承担全部增量：ClickHouse 由 430.62 ms 升至 7,713.97 ms，openGauss 由 250.20 ms 升至 1,772.09 ms。写入侧同方向：Asset 发布时间由 443.54 ms 和 473.77 ms 升至 4,948.01 ms 和 5,296.20 ms。结论是每对象固定成本主导 Asset 路径，成本由对象数量决定，不由字节总量决定。
+两组的原始内容总量、resolver 传输字节（均为 419,430,400 bytes）和校验成本几乎相同，唯一显著变化是对象数量由 40 变为 1,280，resolver 请求数由 200 增至 6,400。客户端恢复 p50（`recovery_ms`）承担全部增量：ClickHouse 由 430.62 ms 升至 7,713.97 ms，openGauss 由 250.20 ms 升至 1,772.09 ms。写入侧同方向：Asset 发布时间由 443.54 ms 和 473.77 ms 升至 4,948.01 ms 和 5,296.20 ms。结论是每对象固定成本主导 Asset 路径，成本由对象数量决定，不由字节总量决定。
 
 ### 3.2 主 cohort 的四布局结果
 
@@ -176,7 +176,7 @@ ClickHouse `detail:text_2m` 的单次查询扫描量在轮次间为常量：
 | 语料 payload 文件 | 1,481 个（`main` 160 + 等总字节控制 1,320 + 边界样本 1） |
 | seed | 20260907 |
 
-`main` cohort 由四种 profile 等量组成：`text_64k`、`text_512k`、`text_2m`、`entropy_512k` 各 40 条，可压缩内容合计 107,479,040 B，高熵内容合计 20,971,520 B。等总字节控制把同一 80 MiB 原始内容分别以 40 条 2 MiB 和 1,280 条 64 KiB 呈现，两组均已完成，结果见第 3.1 节。
+`main` cohort 由四种 profile 等量组成：`text_64k`、`text_512k`、`text_2m`、`entropy_512k` 各 40 条，可压缩内容合计 107,479,040 B，高熵内容合计 20,971,520 B。等总字节控制把同一 80 MiB 原始内容分别以 40 条 2 MiB 和 1,280 条 64 KiB 呈现，两组均已完成正式运行，结果见第 3.1 节。
 
 语料的可压缩性远高于生产文本，这是最主要的数据代表性限制。可压缩 profile 由一个 116 字节块（64 字符 SHA-256 marker 加 52 字符固定短语）循环填充到目标长度后截断，重复结构使压缩比极高；高熵内容由 `seed:event_id:counter` 经 SHA-256 扩展后 URL-safe base64 编码得到，用作压缩机制控制。
 
