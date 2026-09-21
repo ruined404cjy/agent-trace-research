@@ -246,24 +246,111 @@ cleanup，不参与时延排名。
 
 ## 汇总
 
-`report/summarize.py` 当前只实现主矩阵汇总的库接口：`validate_run()` 接受
-`agent-trace-json-storage-stage3-layout-matrix` 格式，`summarize(runs)` 对显式列出的 target 目录做
-round-first、四轮中位数统计，`write_summary_atomic(output, summary)` 原子发布 `summary.json`。
+`report/summarize.py` 提供四个汇总入口，每个入口只接收调用方显式列出的运行目录：
 
-该实现与本指南的主矩阵命令之间存在确切阻塞，正式汇总在 Task 7B 完成前无法执行：
+- `summarize(runs)`：主矩阵。按 `(engine, layout)` 组装 shard，同一组合的多个 shard 合并后必须精确
+  覆盖 `main`、`equal_total_few_large`、`equal_total_many_medium`、`correctness_only` 四个 workload，
+  重复 workload 与缺失 workload 均拒绝。
+- `summarize_part_states(runs)`：ClickHouse part 状态控制，四个 layout × 四个物理状态。
+- `summarize_interference(runs)`：干扰控制，四个 layout × 五个 phase。
+- `summarize_asset_failures(runs)`：Asset 故障控制，两个 engine × 六个固定 case。
 
-- `_round_records()` 要求每个 target manifest 的 `workloads` 覆盖全部四个 workload，其中三个性能
-  workload 各四轮、`correctness_only` 一轮。`rounds_complete` 只累计 `main` 轮次；非 `main` shard 的值为
-  0，会先被 `validate_run()` 的最小值检查拒绝。`main` shard 的值为 4，通过该检查后仍因缺少其余三个
-  workload 被 `_round_records()` 拒绝。
-- 本指南按 engine 与 workload 分片执行，每个 shard 的 manifest 只含单个 workload，因此当前
-  summarizer 无法接收这些分片结果。
-- 模块没有 CLI 入口（没有 `argparse` 或 `main()`），只能由 Python 代码显式传入 target 目录列表。
-- 模块会比较已传入主矩阵 target 的 input identity，但不校验 part-state、interference、Asset failure
-  三类控制 manifest，也不具备跨 shard 组装及其 identity 校验。
+`write_summary_atomic(output, summary)` 原子发布汇总结果：内容相同时幂等返回，output 已存在且内容
+不同时抛错，绝不覆盖既有结果。
 
-Task 7B 补齐 summary CLI、三类控制 schema 与跨 shard 组装规则后，本节再给出最终 `summary.json` 与
-阶段三报告的命令。Task 7B 完成前不做汇总，也不从单个 shard 目录生成比较结论。
+### 汇总命令
+
+CLI 一次调用完成四族汇总并发布组合结果，四个目录参数均为必填。目录逐个显式列出，summarize 不扫描
+父目录挑选 attempt：失败与被取代的尝试与有效运行并列存放在同一层目录内。
+
+```bash
+$STAGE3_PY experiments/json-storage-stage3/report/summarize.py \
+  --output docs/temp/json-storage-stage3/runs/20260917-priority/summary.json \
+  --matrix \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-2/main/clickhouse/clickhouse/same_table \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-3/main/opengauss/opengauss/same_table \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-2/main/clickhouse/clickhouse/separate \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-3/main/opengauss/opengauss/separate \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-2/main/clickhouse/clickhouse/full_core \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-3/main/opengauss/opengauss/full_core \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-2/main/clickhouse/clickhouse/asset_ref \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-3/main/opengauss/opengauss/asset_ref \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-2/equal_total_few_large/clickhouse/clickhouse/same_table \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-3/equal_total_few_large/opengauss/opengauss/same_table \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-2/equal_total_few_large/clickhouse/clickhouse/separate \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-3/equal_total_few_large/opengauss/opengauss/separate \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-2/equal_total_few_large/clickhouse/clickhouse/full_core \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-3/equal_total_few_large/opengauss/opengauss/full_core \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-2/equal_total_few_large/clickhouse/clickhouse/asset_ref \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-3/equal_total_few_large/opengauss/opengauss/asset_ref \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-2/equal_total_many_medium/clickhouse/clickhouse/same_table \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-3/equal_total_many_medium/opengauss/opengauss/same_table \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-2/equal_total_many_medium/clickhouse/clickhouse/separate \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-3/equal_total_many_medium/opengauss/opengauss/separate \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-2/equal_total_many_medium/clickhouse/clickhouse/full_core \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-3/equal_total_many_medium/opengauss/opengauss/full_core \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-2/equal_total_many_medium/clickhouse/clickhouse/asset_ref \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-3/equal_total_many_medium/opengauss/opengauss/asset_ref \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-2/correctness_only/clickhouse/clickhouse/same_table \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-3/correctness_only/opengauss/opengauss/same_table \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-2/correctness_only/clickhouse/clickhouse/separate \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-3/correctness_only/opengauss/opengauss/separate \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-2/correctness_only/clickhouse/clickhouse/full_core \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-3/correctness_only/opengauss/opengauss/full_core \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-2/correctness_only/clickhouse/clickhouse/asset_ref \
+    docs/temp/json-storage-stage3/runs/20260917-priority/matrix-attempt-3/correctness_only/opengauss/opengauss/asset_ref \
+  --part-state \
+    docs/temp/json-storage-stage3/runs/20260917-priority/part-states/same_table-attempt-1 \
+    docs/temp/json-storage-stage3/runs/20260917-priority/part-states/separate-attempt-1 \
+    docs/temp/json-storage-stage3/runs/20260917-priority/part-states/full_core-attempt-1 \
+    docs/temp/json-storage-stage3/runs/20260917-priority/part-states/asset-ref-attempt-3 \
+  --interference \
+    docs/temp/json-storage-stage3/runs/20260917-priority/interference-attempt-2/same_table \
+    docs/temp/json-storage-stage3/runs/20260917-priority/interference-attempt-2/separate \
+    docs/temp/json-storage-stage3/runs/20260917-priority/interference-attempt-2/full_core \
+    docs/temp/json-storage-stage3/runs/20260917-priority/interference-attempt-2/asset_ref \
+  --asset-failure \
+    docs/temp/json-storage-stage3/runs/20260917-priority/asset-failures-attempt-1/opengauss \
+    docs/temp/json-storage-stage3/runs/20260917-priority/asset-failures-attempt-1/clickhouse
+```
+
+输出路径已存在时命令直接拒绝启动。上述命令对应 `20260917-priority` campaign 的正式汇总，重算需指定
+尚不存在的 output 路径。
+
+### 有效正式运行目录
+
+正式汇总只接收 `docs/temp/json-storage-stage3/runs/20260917-priority/` 下的以下目录：
+
+| 族 | 目录 | 数量 |
+| --- | --- | --- |
+| 主矩阵 | `matrix-attempt-2/{main,equal_total_few_large,equal_total_many_medium,correctness_only}/clickhouse/clickhouse/{same_table,separate,full_core,asset_ref}` 与 `matrix-attempt-3` 下的 openGauss 同构路径 | 32 |
+| part 状态 | `part-states/{same_table,separate,full_core}-attempt-1` 与 `part-states/asset-ref-attempt-3` | 4 |
+| 干扰 | `interference-attempt-2/{same_table,separate,full_core,asset_ref}` | 4 |
+| Asset 故障 | `asset-failures-attempt-1/{opengauss,clickhouse}` | 2 |
+
+`main-matrix-attempt-1`、`interference-attempt-1` 与 `part-states/asset_ref-attempt-{1,2}` 是失败或被
+取代的尝试，作为诊断证据保留，不得进入汇总。
+
+### 身份绑定
+
+组合汇总在结果中声明各族实际携带的身份字段：`input` 绑定主矩阵、part 状态与干扰三族；`truth` 与
+`query_catalog_sha256` 绑定 part 状态与干扰两族；绑定字段在族间不一致即失败。Asset 故障树不绑定正式
+输入身份，两个引擎的故障生产 envelope 都不发布这三个字段。
+
+### 运行时边界
+
+- 干扰汇总单独执行时扫描约 4.7 GiB 原始样本，耗时约 40 秒。
+- 主矩阵汇总覆盖 32 个 target 约 3 秒，part 状态汇总不足 1 秒。
+- 一次完整 CLI 调用产出组合汇总约 40 秒，写出约 958 KB。
+- 干扰汇总的读放大约为 2.2 倍，四个 layout 的扫描 RSS 峰值约 670 MiB，是已知并接受的实现成本。
+
+### 主矩阵汇总发布的内容
+
+每个 `(engine, layout, workload)` 发布各 scenario 在 round-first、四轮中位数边界上的时延统计，以及
+`write` 与 `storage` 的四轮中位数。两引擎的空间字段各自保留：ClickHouse 发布 `compressed_bytes`、
+`uncompressed_bytes`、`part_count` 与 `marks`，openGauss 发布 `total_bytes`、`heap_bytes`、
+`index_bytes` 与 `toast_bytes`，两组字段不合并为共同字段。`asset_store` 在三个数据库内布局上为
+`null`，与空对象存储不同。
 
 ## 生产门禁
 
