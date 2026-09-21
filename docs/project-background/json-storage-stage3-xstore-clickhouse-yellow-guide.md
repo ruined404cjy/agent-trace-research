@@ -7,7 +7,7 @@
 >
 > 配套设计：[阶段三黄区 xstore 对比交接设计](../superpowers/specs/2026-09-17-json-storage-stage3-xstore-yellow-handoff-design.md)；配套计划：[阶段三黄区交接实施计划](../superpowers/plans/2026-09-17-json-storage-stage3-xstore-yellow-handoff.md)。
 
-本文给出在一台 ARM64 主机上部署 ClickHouse 25.12.11.4、校验 Stage 3 冻结输入、核对 XStore 能力、实现 XStore adapter、执行四布局同机对比并交付证据的完整流程。文档可独立阅读，执行者可以是黄区操作者，也可以是按本文执行的黄区 agent。
+本文给出在一台 ARM64 主机上部署 ClickHouse 23.3.10.5、校验 Stage 3 冻结输入、核对 XStore 能力、实现 XStore adapter、执行四布局同机对比并交付证据的完整流程。文档可独立阅读，执行者可以是黄区操作者，也可以是按本文执行的黄区 agent。
 
 ## 1. 蓝区事实与黄区目标
 
@@ -18,14 +18,15 @@
 | 四种布局 | same_table、separate、full_core、asset_ref | [阶段三实验设计](../json-storage/json-storage-stage3-experiment-design-2026-09-09.md) |
 | 冻结输入 | 48,534 条事件、190 个写入 block（每 block 256 行）、main cohort 160 条 payload、原始 122.5 MiB、seed 20260907 | generation-manifest.json（status=complete） |
 | 输入身份 | identity_sha256 = a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8 | 八 target 共用同一输入身份 |
-| 部分正式切片 | 2 引擎 × 4 布局、每 target 四轮 Latin square、每 target 1,340/1,340 次查询操作 | main-matrix-attempt-1 轮次产物 |
-| 切片边界 | 缺少 equal_total_few_large、equal_total_many_medium 与 correctness_only，未通过汇总器 provenance 门禁 | [汇总器](../../experiments/json-storage-stage3/report/summarize.py) 报 ValueError: provenance evidence is incomplete |
+| 正式结果 | 2 引擎 × 4 布局 × 4 workload 共 32 个 target，四轮 Latin square，正式样本 17,560 个，失败 0 个 | [阶段三实验报告](../json-storage/json-storage-stage3-report-2026-09-20.md) |
+| 控制项 | part 状态控制 4 布局 × 4 状态共 5,760 样本；混合负载 243,194 请求；Asset 故障 2 引擎 × 6 用例 | 同上，合并汇总 summary.json 通过全部门禁 |
+| 布局空间排序 | ClickHouse 1.000 / 1.097 / 1.170 / 6.921，openGauss 1.000 / 1.530 / 1.586 / 2.884 | 报告第 4.1 节 |
 | 现有 engine | 适配器只实现 opengauss 与 clickhouse | [布局矩阵 runner](../../experiments/json-storage-stage3/runner/run_layout_matrix.py) |
 | 交付状态 | 分支与归档在蓝区本地生成；GitHub 上的分支和 Release 资产由后续授权的发布动作产生 | 本文第 2 节可用性检查 |
 
 ### 1.2 黄区需要采集的事实
 
-黄区在同一台 ARM64 主机、同一冻结输入、同一 Python runner、同一查询参数和同一四轮 Latin square 下补齐 XStore 四布局结果，并与同机 ClickHouse 25.12.11.4 串行对比。以下事实由黄区采集并附证据：
+黄区在同一台 ARM64 主机、同一冻结输入、同一 Python runner、同一查询参数和同一四轮 Latin square 下补齐 XStore 四布局结果，并与同机 ClickHouse 23.3.10.5 串行对比。以下事实由黄区采集并附证据：
 
 | 类别 | 需要采集的事实 |
 |---|---|
@@ -49,6 +50,10 @@
 6. 真值、完整 payload bytes、联合水位或清理证据缺失。
 7. 执行计划、扫描证据或输出契约与预期不符。
 8. namespace、对象目录、后台任务或临时配置无法清理。
+9. XStore 构建类型不是 release，或构建类型缺少可执行证据。
+10. 6.6 节访问路径门禁未通过，即任一布局的 list、detail 或 trace 查询不走索引访问路径。
+11. ClickHouse 四布局矩阵缺失或不完整。
+12. 回传摘录未通过 9.2 节校验即执行 9.1 节删除动作。
 
 ## 2. 交付身份、全局变量与可用性检查
 
@@ -59,7 +64,7 @@
 | 仓库（SSH） | git@github.com:ruined404cjy/agent-trace-research.git |
 | 仓库（HTTPS） | https://github.com/ruined404cjy/agent-trace-research.git |
 | 分支 | stage3/xstore-yellow-handoff |
-| 基线提交 | 93ebf2319ae7cb60b1f68eb53b3562d26f80f443（短写 93ebf23） |
+| 基线提交 | 2a7fe245a3cb8843b0e9da77cdf05e290ab96b1b（短写 2a7fe24） |
 | 冻结输入归档 | json-storage-stage3-formal-input-20260917.tar.gz |
 | 归档校验文件 | json-storage-stage3-formal-input-20260917.tar.gz.sha256 |
 | 归档蓝区已验证身份 | SHA-256 47737b02335c7b2ce76640599f2b2f8d7142935df3acfead29b95270db60ac8f，大小 19,313,037 bytes |
@@ -85,14 +90,15 @@ export YELLOW_RELEASE="$YELLOW_STATE/release"
 export YELLOW_REPO_SSH=git@github.com:ruined404cjy/agent-trace-research.git
 export YELLOW_REPO_HTTPS=https://github.com/ruined404cjy/agent-trace-research.git
 export YELLOW_BRANCH=stage3/xstore-yellow-handoff
-export YELLOW_BASE_COMMIT=93ebf2319ae7cb60b1f68eb53b3562d26f80f443
+export YELLOW_BASE_COMMIT=2a7fe245a3cb8843b0e9da77cdf05e290ab96b1b
 export YELLOW_RELEASE_TAG=stage3-formal-input-20260917
 export YELLOW_RELEASE_URL="https://github.com/ruined404cjy/agent-trace-research/releases/download/${YELLOW_RELEASE_TAG}"
 export YELLOW_ARCHIVE_NAME=json-storage-stage3-formal-input-20260917.tar.gz
 
-export CH_VERSION=25.12.11.4
-export CH_RELEASE_TAG=v25.12.11.4-stable
+export CH_VERSION=23.3.10.5
+export CH_RELEASE_TAG=${CH_RELEASE_TAG:-v23.3.10.5-lts}
 export CH_RELEASE_URL="https://github.com/ClickHouse/ClickHouse/releases/download/${CH_RELEASE_TAG}"
+export CH_TGZ_SUFFIX=${CH_TGZ_SUFFIX:-arm64}
 export CH_STATE="$YELLOW_STATE/clickhouse"
 export CH_BIN="$CH_STATE/opt/clickhouse-common-static-${CH_VERSION}/usr/bin/clickhouse"
 export CH_CONFIG="$CH_STATE/etc/config.xml"
@@ -447,7 +453,7 @@ test -z "$(git -C "$YELLOW_REPO" status --porcelain)"
 git -C "$YELLOW_REPO" log --oneline -3
 ```
 
-运行记录写明实际 HEAD，分支名只作为查找入口。基线提交 93ebf2319ae7cb60b1f68eb53b3562d26f80f443 是所有结果的祖先提交。
+运行记录写明实际 HEAD，分支名只作为查找入口。基线提交 2a7fe245a3cb8843b0e9da77cdf05e290ab96b1b 是所有结果的祖先提交。
 
 仓库就绪后立即执行 runner 导入检查：
 
@@ -520,40 +526,59 @@ PY
 
 输出中的 identity_sha256 必须等于 a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8，record_count 必须为 48,534，block_count 必须为 190，block_size 必须为 256。任何一项不一致时停止。
 
-## 5. ClickHouse 25.12.11.4 ARM64 部署
+## 5. ClickHouse ARM64 部署
 
-### 5.1 版本与官方资产
+### 5.1 版本选择、实测边界与资产
 
-蓝区正式切片使用 ClickHouse 25.12.11.4。黄区使用同版本官方 ARM64 产物，控制引擎版本变量。下载入口限定为官方 GitHub Release v25.12.11.4-stable。
+目标主机为 Kunpeng 920，CPU 不提供 SVE 指令集。ClickHouse 官方 ARM64 产物自 23.8 起在该芯片上启动即 Illegal instruction。逐版本实测结果如下。
 
-| 资产 | 文件 | 用途 |
-|---|---|---|
-| common-static | clickhouse-common-static-25.12.11.4-arm64.tgz | 可执行文件与运行时资源，解包后二进制位于 clickhouse-common-static-25.12.11.4/usr/bin/clickhouse |
-| server | clickhouse-server-25.12.11.4-arm64.tgz | etc/clickhouse-server/config.xml 与 users.xml 模板 |
-| client | clickhouse-client-25.12.11.4-arm64.tgz | 客户端与格式化工具符号链接 |
-
-RPM 路径使用同一 Release 的 AArch64 包：
-
-| 包 | 文件 |
+| 版本 | Kunpeng 920 启动结果 |
 |---|---|
-| common-static | clickhouse-common-static-25.12.11.4.aarch64.rpm |
-| server | clickhouse-server-25.12.11.4.aarch64.rpm |
-| client | clickhouse-client-25.12.11.4.aarch64.rpm |
+| 22.8.21.38 | 正常 |
+| 23.3.10.5 | 正常 |
+| 23.8.15.35 | SIGILL，Illegal instruction |
+| 24.3.18.7 | SIGILL，Illegal instruction |
+| 25.3、25.12 | SIGILL，Illegal instruction |
 
-Release 页面与下载入口：
+本指南固定 CH_VERSION=23.3.10.5，即实测可启动的最高版本。更换主机型号时先按本表逐版本复测，把实际结果记入运行记录，再确定版本。黄区安全策略不允许使用该版本时，改用策略批准且实测可启动的 ARM64 版本，并在运行记录中写明策略依据、包名与运行版本。
+
+蓝区正式结果使用 ClickHouse 25.12.11.4。两个版本的差异范围如下。
+
+存储维度跨版本一致。四布局库内压缩字节的对照值：
+
+| 布局 | 蓝区 25.12 | 黄区 23.3 实测 | 偏差 |
+|---|---:|---:|---:|
+| same_table | 19,035,002 | 19,017,603 至 19,023,364 | 0.06% 至 0.09% |
+| separate | 20,890,688 | 20,890,114 | 0.003% |
+| full_core | 22,271,831 | 22,256,332 | 0.07% |
+| asset_ref 库内 | 3,283,393 | 3,278,565 | 0.15% |
+
+黄区实测值同时来自两台主机、两种 part 状态，四个布局的空间排序与蓝区一致。该表也是黄区重跑后的期望值：偏差超过 1% 时先核对冻结输入身份与建表 DDL，再继续。
+
+写入保护阈值不同。23.3 的 parts_to_delay_insert 与 parts_to_throw_insert 默认值为 150 与 300，25.12 为 1000 与 3000。碎片态控制在暂停 merge 后连续写入 190 个 block，低阈值会触发写入延迟。5.6 节把两项显式设为 1000 与 3000，消除该差异。
+
+其余执行期差异未逐项验证。黄区 ClickHouse 数值不与蓝区 ClickHouse 数值直接比较，报告按 8.3 节记录版本差异，黄区结论限定为同机 XStore 与 ClickHouse 的对比。
+
+资产文件名由 CH_VERSION 与 CH_TGZ_SUFFIX 派生。不同 Release 的 ARM64 归档后缀取值不同，以 Release 页面实际列出为准。
+
+| 资产 | 文件名 | 用途 |
+|---|---|---|
+| common-static | clickhouse-common-static-${CH_VERSION}-${CH_TGZ_SUFFIX}.tgz | 可执行文件与运行时资源，解包后二进制位于 clickhouse-common-static-${CH_VERSION}/usr/bin/clickhouse |
+| server | clickhouse-server-${CH_VERSION}-${CH_TGZ_SUFFIX}.tgz | etc/clickhouse-server/config.xml 与 users.xml 模板 |
+| client | clickhouse-client-${CH_VERSION}-${CH_TGZ_SUFFIX}.tgz | 客户端与格式化工具符号链接 |
+
+RPM 路径使用同一 Release 的 AArch64 包：clickhouse-common-static-${CH_VERSION}.aarch64.rpm、clickhouse-server-${CH_VERSION}.aarch64.rpm、clickhouse-client-${CH_VERSION}.aarch64.rpm。
+
+Release 页面：
 
 ```text
-https://github.com/ClickHouse/ClickHouse/releases/tag/v25.12.11.4-stable
-https://github.com/ClickHouse/ClickHouse/releases/download/v25.12.11.4-stable/clickhouse-common-static-25.12.11.4-arm64.tgz
-https://github.com/ClickHouse/ClickHouse/releases/download/v25.12.11.4-stable/clickhouse-common-static-25.12.11.4-arm64.tgz.sha512
-https://github.com/ClickHouse/ClickHouse/releases/download/v25.12.11.4-stable/clickhouse-server-25.12.11.4-arm64.tgz
-https://github.com/ClickHouse/ClickHouse/releases/download/v25.12.11.4-stable/clickhouse-server-25.12.11.4-arm64.tgz.sha512
-https://github.com/ClickHouse/ClickHouse/releases/download/v25.12.11.4-stable/clickhouse-client-25.12.11.4-arm64.tgz
-https://github.com/ClickHouse/ClickHouse/releases/download/v25.12.11.4-stable/clickhouse-client-25.12.11.4-arm64.tgz.sha512
-https://github.com/ClickHouse/ClickHouse/releases/download/v25.12.11.4-stable/clickhouse-common-static-25.12.11.4.aarch64.rpm
-https://github.com/ClickHouse/ClickHouse/releases/download/v25.12.11.4-stable/clickhouse-server-25.12.11.4.aarch64.rpm
-https://github.com/ClickHouse/ClickHouse/releases/download/v25.12.11.4-stable/clickhouse-client-25.12.11.4.aarch64.rpm
+https://github.com/ClickHouse/ClickHouse/releases/tag/${CH_RELEASE_TAG}
 ```
+
+CH_RELEASE_TAG 的后缀按 Release 类型取值：stable 版本为 -stable，LTS 版本为 -lts。23.3 是 LTS 版本，默认值为 v23.3.10.5-lts；与 Release 页面不一致时以页面为准，并把实际取值记入运行记录。
+
+黄区主机不能直连外网时，在可联网主机下载全部资产与摘要文件，传输到目标主机的 $CH_STATE/pkg 目录，再执行 5.2 节。5.2 节在文件已存在时跳过下载，校验步骤始终执行。实际使用的文件名与 SHA-256 写入 $CH_STATE/pkg/package-names.txt，作为包身份证据。
+
 
 ### 5.2 下载与 SHA-512 校验
 
@@ -562,18 +587,27 @@ mkdir -p "$CH_STATE/opt" "$CH_STATE/pkg" "$CH_STATE/log" "$CH_STATE/run"
 cd "$CH_STATE/pkg"
 
 for name in clickhouse-common-static clickhouse-server clickhouse-client; do
-  file="${name}-${CH_VERSION}-arm64.tgz"
-  curl -sSL --max-time 3600 -o "$file" "$CH_RELEASE_URL/$file"
-  curl -sSL --max-time 300 -o "$file.sha512" "$CH_RELEASE_URL/$file.sha512"
+  file="${name}-${CH_VERSION}-${CH_TGZ_SUFFIX}.tgz"
+  # 离线主机预先放置文件；已存在即跳过下载，校验步骤始终执行。
+  if [ ! -s "$file" ]; then
+    curl -sSL --max-time 3600 -o "$file" "$CH_RELEASE_URL/$file"
+  fi
+  if [ ! -s "$file.sha512" ]; then
+    curl -sSL --max-time 300 -o "$file.sha512" "$CH_RELEASE_URL/$file.sha512"
+  fi
+  test -s "$file" || { printf 'missing package: %s\n' "$file" >&2; exit 1; }
+  test -s "$file.sha512" || { printf 'missing checksum: %s\n' "$file.sha512" >&2; exit 1; }
   sha512sum -c "$file.sha512"
 done
 
-sha512sum clickhouse-common-static-${CH_VERSION}-arm64.tgz \
-  clickhouse-server-${CH_VERSION}-arm64.tgz \
-  clickhouse-client-${CH_VERSION}-arm64.tgz | tee "$CH_STATE/pkg/package-sha512.txt"
+sha512sum clickhouse-common-static-${CH_VERSION}-${CH_TGZ_SUFFIX}.tgz \
+  clickhouse-server-${CH_VERSION}-${CH_TGZ_SUFFIX}.tgz \
+  clickhouse-client-${CH_VERSION}-${CH_TGZ_SUFFIX}.tgz | tee "$CH_STATE/pkg/package-sha512.txt"
+
+sha256sum clickhouse-*-${CH_VERSION}-${CH_TGZ_SUFFIX}.tgz | tee "$CH_STATE/pkg/package-names.txt"
 ```
 
-sha512sum -c 对三个包都必须输出 OK。摘要文件使用标准校验格式（摘要、两个空格、文件名），在校验目录内直接执行 sha512sum -c 即可。
+sha512sum -c 对三个包都必须输出 OK。摘要文件使用标准校验格式（摘要、两个空格、文件名），在校验目录内直接执行 sha512sum -c 即可。package-names.txt 记录实际文件名与 SHA-256，是 6.4 节包身份证据的来源。
 
 ### 5.3 root 与 RPM 权限路径
 
@@ -581,7 +615,7 @@ RPM 路径与 TGZ 路径互斥：每台主机只选一条路径，并把 CH_INST
 
 系统配置根目录由 CH_ETC_ROOT 指定，默认 /etc；下表路径按该默认值列出，改写 CH_ETC_ROOT 时表中路径相应替换。
 
-RPM 路径写入系统位置。按 rpm -qlp 核对，clickhouse-server-25.12.11.4.aarch64.rpm 与同批包安装后涉及的路径如下。
+RPM 路径写入系统位置。按 rpm -qlp 核对，clickhouse-server-${CH_VERSION}.aarch64.rpm 与同批包安装后涉及的路径如下。
 
 | 路径 | 归属 |
 |---|---|
@@ -644,6 +678,11 @@ sudo tee "$CH_RPM_OVERRIDE" >/dev/null <<'XML'
     <listen_host>127.0.0.1</listen_host>
     <http_port>18123</http_port>
     <tcp_port>19000</tcp_port>
+    <merge_tree>
+        <parts_to_delay_insert>1000</parts_to_delay_insert>
+        <parts_to_throw_insert>3000</parts_to_throw_insert>
+    </merge_tree>
+    <max_server_memory_usage_to_ram_ratio>0.5</max_server_memory_usage_to_ram_ratio>
 </clickhouse>
 XML
 sudo sha256sum "$CH_RPM_OVERRIDE" \
@@ -671,7 +710,7 @@ if grep -En '<Error>|<Fatal>' "$CH_STATE/log/journal.txt"; then
 fi
 ```
 
-服务验证判据：systemctl is-active 输出 active，curl 返回 25.12.11.4，18123 与 19000 只出现在 127.0.0.1 上，journal 中无 <Error> 或 <Fatal>。
+服务验证判据：systemctl is-active 输出 active，curl 返回 $CH_VERSION，18123 与 19000 只出现在 127.0.0.1 上，journal 中无 <Error> 或 <Fatal>。
 
 回滚与清理：RPM 路径的回滚命令集中在 9.1 节，删除本指南创建的固定覆盖文件、按 preexisting 标记恢复既有系统配置、验证服务与配置状态，并断言覆盖文件不再存在。安装验证后需要立即回滚时执行同一段命令。
 
@@ -707,7 +746,7 @@ mkdir -p "$CH_STATE/data" "$CH_STATE/tmp" "$CH_STATE/user_files" \
 sha256sum "$CH_BIN" | tee "$CH_STATE/pkg/clickhouse-binary-sha256.txt"
 ```
 
-包内自带配置指向 /var/lib/clickhouse 与 /var/log/clickhouse-server。下面的脚本把路径、端口与监听地址改写为状态目录内的隔离值，并在写入前逐项断言，任一项不符时脚本以非零状态退出。脚本锚点取自 ClickHouse 25.12.11.4 包内 ARM64 etc/clickhouse-server/config.xml 的原文；更换版本或更换发行包时先核对锚点文本，锚点缺失与锚点重复会分别以 config anchor not found 与 config anchor duplicated 失败。
+包内自带配置指向 /var/lib/clickhouse 与 /var/log/clickhouse-server。下面的脚本把路径、端口与监听地址改写为状态目录内的隔离值，并在写入前逐项断言，任一项不符时脚本以非零状态退出。脚本锚点取自 ClickHouse 23.3.10.5 包内 ARM64 etc/clickhouse-server/config.xml 的原文；更换版本或更换发行包时先核对锚点文本，锚点缺失与锚点重复会分别以 config anchor not found 与 config anchor duplicated 失败。
 
 ```bash
 "$PYTHON" - \
@@ -757,6 +796,13 @@ text = replace("<tcp_port>9000</tcp_port>", f"<tcp_port>{tcp_port}</tcp_port>")
 # 包内已有生效的 ratio 元素，按值替换保持唯一；max_server_memory_usage 保留包默认 0（自动）。
 text = replace("<max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>",
                "<max_server_memory_usage_to_ram_ratio>0.5</max_server_memory_usage_to_ram_ratio>")
+# 5.6 节的写入保护阈值：包内配置没有 merge_tree 元素，按根闭合标签插入，保留原文注释与格式。
+text = replace("</clickhouse>",
+               "    <merge_tree>\n"
+               "        <parts_to_delay_insert>1000</parts_to_delay_insert>\n"
+               "        <parts_to_throw_insert>3000</parts_to_throw_insert>\n"
+               "    </merge_tree>\n"
+               "</clickhouse>")
 destination.parent.mkdir(parents=True, exist_ok=True)
 destination.write_text(text, encoding="utf-8")
 
@@ -778,6 +824,9 @@ expect("user_files_path", f"{state}/user_files/")
 expect("format_schema_path", f"{state}/format_schemas/")
 expect("custom_cached_disks_base_directory", f"{state}/caches/")
 expect("max_server_memory_usage", "0")
+expect("max_server_memory_usage_to_ram_ratio", "0.5")
+expect("merge_tree/parts_to_delay_insert", "1000")
+expect("merge_tree/parts_to_throw_insert", "3000")
 expect("http_port", http_port)
 expect("tcp_port", tcp_port)
 expect("listen_host", "127.0.0.1")
@@ -824,7 +873,7 @@ curl -sS "http://127.0.0.1:${CH_HTTP_PORT}/?query=SELECT%20version()"
 "$CH_BIN" client --host 127.0.0.1 --port "$CH_TCP_PORT" --query 'SELECT version()'
 ```
 
-健康判据：curl 与客户端都返回 25.12.11.4，18123 与 19000 只出现在 127.0.0.1 上，启动日志不含 <Error> 或 <Fatal> 标记。启动失败、版本不一致或出现上述标记时保留日志并停止，不进入 adapter 与实验阶段。
+健康判据：curl 与客户端都返回 $CH_VERSION，18123 与 19000 只出现在 127.0.0.1 上，启动日志不含 <Error> 或 <Fatal> 标记。启动失败、版本不一致或出现上述标记时保留日志并停止，不进入 adapter 与实验阶段。
 
 ```bash
 assert_ports_loopback_only || exit 1
@@ -838,9 +887,43 @@ if [ -s "$CH_STATE/log/error-scan.txt" ]; then
 fi
 ```
 
-### 5.6 稳定版本回退
+### 5.6 MergeTree 与内存参数对齐
 
-黄区安全策略不允许使用 25.12.11.4 时，改用策略批准的 ARM64 stable 或 LTS 版本，并在运行记录中写明策略依据、包名与运行版本。结论限定为黄区同机 XStore/ClickHouse 对比，不与蓝区 ClickHouse 数值合并；需要跨区趋势时先记录版本差异，并由蓝区按相同版本复测。
+以下三项在两台主机、两条安装路径上取同一值，消除版本默认值与主机内存规模带来的差异。
+
+| 参数 | 取值 | 依据 |
+|---|---|---|
+| parts_to_delay_insert | 1000 | 23.3 默认 150，25.12 默认 1000；碎片态控制在暂停 merge 后写入 190 个 block |
+| parts_to_throw_insert | 3000 | 23.3 默认 300，25.12 默认 3000 |
+| max_server_memory_usage_to_ram_ratio | 0.5 | 两台主机物理内存相差四倍以上，按比例取同一值 |
+
+RPM 路径把下列片段并入 $CH_RPM_OVERRIDE，TGZ 路径由 5.4 节的配置改写脚本写入 $CH_CONFIG。
+
+```xml
+<clickhouse>
+    <merge_tree>
+        <parts_to_delay_insert>1000</parts_to_delay_insert>
+        <parts_to_throw_insert>3000</parts_to_throw_insert>
+    </merge_tree>
+    <max_server_memory_usage_to_ram_ratio>0.5</max_server_memory_usage_to_ram_ratio>
+</clickhouse>
+```
+
+服务就绪后核对生效值，两行都必须与上表一致，不一致时停止并修正配置：
+
+```bash
+"$CH_BIN" client --host 127.0.0.1 --port "$CH_TCP_PORT" --query "
+SELECT name, value FROM system.merge_tree_settings
+WHERE name IN ('parts_to_delay_insert','parts_to_throw_insert')
+ORDER BY name FORMAT TSV" | tee "$CH_STATE/merge-tree-settings.txt"
+
+grep -E '1000|3000' "$CH_STATE/merge-tree-settings.txt" | wc -l | grep -qx 2 || {
+  printf 'merge_tree thresholds not aligned; stop here\n' >&2
+  exit 1
+}
+```
+
+内存比例以 5.4 节配置断言的生效值为准；system.server_settings 在该版本可用时补记一行实测值，不可用时记 unavailable。
 
 ### 5.7 停止服务
 
@@ -948,22 +1031,72 @@ XStore adapter 实现 [common.py](../../experiments/json-storage-stage3/runner/c
 
 asset_ref 保留为应用侧参考布局：查询引用与 assets 记录，再由应用侧 resolver 读取本地内容寻址目录，两引擎使用同一实现。XStore extension 或进程内对象读取属于数据库内调度，定义为第五个候选布局 db_lob_ref，使用独立的查询、存储与失败语义，单独汇总，不重命名 asset_ref，也不并入四布局矩阵的排序。
 
+### 6.6 公平性与访问路径门禁
+
+ClickHouse 依靠主键裁剪读取远小于全表的行数。XStore 侧只有同样具备可用的索引访问路径时，两侧比较才成立；四布局全表扫描会把布局差异淹没在扫描成本里，得到的倍率不反映布局代价。本门禁在正式矩阵之前执行，四个布局逐项通过。
+
+前置条件：表与索引按 6.2 节 create() 创建完成并确认对象清单；冻结输入完整写入且联合水位达到 48,534；wait_query_ready 已执行，maintenance 证据中 analyze_ms 为正数。
+
+| 检查 | 命令 | 通过条件 |
+|---|---|---|
+| 统计存在 | SELECT relname, reltuples FROM pg_class WHERE relnamespace=(SELECT oid FROM pg_namespace WHERE nspname='<schema>') | 每个写目标的 reltuples 大于 0 |
+| 索引存在 | SELECT indexname, indexdef FROM pg_indexes WHERE schemaname='<schema>' | 每张表的 list 与 trace 两条索引都存在 |
+| 计划走索引 | 对 list:first、detail:text_64k、trace:p50 各执行一次 EXPLAIN | 计划出现索引访问节点，不是全表扫描 |
+| 索引被实际使用 | 执行查询前后读取 pg_stat_user_indexes.idx_scan | 至少一条索引的 idx_scan 增量大于 0 |
+
+任一项不通过时停止，不进入正式矩阵，按以下顺序排查。
+
+1. 确认表的实际存储形态：SELECT relname, reloptions, reltoastrelid FROM pg_class 读取 orientation 与 TOAST 关联。蓝区落在行存，TOAST 成立。落在其他存储形态时按第 2 步处理，不要改建为行存绕开——那会把被测对象换成 openGauss。
+2. 确认索引在该存储形态下的实际类型。列存表的索引为 psort，要求运行账号具备 cstore schema 权限：GRANT USAGE, CREATE ON SCHEMA cstore TO <账号>。索引创建成功但计划不选时进入第 3 步。
+3. 区分优化器不选与索引不可用：SET enable_seqscan=off 后重跑 EXPLAIN。仍为全表扫描说明索引不能承载该谓词，属于能力限制，按 6.1 节记入能力报告并停止；改为索引扫描说明是代价估算问题，核对统计是否最新并记录。
+
+门禁产物写入 $YELLOW_OUTPUT/access-gate/<engine>/<layout>/，包含三类查询的 EXPLAIN 原文、idx_scan 前后值与判定结论。该目录不在 9.1 节删除范围内。
+
+ClickHouse 侧执行同一门禁，判据改为计划出现主键裁剪且 QueryFinish 的 read_rows 小于表行数。两个引擎都通过后才进入正式矩阵。
+
+### 6.7 XStore 适配卡
+
+XStore 与 openGauss 同源，adapter 默认实现直接复用 openGauss adapter 的 SQL 与系统视图。以下六项按卡执行：先按探测命令取实际值，与蓝区值一致时不改代码；不一致时按建议改法处理，并把实际值与改动记入运行记录。
+
+| 卡 | 蓝区实现 | 探测 | 不一致时的参考改法 | 允许改动 | 禁止改动 |
+|---|---|---|---|---|---|
+| 一 驱动与认证 | psycopg 3.3.5 直连，md5 认证 | 建立一次连接并读取服务端版本 | openGauss 默认 sha256 认证与 psycopg 不兼容。把运行账号的 password_encryption_type 设为 1 并重建密码，或改用官方 Python 连接器，任选其一并记录 | 连接参数与驱动导入 | SQL 文本与查询语义 |
+| 二 参数绑定 | 全部参数经驱动绑定，含 NULL | 对 workload 隔离使用的 NULL 参数执行一次写入 | GaussVector 对 NULL 参数的类型推断与 PostgreSQL 不同；把 NULL 参数内联为 SQL 字面量，其余参数保持绑定。该改法已在黄区实测有效 | 参数构造 | 写入的列集合与取值 |
+| 三 表存储形态 | 裸 CREATE TABLE 落在行存，reltoastrelid 非零 | SELECT relname, reloptions, reltoastrelid FROM pg_class | 记录实际形态，按卡四处理索引，并在报告中声明 XStore 的空间模型与 openGauss 的 TOAST 模型不可直接对齐 | 无 | 建表语句的列定义 |
+| 四 索引形态 | 两条复合 btree：(project_id,start_time,event_id) 与 (project_id,trace_id,start_time,event_id) | SELECT indexname, indexdef FROM pg_indexes | 按实际存储形态所需的索引类型创建，列顺序保持不变；列存时先补 cstore schema 权限 | 索引类型与建索引语法 | 索引列与列顺序 |
+| 五 索引使用统计 | SELECT indexrelname, idx_scan FROM pg_stat_user_indexes | 同左 | 该视图不可用时改用 XStore 的等价统计并记录来源；无等价统计时把该字段记为 unavailable | 统计来源 | 把缺失记为通过 |
+| 六 执行计划 | EXPLAIN (ANALYZE, BUFFERS) | 对三类查询各执行一次 | 选项不被支持时退到 EXPLAIN ANALYZE 或 EXPLAIN 并记录实际选项；计划文本格式不同不构成偏离 | EXPLAIN 选项 | 访问路径的判定标准 |
+
+以下内容在任何卡下都不自适应：查询语义与参数、五层计时口径、汇总器门禁字段集、冻结输入、四轮 Latin square、每查询 30 次与批量 5 次的测量次数。黄区改动超出上表允许范围时先停止并回传改动意图，不自行扩大范围。
+
+### 6.8 XStore 构建类型门禁
+
+性能结论只在 release 构建上成立。debug 构建的绝对耗时与布局间比值都不可用，且该差异不能通过归一化消除。
+
+进入 6.6 节门禁前记录构建类型与证据：构建命令或构建选项、能证明构建类型的输出（构建目录标志、pg_config 输出或等价证据）。构建类型不是 release，或证据缺失时停止，不执行任何性能运行。构建类型写入每个 target 的运行记录。
+
 ## 7. 执行序列
 
 ### 7.1 阶段顺序
 
 | 阶段 | 动作 | 通过条件 |
 |---|---|---|
-| 1 预检 | 可用性检查、环境探测、输入校验、ClickHouse 健康检查 | 第 1 至 5 节全部门禁通过 |
-| 2 adapter 冒烟 | xstore adapter 单元测试与集成测试 | 单元测试通过；集成测试对真实 XStore 完成 create、ingest_block、wait_write_complete、cleanup |
-| 3 单 target candidate | 单引擎单布局的运行入口候选验证 | child run-manifest.json 为 complete，真值、响应字节、水位与清理证据齐全 |
-| 4 清理验证 | 清理后确认 namespace 与对象目录不存在 | 清理命令返回成功且对象清单为空 |
-| 5 正式矩阵 | ClickHouse 与 XStore 在同一主机串行执行四布局 | 每 target 四轮 Latin square 完成，全部门禁通过 |
-| 6 part-state | 对每个引擎与布局判定 part-state 控制是否适用；适用时执行 run_stage3.py part-states，记录 part 状态与合并证据；不适用时在运行记录中引用能力报告条目写明原因 | 每个 target 的结论为已执行通过，或记录不适用并附证据 |
-| 7 混合负载 | 执行 run_stage3.py interference，在单个 target 内部产生并发负载，并记录与串行基线的对比 | 混合负载证据与串行基线对比齐全，或记录不适用并附证据 |
-| 8 Asset 故障与恢复 | 执行 run_stage3.py asset-failures，记录失败注入、失败 block 证据、恢复动作与清理结果 | 失败与恢复证据齐全，或记录不适用并附证据 |
+| 1 预检 | 可用性检查、环境探测、输入校验、ClickHouse 健康检查与 5.6 节参数对齐 | 第 1 至 5 节全部门禁通过，merge_tree 阈值与内存比例核对一致 |
+| 2 构建类型门禁 | 按 6.8 节记录 XStore 构建类型与证据 | 构建类型为 release 且证据齐全 |
+| 3 adapter 冒烟 | xstore adapter 单元测试与集成测试 | 单元测试通过；集成测试对真实 XStore 完成 create、ingest_block、wait_write_complete、cleanup |
+| 4 单 target candidate | 单引擎单布局的运行入口候选验证 | child run-manifest.json 为 complete，真值、响应字节、水位与清理证据齐全 |
+| 5 访问路径门禁 | 按 6.6 节对两个引擎的四个布局逐项检查 | 四布局的 list、detail 与 trace 都走索引访问路径，idx_scan 有增量 |
+| 6 单布局冒烟倍率 | 任选一个布局、一轮、main workload，比较两个引擎的应用可用 p50 | 倍率记入运行记录；超过 10 倍时停止排查，不进入正式矩阵 |
+| 7 清理验证 | 清理后确认 namespace 与对象目录不存在 | 清理命令返回成功且对象清单为空 |
+| 8 正式矩阵 | ClickHouse 与 XStore 在同一主机串行执行四布局四 workload | 两个引擎各 16 个 target 全部 complete；任一引擎缺少四布局矩阵即判本次运行无效 |
+| 9 part-state | 对每个引擎与布局判定 part-state 控制是否适用；适用时执行 run_stage3.py part-states，记录 part 状态与合并证据；不适用时在运行记录中引用能力报告条目写明原因 | 每个 target 的结论为已执行通过，或记录不适用并附证据 |
+| 10 混合负载 | 执行 run_stage3.py interference，在单个 target 内部产生并发负载，并记录与串行基线的对比 | 混合负载证据与串行基线对比齐全，或记录不适用并附证据 |
+| 11 Asset 故障与恢复 | 执行 run_stage3.py asset-failures，记录失败注入、失败 block 证据、恢复动作与清理结果 | 失败与恢复证据齐全，或记录不适用并附证据 |
+| 12 回传摘录 | 按 9.2 节生成回传摘录并校验 | 摘录存在、非空且覆盖每个 target；未通过前不执行 9.1 节的删除动作 |
 
-黄区对比只有在第 5 至第 8 阶段全部通过，或对不适用项记录了带证据的不适用结论之后才成立；任一阶段失败时保留产物并标为 diagnostic，不发布完整比较结论。第 6 至第 8 阶段在驱动方式上与第 5 阶段一致：同一冻结输入、同一代码 HEAD、同一串行约束。
+黄区对比只有在第 8 至第 11 阶段全部通过，或对不适用项记录了带证据的不适用结论之后才成立；任一阶段失败时保留产物并标为 diagnostic，不发布完整比较结论。第 9 至第 11 阶段在驱动方式上与第 8 阶段一致：同一冻结输入、同一代码 HEAD、同一串行约束。
+
+ClickHouse 侧与 XStore 侧使用同一条命令形态、同一组 workload 与同一轮次安排。只跑其中一个引擎的矩阵不构成对比，第 8 阶段不通过。
 
 串行执行：同一时刻只运行一个引擎的布局目标，避免 XStore 与 ClickHouse 争用 CPU、内存与磁盘。混合负载场景只在单个 target 内部产生并发。
 
@@ -1041,7 +1174,9 @@ python experiments/json-storage-stage3/runner/run_layout_matrix.py \
 
 ### 9.1 清理顺序
 
-清理保持幂等：已经缺失的目录按已清理处理，最终断言始终执行。顺序为校验 CH_INSTALL_MODE，停止 XStore 侧查询与后台任务，删除 XStore namespace 与对象目录，停止 ClickHouse，按安装路径回滚 ClickHouse 配置，删除 $YELLOW_OUTPUT 下的 clickhouse-main 与 xstore-main 两个主矩阵输出根及 $YELLOW_STATE/clickhouse，确认端口不再监听。$YELLOW_STATE 下的 venv、冻结输入、Release 资产与后续控制运行的证据不在本片段的删除范围内。
+删除主矩阵输出根会一并删除其中的每个 run-manifest.json，存储证据、访问路径与真值结论都在其中。9.2 节的回传摘录因此是本节的前置门禁：摘录不存在、为空或未覆盖全部 target 时停止，不执行任何删除动作。
+
+清理保持幂等：已经缺失的目录按已清理处理，最终断言始终执行。顺序为校验回传摘录，校验 CH_INSTALL_MODE，停止 XStore 侧查询与后台任务，删除 XStore namespace 与对象目录，停止 ClickHouse，按安装路径回滚 ClickHouse 配置，删除 $YELLOW_OUTPUT 下的 clickhouse-main 与 xstore-main 两个主矩阵输出根及 $YELLOW_STATE/clickhouse，确认端口不再监听。$YELLOW_STATE 下的 venv、冻结输入、Release 资产、$YELLOW_OUTPUT/access-gate、$YELLOW_OUTPUT/handback 与后续控制运行的证据不在本片段的删除范围内。
 
 ```bash
 # 1) XStore 侧：确认无运行中的查询与后台任务后删除 namespace 与对象目录，命令来自能力报告，
@@ -1056,6 +1191,30 @@ case "${CH_INSTALL_MODE:-}" in
     exit 1
     ;;
 esac
+
+# 2.5) 回传摘录门禁：输出根下存在 run manifest 时，摘录必须覆盖全部 target，否则不删除任何目录。
+"$PYTHON_BOOTSTRAP" - "$YELLOW_OUTPUT" <<'HANDBACK' || exit 1
+import json, sys
+from pathlib import Path
+
+root = Path(sys.argv[1])
+expected = {
+    str(manifest.parent.relative_to(root))
+    for manifest in root.rglob("run-manifest.json")
+    if "handback" not in manifest.parts
+} if root.is_dir() else set()
+if not expected:
+    print("no run manifest under the output root; handback gate not applicable")
+    raise SystemExit(0)
+summary = root / "handback" / "summary.json"
+if not summary.is_file() or summary.stat().st_size == 0:
+    raise SystemExit("handback summary missing or empty: %s" % summary)
+targets = json.loads(summary.read_text(encoding="utf-8")).get("targets", [])
+missing = sorted(expected - {entry["target"] for entry in targets})
+if missing:
+    raise SystemExit("handback summary misses targets: " + ", ".join(missing))
+print("handback summary covers %d targets" % len(targets))
+HANDBACK
 
 # 3) ClickHouse 侧：RPM 路径在本片段内完成系统级回滚；读取备份与覆盖文件前不删除状态目录。
 if [ "$CH_INSTALL_MODE" = "rpm" ]; then
@@ -1221,6 +1380,23 @@ printf 'cleanup complete: %s\n' "$YELLOW_STATE"
 2. 清单：文件清单加每个文件的 SHA-256。
 3. 结果摘录：每 target 的 run-manifest.json 摘要、真值结论、响应字节、访问路径、存储证据、资源水位、失败项与清理确认。
 
+结果摘录落盘为 $YELLOW_OUTPUT/handback/summary.json，在 9.1 节删除动作之前生成。targets 数组每项对应一个 target 目录，字段如下，缺任一字段视为摘录不完整。
+
+| 字段 | 含义 |
+|---|---|
+| target | 相对 $YELLOW_OUTPUT 的 target 目录路径 |
+| engine、layout、workload | 运行身份 |
+| status | run-manifest.json 的 status |
+| build_type | XStore 侧的构建类型与证据，ClickHouse 侧记 package |
+| storage | 每个写目标的空间字段原值 |
+| access | 每类查询的访问路径判定与 idx_scan 增量 |
+| truth | 真值校验结论与失败样本数 |
+| response_bytes | database、resolver_payload、total 三项 |
+| cleanup | 清理动作与删除后确认结果 |
+| failures | 失败项清单，无失败时为空数组 |
+
+storage 与 access 两项在清理后无法重建，逐 target 落盘，不用聚合值代替。
+
 原始 payload、完整 samples.jsonl 与归档文件留在黄区本地只读目录，回复中只给出路径、摘要与失败项。
 
 ## 10. 转发用黄区 agent prompt
@@ -1229,15 +1405,26 @@ printf 'cleanup complete: %s\n' "$YELLOW_STATE"
 在黄区 ARM64（EulerOS 2.13，无 Docker）主机上执行
 docs/project-background/json-storage-stage3-xstore-clickhouse-yellow-guide.md。
 
-执行顺序：可用性检查 → 环境探测与 XStore 能力报告（含能力报告门禁）→ 冻结输入校验 →
-ClickHouse 25.12.11.4 ARM64 部署与健康检查 → XStore adapter 实施门禁 →
-四布局同机串行对比（ClickHouse 与 XStore 各四轮 Latin square）→
-part-state 适用项、混合负载、Asset 故障与恢复（不适用时记录原因与证据）→ 证据与清理。
+执行顺序按指南第 7.1 节的十二个阶段，不跳过、不调序：可用性检查与环境探测 →
+XStore 构建类型门禁（release）→ ClickHouse 23.3.10.5 部署与 5.6 节参数对齐 →
+adapter 冒烟 → 单 target candidate → 6.6 节访问路径门禁 → 单布局冒烟倍率 →
+清理验证 → 两个引擎各自的四布局四轮四 workload 正式矩阵 →
+part-state、混合负载、Asset 故障与恢复（不适用时记录原因与证据）→ 回传摘录。
+
+三条硬性要求：
+1. 构建类型不是 release 时停止，不跑任何性能运行。
+2. 四个布局的 list、detail、trace 未走索引访问路径时停止，按 6.6 节排查，
+   不改建为行存绕开，不带着全表扫描进入矩阵。
+3. ClickHouse 与 XStore 都要跑完整四布局矩阵；只跑一侧不构成对比。
+
+实现细节按第 6.7 节的六张适配卡处理：先探测，与蓝区一致就不改代码，不一致按卡内
+参考改法处理并记录实际值。查询语义、五层计时口径、门禁字段集、冻结输入、四轮
+Latin square 与 30/5 测量次数不自适应；需要超出适配卡允许范围时先停止并回传意图。
 
 按该指南的 fail-closed 规则执行：分支或归档资产不可用时、能力报告字段缺少证据时、
 真值或水位或清理证据缺失时停止并报告，不猜测 XStore 能力。
 回传内容按指南第 9.2 节给出：代码提交或 diff --stat、文件清单与 SHA-256，
-以及每 target 的 run-manifest.json 摘要、访问路径、存储证据、资源水位、失败项与清理确认。
+以及 $YELLOW_OUTPUT/handback/summary.json。该摘录通过校验之前不执行第 9.1 节的删除动作。
 ```
 
 ## 11. 参考入口
@@ -1254,4 +1441,4 @@ part-state 适用项、混合负载、Asset 故障与恢复（不适用时记录
 - [冻结输入打包工具](../../experiments/json-storage-stage3/tools/package_formal_input.py)
 - [Asset resolver](../../experiments/json-storage-stage3/runner/assets.py)
 - [冻结输入生成器](../../experiments/json-storage-stage3/generator/generate_payloads.py)
-- [ClickHouse v25.12.11.4-stable Release](https://github.com/ClickHouse/ClickHouse/releases/tag/v25.12.11.4-stable)
+- [ClickHouse v23.3.10.5-lts Release](https://github.com/ClickHouse/ClickHouse/releases/tag/v23.3.10.5-lts)

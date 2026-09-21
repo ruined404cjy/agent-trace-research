@@ -98,8 +98,8 @@ INDEX_LINK_TARGETS = (
 )
 
 HANDOFF_BRANCH = "stage3/xstore-yellow-handoff"
-HANDOFF_BASE_COMMIT = "93ebf2319ae7cb60b1f68eb53b3562d26f80f443"
-HANDOFF_BASE_COMMIT_SHORT = "93ebf23"
+HANDOFF_BASE_COMMIT = "2a7fe245a3cb8843b0e9da77cdf05e290ab96b1b"
+HANDOFF_BASE_COMMIT_SHORT = "2a7fe24"
 SSH_CLONE_URL = "git@github.com:ruined404cjy/agent-trace-research.git"
 PUBLIC_CLONE_URL = "https://github.com/ruined404cjy/agent-trace-research.git"
 ARCHIVE_NAME = "json-storage-stage3-formal-input-20260917.tar.gz"
@@ -109,25 +109,38 @@ PACKAGED_ARCHIVE_SHA256 = (
 )
 PACKAGED_ARCHIVE_BYTES = "19,313,037"
 
-CLICKHOUSE_VERSION = "25.12.11.4"
-CLICKHOUSE_RELEASE_TAG = "v25.12.11.4-stable"
+# Kunpeng 920 无 SVE，官方 ARM64 产物自 23.8 起启动即 SIGILL；指南固定实测可启动的最高版本。
+CLICKHOUSE_VERSION = "23.3.10.5"
+CLICKHOUSE_RELEASE_TAG = "v23.3.10.5-lts"
 CLICKHOUSE_RELEASE_TAG_URL = (
-    "https://github.com/ClickHouse/ClickHouse/releases/tag/v25.12.11.4-stable"
+    "https://github.com/ClickHouse/ClickHouse/releases/tag/${CH_RELEASE_TAG}"
 )
 CLICKHOUSE_RELEASE_DOWNLOAD = (
-    "https://github.com/ClickHouse/ClickHouse/releases/download/v25.12.11.4-stable/"
+    "https://github.com/ClickHouse/ClickHouse/releases/download/${CH_RELEASE_TAG}"
+)
+CLICKHOUSE_VERSION_PROBE_ROWS = (
+    "| 22.8.21.38 | 正常 |",
+    "| 23.3.10.5 | 正常 |",
+    "| 23.8.15.35 | SIGILL，Illegal instruction |",
+    "| 24.3.18.7 | SIGILL，Illegal instruction |",
 )
 CLICKHOUSE_ARM64_ARCHIVES = (
-    "clickhouse-common-static-25.12.11.4-arm64.tgz",
-    "clickhouse-server-25.12.11.4-arm64.tgz",
-    "clickhouse-client-25.12.11.4-arm64.tgz",
+    "clickhouse-common-static-${CH_VERSION}-${CH_TGZ_SUFFIX}.tgz",
+    "clickhouse-server-${CH_VERSION}-${CH_TGZ_SUFFIX}.tgz",
+    "clickhouse-client-${CH_VERSION}-${CH_TGZ_SUFFIX}.tgz",
 )
 CLICKHOUSE_AARCH64_RPMS = (
-    "clickhouse-common-static-25.12.11.4.aarch64.rpm",
-    "clickhouse-server-25.12.11.4.aarch64.rpm",
-    "clickhouse-client-25.12.11.4.aarch64.rpm",
+    "clickhouse-common-static-${CH_VERSION}.aarch64.rpm",
+    "clickhouse-server-${CH_VERSION}.aarch64.rpm",
+    "clickhouse-client-${CH_VERSION}.aarch64.rpm",
 )
-CLICKHOUSE_TGZ_BINARY = "clickhouse-common-static-25.12.11.4/usr/bin/clickhouse"
+CLICKHOUSE_TGZ_BINARY = "clickhouse-common-static-${CH_VERSION}/usr/bin/clickhouse"
+# 5.6 节把写入保护阈值与内存比例对齐到蓝区默认值，消除 23.3 与 25.12 的差异。
+CLICKHOUSE_ALIGNED_SETTINGS = (
+    "<parts_to_delay_insert>1000</parts_to_delay_insert>",
+    "<parts_to_throw_insert>3000</parts_to_throw_insert>",
+    "<max_server_memory_usage_to_ram_ratio>0.5</max_server_memory_usage_to_ram_ratio>",
+)
 
 # 指南必须逐项覆盖 LayoutAdapter 的方法，用于把 adapter 实施约束到既有契约。
 LAYOUT_ADAPTER_METHODS = (
@@ -159,10 +172,31 @@ STOP_FENCE_MARKER = "# 5.7 停止服务"
 BACKUP_FENCE_MARKER = "# 5.3 备份既有系统配置"
 
 # §7.1 阶段表在正式矩阵之后必须覆盖 part-state、混合负载与 Asset 故障恢复。
+def seed_handback_summary(output_root):
+    """按 9.1 节门禁写入覆盖全部 target 的回传摘录，使清理片段可以执行。"""
+    output_root = Path(output_root)
+    targets = [
+        {"target": str(manifest.parent.relative_to(output_root))}
+        for manifest in output_root.rglob("run-manifest.json")
+        if "handback" not in manifest.parts
+    ]
+    handback = output_root / "handback"
+    handback.mkdir(parents=True, exist_ok=True)
+    (handback / "summary.json").write_text(
+        json.dumps({"targets": targets}, ensure_ascii=False), encoding="utf-8",
+    )
+
+
 CONTROL_STAGE_MARKERS = (
-    "6 part-state",
-    "7 混合负载",
-    "8 Asset 故障与恢复",
+    "9 part-state",
+    "10 混合负载",
+    "11 Asset 故障与恢复",
+)
+# 正式矩阵之前的三道公平性门禁：构建类型、访问路径与单布局冒烟倍率。
+FAIRNESS_STAGE_MARKERS = (
+    "2 构建类型门禁",
+    "5 访问路径门禁",
+    "6 单布局冒烟倍率",
 )
 CONTROL_COMPLETION_GATE = "记录了带证据的不适用结论"
 
@@ -498,14 +532,21 @@ class YellowGuideContractTest(unittest.TestCase):
             self.assertIn(term, content, f"指南缺少 ClickHouse 版本或入口：{term}")
         for name in CLICKHOUSE_ARM64_ARCHIVES + CLICKHOUSE_AARCH64_RPMS:
             self.assertIn(name, content, f"指南缺少官方 ARM64 包：{name}")
+        for row in CLICKHOUSE_VERSION_PROBE_ROWS:
+            self.assertIn(row, content, f"指南缺少版本实测边界：{row}")
+        for setting in CLICKHOUSE_ALIGNED_SETTINGS:
+            self.assertEqual(
+                3, content.count(setting),
+                f"对齐参数必须出现在 5.6 节说明、RPM 覆盖与 TGZ 配置改写三处：{setting}",
+            )
 
     def test_guide_verifies_packages_and_frozen_input(self):
         """指南要求 SHA-512 校验安装包、SHA-256 校验冻结输入。"""
         content = self.read_guide()
         for term in ("sha512sum -c", "sha256sum -c", "load_formal_input", "identity_sha256"):
             self.assertIn(term, content, f"指南缺少校验命令或字段：{term}")
-        for name in CLICKHOUSE_ARM64_ARCHIVES:
-            self.assertIn(f"{name}.sha512", content, f"指南缺少包摘要文件：{name}.sha512")
+        for term in ('"$file.sha512"', "package-names.txt"):
+            self.assertIn(term, content, f"指南缺少包摘要或包身份记录：{term}")
 
     def test_guide_documents_both_install_paths(self):
         """指南同时给出 root RPM 路径和无特权 TGZ 路径。"""
@@ -720,6 +761,32 @@ class YellowGuideContractTest(unittest.TestCase):
         self.assertEqual(1, len(tree.findall("listen_host")), "生效 listen_host 必须只有一个")
         self.assertIn("<listen_host>::1</listen_host>", text, "包内注释示例保持注释状态")
         self.assertNotIn("<path>/var/lib/clickhouse/</path>", text, "数据目录必须指向状态目录")
+
+    def test_guide_cleanup_requires_handback_summary_before_deleting(self):
+        """回传摘录缺失或漏 target 时，清理片段拒绝执行且输出根保持完整。"""
+        fences = extract_code_fences(self.read_guide())
+        cleanup = fence_with(fences, "already clean")["body"]
+        for label, seed in (("摘录缺失", None), ("漏记 target", {"targets": []})):
+            with self.subTest(label), tempfile.TemporaryDirectory() as root:
+                state = Path(root) / "state"
+                target = state / "runs" / GUIDE_OUTPUT_ROOTS[0] / "clickhouse" / "same_table"
+                target.mkdir(parents=True)
+                (target / "run-manifest.json").write_text("{}", encoding="utf-8")
+                if seed is not None:
+                    handback = state / "runs" / "handback"
+                    handback.mkdir(parents=True)
+                    (handback / "summary.json").write_text(json.dumps(seed), encoding="utf-8")
+                result = self.run_guide_fragment(
+                    cleanup, state, seed_handback=False,
+                    extra_lines=(
+                        f"export YELLOW_OUTPUT={shlex.quote(str(state / 'runs'))}",
+                        "export CH_INSTALL_MODE=tgz",
+                        "ss() { echo 'State Recv-Q Send-Q Local Address:Port Peer Address:Port'; }",
+                    ),
+                )
+                self.assertNotEqual(0, result.returncode, f"{label} 时清理必须停止")
+                self.assertIn("handback summary", result.stderr + result.stdout, "必须给出摘录门禁原因")
+                self.assertTrue(target.is_dir(), f"{label} 时输出根必须保持完整")
 
     def test_guide_cleanup_is_idempotent_and_keeps_foreign_paths(self):
         """清理片段可重复执行：真实输出根与 Asset 工作树被删除，目录外路径不变。"""
@@ -1004,11 +1071,16 @@ class YellowGuideContractTest(unittest.TestCase):
             )
         self.assertIn("cleanup complete", completed.stdout, "清理必须输出完成标记")
 
-    def run_guide_fragment(self, fragment, state, extra_lines=(), env_overrides=None):
+    def run_guide_fragment(self, fragment, state, extra_lines=(), env_overrides=None,
+                           seed_handback=True):
         """在受控临时状态目录与指南变量块下执行片段，返回子进程结果。
 
         env_overrides 在 bash 启动前生效，与操作者先设置环境变量再 source 变量块一致。
+        seed_handback 为真时先写入回传摘录，对应已完成回传的正常路径；
+        置假用于验证 9.1 节在摘录缺失时拒绝删除。
         """
+        if seed_handback:
+            seed_handback_summary(Path(state) / "runs")
         fences = extract_code_fences(self.read_guide())
         script = "\n".join((
             shell_preamble(fences),
@@ -1288,9 +1360,15 @@ class YellowGuideContractTest(unittest.TestCase):
         for marker in CONTROL_STAGE_MARKERS:
             self.assertIn(marker, content, f"执行序列缺少阶段：{marker}")
         table = content[content.index("### 7.1"):content.index("### 7.2")]
-        self.assertLess(table.index("5 正式矩阵"), table.index("6 part-state"), "控制阶段必须排在正式矩阵之后")
-        self.assertLess(table.index("6 part-state"), table.index("7 混合负载"), "阶段顺序必须为 part-state → 混合负载")
-        self.assertLess(table.index("7 混合负载"), table.index("8 Asset 故障与恢复"), "Asset 故障恢复排在混合负载之后")
+        self.assertLess(table.index("8 正式矩阵"), table.index("9 part-state"), "控制阶段必须排在正式矩阵之后")
+        self.assertLess(table.index("9 part-state"), table.index("10 混合负载"), "阶段顺序必须为 part-state → 混合负载")
+        self.assertLess(table.index("10 混合负载"), table.index("11 Asset 故障与恢复"), "Asset 故障恢复排在混合负载之后")
+        for marker in FAIRNESS_STAGE_MARKERS:
+            self.assertIn(marker, table, f"执行序列缺少公平性门禁阶段：{marker}")
+            self.assertLess(
+                table.index(marker), table.index("8 正式矩阵"),
+                f"{marker} 必须排在正式矩阵之前",
+            )
         for command in ("part-states", "interference", "asset-failures"):
             self.assertIn(command, content, f"执行序列缺少命令：{command}")
         self.assertIn(CONTROL_COMPLETION_GATE, content, "指南缺少不适用与证据的完成门禁")
@@ -1317,9 +1395,9 @@ class YellowGuideContractTest(unittest.TestCase):
             self.assertIn(term, content, f"指南缺少归档排除说明：{term}")
 
     def test_guide_config_rewrite_distinguishes_missing_and_duplicate_anchors(self):
-        """配置锚点缺失与重复分别失败，锚点文本限定为 25.12.11.4 包内原文。"""
+        """配置锚点缺失与重复分别失败，锚点文本限定为 23.3.10.5 包内原文。"""
         content = self.read_guide()
-        self.assertIn("25.12.11.4 包内", content, "必须说明锚点取自 25.12.11.4 包内 config.xml")
+        self.assertIn("23.3.10.5 包内", content, "必须说明锚点取自 23.3.10.5 包内 config.xml")
         fences = extract_code_fences(content)
         script = heredoc_body(fence_with(fences, "config anchor")["body"], "PY")
         with tempfile.TemporaryDirectory() as root:
