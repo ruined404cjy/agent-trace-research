@@ -1,4 +1,6 @@
+import contextlib
 import hashlib
+import io
 import json
 import math
 import os
@@ -75,6 +77,60 @@ def sample(workload, round_index, position, scenario, number, latency):
         "validation_ms": latency + 20,
         "application_ready_ms": latency + 30,
         "validation": {"validated_payload_bytes": 1048576},
+    }
+
+
+def write_evidence(round_index, engine, layout):
+    """构造一轮写入完成证据，各项随 round 变化以便检验四轮中位数。"""
+    scale = round_index + 1
+    return {
+        "final_watermark": 10,
+        "wall_ms": 10.0 * scale,
+        "rows_per_second": 100.0 * scale,
+        "raw_payload_mib_per_second": 2.0 * scale,
+        "asset_publish_ms": 5.0 * scale if layout == "asset_ref" else 0.0,
+        "asset_raw_object_bytes": 1024 * scale if layout == "asset_ref" else 0,
+        "block_count": 190,
+        "database_ingest_request_body_bytes_total": (
+            1000 * scale if engine == "clickhouse" else "unavailable"
+        ),
+        "block_wall_ms": {
+            "minimum": 1.0 * scale, "median": 2.0 * scale,
+            "p95": 3.0 * scale, "maximum": 4.0 * scale,
+        },
+    }
+
+
+def storage_evidence(round_index, engine, layout):
+    """构造一轮分表空间证据，各表取值不同以便检验分表口径。"""
+    scale = round_index + 1
+    tables = {}
+    for index, name in enumerate(LAYOUT_TARGETS[layout]):
+        factor = index + 1
+        tables[name] = (
+            {
+                "part_count": 2 * scale, "rows": 10 * factor, "marks": 3 * scale,
+                "compressed_bytes": 100 * scale * factor,
+                "uncompressed_bytes": 200 * scale * factor,
+                "columns": {},
+            }
+            if engine == "clickhouse"
+            else {
+                "heap_bytes": 40 * scale * factor, "index_bytes": 20 * scale * factor,
+                "toast_bytes": 40 * scale * factor, "total_bytes": 100 * scale * factor,
+            }
+        )
+    return {
+        "tables": tables,
+        "asset_store": (
+            {
+                "available_bytes": 4096 * scale, "available_object_count": 160,
+                "orphan_bytes": 0, "orphan_object_count": 0,
+            }
+            if layout == "asset_ref"
+            else None
+        ),
+        "merges": [],
     }
 
 
@@ -155,31 +211,14 @@ def formal_target(root, engine="opengauss", layout="same_table"):
                     }
                     for item in round_samples
                 },
-                "write": {"final_watermark": 10, "wall_ms": 1.0},
+                "write": write_evidence(round_index, engine, layout),
                 "maintenance": {
                     "completed": True,
                     "watermarks": {name: 10 for name in LAYOUT_TARGETS[layout]},
                     "natural_stable_parts": engine == "clickhouse",
                     "optimize_final": False,
                 },
-                "storage": {
-                    "tables": {
-                        name: (
-                            {
-                                "part_count": 2, "rows": 10, "marks": 3,
-                                "compressed_bytes": 100, "uncompressed_bytes": 200,
-                                "columns": {},
-                            }
-                            if engine == "clickhouse"
-                            else {
-                                "heap_bytes": 40, "index_bytes": 20,
-                                "toast_bytes": 40, "total_bytes": 100,
-                            }
-                        )
-                        for name in LAYOUT_TARGETS[layout]
-                    },
-                    "merges": [],
-                },
+                "storage": storage_evidence(round_index, engine, layout),
                 "cleanup": {"removed": True, "asset_directory_removed": True},
             })
         workloads[workload] = {"status": "complete", "rounds": rounds}
@@ -826,6 +865,137 @@ class StageThreeSummaryTest(unittest.TestCase):
             self.assertEqual(scenario["recovery_ms"]["p50"], 12.5)
             self.assertEqual(scenario["validation_ms"]["p50"], 22.5)
             self.assertEqual(scenario["application_ready_ms"]["p50"], 32.5)
+
+    def test_publishes_write_and_space_round_statistic_median(self):
+        """写入与空间证据按 round 取中位数发布，不 pool 四个 round。"""
+        with tempfile.TemporaryDirectory() as directory:
+            target, _, _ = formal_target(Path(directory) / "asset", "clickhouse", "asset_ref")
+            workload = report.summarize([target])["matrix"][0]["workloads"]["main"]
+            self.assertEqual(workload["write"]["round_count"], 4)
+            write = workload["write"]["round_statistic_median"]
+            self.assertEqual(write["wall_ms"], 25.0)
+            self.assertEqual(write["rows_per_second"], 250.0)
+            self.assertEqual(write["raw_payload_mib_per_second"], 5.0)
+            self.assertEqual(write["asset_publish_ms"], 12.5)
+            self.assertEqual(write["asset_raw_object_bytes"], 2560.0)
+            self.assertEqual(write["block_count"], 190)
+            self.assertEqual(write["final_watermark"], 10)
+            self.assertEqual(write["database_ingest_request_body_bytes_total"], 2500.0)
+            self.assertEqual(
+                write["block_wall_ms"],
+                {"minimum": 2.5, "median": 5.0, "p95": 7.5, "maximum": 10.0},
+            )
+            self.assertEqual(workload["storage"]["round_count"], 4)
+            storage = workload["storage"]["round_statistic_median"]
+            self.assertEqual(storage["tables"]["events_analytics"]["compressed_bytes"], 250.0)
+            self.assertEqual(storage["tables"]["assets"]["compressed_bytes"], 500.0)
+            self.assertEqual(storage["tables"]["events_analytics"]["part_count"], 5.0)
+            self.assertEqual(storage["asset_store"], {
+                "available_bytes": 10240.0, "available_object_count": 160,
+                "orphan_bytes": 0, "orphan_object_count": 0,
+            })
+
+    def test_keeps_engine_space_fields_and_null_asset_store_faithful(self):
+        """两引擎空间字段各自保留，非 asset_ref layout 的对象存储发布为 null。"""
+        with tempfile.TemporaryDirectory() as directory:
+            targets = [
+                formal_target(Path(directory) / engine, engine, "full_core")[0]
+                for engine in ("clickhouse", "opengauss")
+            ]
+            summary = report.summarize(targets)
+            results = {item["engine"]: item["workloads"]["main"] for item in summary["matrix"]}
+            clickhouse = results["clickhouse"]["storage"]["round_statistic_median"]
+            opengauss = results["opengauss"]["storage"]["round_statistic_median"]
+            self.assertEqual(set(clickhouse["tables"]), {"events_full", "events_core"})
+            self.assertEqual(
+                set(clickhouse["tables"]["events_full"]),
+                {"compressed_bytes", "uncompressed_bytes", "part_count", "marks", "rows"},
+            )
+            self.assertEqual(
+                set(opengauss["tables"]["events_full"]),
+                {"total_bytes", "heap_bytes", "index_bytes", "toast_bytes"},
+            )
+            # 分表口径：两张表的空间不得被合并成单一 target 数值。
+            self.assertEqual(opengauss["tables"]["events_full"]["total_bytes"], 250.0)
+            self.assertEqual(opengauss["tables"]["events_core"]["total_bytes"], 500.0)
+            self.assertIsNone(clickhouse["asset_store"])
+            self.assertIsNone(opengauss["asset_store"])
+            self.assertEqual(
+                results["opengauss"]["write"]["round_statistic_median"][
+                    "database_ingest_request_body_bytes_total"
+                ],
+                "unavailable",
+            )
+
+    def test_rejects_write_and_space_evidence_gaps(self):
+        """缺项、类型错误或与 layout 矛盾的写入/空间证据必须整轮失败。"""
+        cases = {
+            "missing_wall": ("write wall_ms is invalid", lambda record: record["write"].pop("wall_ms")),
+            "bool_block_count": (
+                "write block_count is invalid",
+                lambda record: record["write"].__setitem__("block_count", True),
+            ),
+            "negative_rows_per_second": (
+                "write rows_per_second is invalid",
+                lambda record: record["write"].__setitem__("rows_per_second", -1.0),
+            ),
+            "text_rate": (
+                "write raw_payload_mib_per_second is invalid",
+                lambda record: record["write"].__setitem__("raw_payload_mib_per_second", "fast"),
+            ),
+            "missing_block_statistic": (
+                "write block_wall_ms is invalid",
+                lambda record: record["write"]["block_wall_ms"].pop("p95"),
+            ),
+            "null_client_bytes": (
+                "client submitted bytes are invalid",
+                lambda record: record["write"].__setitem__(
+                    "database_ingest_request_body_bytes_total", None
+                ),
+            ),
+            "missing_asset_store": (
+                "asset store evidence is missing",
+                lambda record: record["storage"].pop("asset_store"),
+            ),
+            "present_asset_store": (
+                "asset store evidence must be absent",
+                lambda record: record["storage"].__setitem__(
+                    "asset_store",
+                    {
+                        "available_bytes": 0, "available_object_count": 0,
+                        "orphan_bytes": 0, "orphan_object_count": 0,
+                    },
+                ),
+            ),
+        }
+        asset_cases = {
+            "null_asset_store": (
+                "asset store evidence is missing",
+                lambda record: record["storage"].__setitem__("asset_store", None),
+            ),
+            "bool_orphan_bytes": (
+                "asset store orphan_bytes is invalid",
+                lambda record: record["storage"]["asset_store"].__setitem__("orphan_bytes", True),
+            ),
+            "negative_object_count": (
+                "asset store available_object_count is invalid",
+                lambda record: record["storage"]["asset_store"].__setitem__(
+                    "available_object_count", -1
+                ),
+            ),
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            for layout, group in (("same_table", cases), ("asset_ref", asset_cases)):
+                for case, (message, mutate) in group.items():
+                    target, _, _ = formal_target(
+                        Path(directory) / case, "clickhouse", layout,
+                    )
+                    rewrite_manifest(
+                        target,
+                        lambda manifest: mutate(manifest["workloads"]["main"]["rounds"][2]),
+                    )
+                    with self.subTest(case=case), self.assertRaisesRegex(ValueError, message):
+                        report.summarize([target])
 
     def test_writes_complete_json_atomically_and_cleans_failed_temp_file(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -4815,6 +4985,227 @@ class StageThreeAssetFailureGateTest(unittest.TestCase):
                     lambda runs, mutate=mutate: rewrite_asset_failure_envelope(runs[0], mutate),
                     message,
                 )
+
+
+COMBINED_FAMILY_OPTIONS = ("--matrix", "--part-state", "--interference", "--asset-failure")
+COMBINED_TRUTH = {
+    "seed": 20260907, "identity_sha256": IDENTITY,
+    "record_count": 48534, "block_size": 256, "block_count": 190,
+}
+
+
+def combined_interference_summary(**overrides):
+    """构造 CLI 装配所需的最小 interference 汇总子树。"""
+    summary = {
+        "format": "agent-trace-json-storage-stage3-interference-summary",
+        "format_version": 1,
+        "input": json.loads(json.dumps(INPUT_IDENTITY)),
+        "truth": json.loads(json.dumps(COMBINED_TRUTH)),
+        "query_catalog_sha256": "f" * 64,
+        "statistics_boundary": "raw-samples-retained-p99-requires-1000-successes",
+        "phase_order": list(INTERFERENCE_PHASES),
+        "layouts": [],
+    }
+    summary.update(overrides)
+    return summary
+
+
+def combined_run_tree(directory):
+    """写入四族各自的最小正式运行目录，返回 CLI 需要的显式目录清单。"""
+    root = Path(directory)
+    target, _, _ = formal_target(root / "matrix")
+    interference = root / "interference"
+    for layout in LAYOUTS:
+        (interference / layout).mkdir(parents=True)
+    return {
+        "matrix": [target],
+        "part-state": [
+            write_part_state_run(root / "part-states", layout) for layout in LAYOUTS
+        ],
+        "interference": [interference / layout for layout in LAYOUTS],
+        "asset-failure": [
+            write_asset_failure_run(root / "asset-failures", engine)
+            for engine in ASSET_FAILURE_ENGINES
+        ],
+    }
+
+
+class StageThreeCombinedSummaryCliTest(unittest.TestCase):
+    """验证组合汇总 CLI 的族覆盖、目录显式性、身份绑定与发布边界。"""
+
+    def argv(self, output, families, skip=None):
+        """按显式目录清单构造一次 CLI 调用参数。"""
+        argv = ["--output", str(output)]
+        for option, runs in families.items():
+            if option == skip:
+                continue
+            argv.extend([f"--{option}", *(str(run) for run in runs)])
+        return argv
+
+    def run_cli(self, argv, interference=None):
+        """执行 CLI，返回退出码与 stderr 文本；interference 族按需注入子树。"""
+        stderr = io.StringIO()
+        summary = combined_interference_summary() if interference is None else interference
+        seen = []
+
+        def stub(runs):
+            seen.append([Path(run) for run in runs])
+            return json.loads(json.dumps(summary))
+
+        with patch.object(report, "summarize_interference", side_effect=stub), \
+             contextlib.redirect_stderr(stderr):
+            try:
+                code = report.main(argv)
+            except SystemExit as error:
+                code = error.code
+        return code, stderr.getvalue(), seen
+
+    def test_publishes_four_family_trees_bound_by_the_identity_each_family_carries(self):
+        """组合结果必须按族分树发布，并只绑定各族实际携带的身份字段。"""
+        with tempfile.TemporaryDirectory() as directory:
+            families = combined_run_tree(directory)
+            output = Path(directory) / "combined-summary.json"
+            code, stderr, seen = self.run_cli(self.argv(output, families))
+            self.assertEqual((code, stderr), (0, ""))
+            summary = json.loads(output.read_text(encoding="utf-8"))
+            self.assertEqual(
+                set(summary),
+                {
+                    "format", "format_version", "input", "truth", "query_catalog_sha256",
+                    "identity_binding", "matrix", "part_states", "interference",
+                    "asset_failures",
+                },
+            )
+            self.assertEqual(
+                summary["format"], "agent-trace-json-storage-stage3-combined-summary"
+            )
+            self.assertEqual(summary["format_version"], 1)
+            self.assertEqual(summary["input"], INPUT_IDENTITY)
+            self.assertEqual(summary["truth"], COMBINED_TRUTH)
+            self.assertEqual(summary["query_catalog_sha256"], "f" * 64)
+            self.assertEqual(
+                summary["matrix"]["format"],
+                "agent-trace-json-storage-stage3-matrix-summary",
+            )
+            self.assertEqual(
+                summary["part_states"]["format"],
+                "agent-trace-json-storage-stage3-part-states-summary",
+            )
+            self.assertEqual(
+                summary["interference"]["format"],
+                "agent-trace-json-storage-stage3-interference-summary",
+            )
+            self.assertEqual(
+                summary["asset_failures"]["format"],
+                "agent-trace-json-storage-stage3-asset-failures-summary",
+            )
+            # interference 族只接收调用方列出的目录，CLI 不得自行发现运行目录。
+            self.assertEqual(seen, [families["interference"]])
+
+    def test_declares_the_asset_failure_tree_unbound_with_its_reason(self):
+        """正式 asset-failure envelope 不发布输入身份，组合结果须明示该豁免。"""
+        with tempfile.TemporaryDirectory() as directory:
+            families = combined_run_tree(directory)
+            output = Path(directory) / "combined-summary.json"
+            self.assertEqual(self.run_cli(self.argv(output, families))[0], 0)
+            summary = json.loads(output.read_text(encoding="utf-8"))
+            binding = summary["identity_binding"]
+            self.assertEqual(binding["input"], ["matrix", "part_states", "interference"])
+            self.assertEqual(binding["truth"], ["part_states", "interference"])
+            self.assertEqual(
+                binding["query_catalog_sha256"], ["part_states", "interference"]
+            )
+            self.assertEqual(set(binding["unbound"]), {"asset_failures"})
+            self.assertIn("publish", binding["unbound"]["asset_failures"])
+            for field in ("input", "truth", "query_catalog_sha256"):
+                self.assertNotIn(field, summary["asset_failures"])
+
+    def test_rejects_a_missing_family_and_publishes_nothing(self):
+        """缺任一族即失败，且必须指明缺失的族。"""
+        for option in ("matrix", "part-state", "interference", "asset-failure"):
+            with self.subTest(option=option), tempfile.TemporaryDirectory() as directory:
+                families = combined_run_tree(directory)
+                output = Path(directory) / "combined-summary.json"
+                code, stderr, _ = self.run_cli(self.argv(output, families, skip=option))
+                self.assertNotEqual(code, 0)
+                self.assertIn(f"--{option}", stderr)
+                self.assertFalse(output.exists())
+
+    def test_rejects_a_directory_that_is_not_a_run(self):
+        with tempfile.TemporaryDirectory() as directory:
+            families = combined_run_tree(directory)
+            output = Path(directory) / "combined-summary.json"
+            empty = Path(directory) / "empty"
+            empty.mkdir()
+            families["matrix"] = [empty]
+            code, stderr, _ = self.run_cli(self.argv(output, families))
+            self.assertNotEqual(code, 0)
+            self.assertIn("run-manifest.json", stderr)
+            self.assertFalse(output.exists())
+
+    def test_refuses_to_scan_a_parent_directory_for_attempts(self):
+        """失败与被取代的尝试与有效运行并列存放，父目录只能被拒绝。"""
+        with tempfile.TemporaryDirectory() as directory:
+            families = combined_run_tree(directory)
+            output = Path(directory) / "combined-summary.json"
+            parents = {
+                "matrix": Path(directory) / "matrix",
+                "part-state": Path(directory) / "part-states",
+                "asset-failure": Path(directory) / "asset-failures",
+            }
+            for option, parent in parents.items():
+                with self.subTest(option=option):
+                    selected = dict(families, **{option: [parent]})
+                    code, stderr, _ = self.run_cli(self.argv(output, selected))
+                    self.assertNotEqual(code, 0)
+                    self.assertNotEqual(stderr, "")
+                    self.assertFalse(output.exists())
+
+    def test_rejects_input_identity_drift_between_bound_families(self):
+        with tempfile.TemporaryDirectory() as directory:
+            families = combined_run_tree(directory)
+            output = Path(directory) / "combined-summary.json"
+            for run in families["part-state"]:
+                rewrite_part_state_envelope(
+                    run,
+                    lambda envelope: envelope["input"]["events"].__setitem__(
+                        "sha256", "9" * 64
+                    ),
+                )
+            code, stderr, _ = self.run_cli(self.argv(output, families))
+            self.assertNotEqual(code, 0)
+            self.assertIn("input", stderr)
+            self.assertFalse(output.exists())
+
+    def test_rejects_truth_and_query_catalog_drift_between_bound_families(self):
+        """truth 与 query catalog 只在 part-state 和 interference 之间绑定。"""
+        cases = (
+            ("truth", {"truth": dict(COMBINED_TRUTH, block_count=189)}),
+            ("query_catalog_sha256", {"query_catalog_sha256": "9" * 64}),
+        )
+        for field, override in cases:
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                families = combined_run_tree(directory)
+                output = Path(directory) / "combined-summary.json"
+                code, stderr, _ = self.run_cli(
+                    self.argv(output, families),
+                    interference=combined_interference_summary(**override),
+                )
+                self.assertNotEqual(code, 0)
+                self.assertIn(field, stderr)
+                self.assertFalse(output.exists())
+
+    def test_refuses_to_overwrite_an_existing_output(self):
+        with tempfile.TemporaryDirectory() as directory:
+            families = combined_run_tree(directory)
+            output = Path(directory) / "combined-summary.json"
+            output.write_text("{}", encoding="utf-8")
+            code, stderr, seen = self.run_cli(self.argv(output, families))
+            self.assertNotEqual(code, 0)
+            self.assertIn("already exists", stderr)
+            self.assertEqual(output.read_text(encoding="utf-8"), "{}")
+            self.assertEqual(seen, [])
+
 
 if __name__ == "__main__":
     unittest.main()

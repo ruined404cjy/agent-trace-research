@@ -1,10 +1,12 @@
 """汇总已完成的 Stage 3 主矩阵 target、part-state 与 interference 控制。"""
 
+import argparse
 import hashlib
 import json
 import math
 import os
 import statistics
+import sys
 import tempfile
 from collections import defaultdict
 from pathlib import Path
@@ -27,6 +29,19 @@ METRICS = (
     "query_complete_ms", "recovery_ms", "validation_ms", "application_ready_ms",
 )
 STATISTICS = ("minimum", "p50", "p95", "maximum")
+WRITE_RATE_FIELDS = (
+    "wall_ms", "rows_per_second", "raw_payload_mib_per_second", "asset_publish_ms",
+)
+WRITE_COUNT_FIELDS = ("asset_raw_object_bytes", "block_count", "final_watermark")
+WRITE_CLIENT_BYTES_FIELD = "database_ingest_request_body_bytes_total"
+WRITE_BLOCK_STATISTICS = ("minimum", "median", "p95", "maximum")
+STORAGE_TABLE_FIELDS = {
+    "clickhouse": ("part_count", "rows", "marks", "compressed_bytes", "uncompressed_bytes"),
+    "opengauss": ("heap_bytes", "index_bytes", "toast_bytes", "total_bytes"),
+}
+STORAGE_ASSET_FIELDS = (
+    "available_bytes", "available_object_count", "orphan_bytes", "orphan_object_count",
+)
 
 PRODUCTION_FORMAT = "agent-trace-json-storage-stage3-production-run"
 PART_STATE_FORMAT = "agent-trace-json-storage-stage3-clickhouse-part-states"
@@ -294,6 +309,14 @@ ASSET_FAILURE_CLEANUP_FIELDS = frozenset({
     "namespaces", "namespaces_removed", "object_directories_removed",
     "runtime_probe_directory", "runtime_probe_directory_removed",
 })
+
+COMBINED_FORMAT = "agent-trace-json-storage-stage3-combined-summary"
+COMBINED_INPUT_FAMILIES = ("matrix", "part_states", "interference")
+COMBINED_TRUTH_FAMILIES = ("part_states", "interference")
+COMBINED_ASSET_FAILURE_BINDING = (
+    "not bound to the formal input identity: the asset-failure production envelopes "
+    "publish no input, truth or query catalog identity on either engine"
+)
 
 
 def _require(value, message):
@@ -564,11 +587,7 @@ def _validate_round(manifest, workload, record, seen_positions):
         or set(storage["tables"]) != set(LAYOUT_TARGETS[layout])
     ):
         raise ValueError("storage evidence is missing")
-    storage_fields = (
-        ("part_count", "rows", "marks", "compressed_bytes", "uncompressed_bytes")
-        if engine == "clickhouse"
-        else ("heap_bytes", "index_bytes", "toast_bytes", "total_bytes")
-    )
+    storage_fields = STORAGE_TABLE_FIELDS[engine]
     for table in storage["tables"].values():
         if not isinstance(table, dict):
             raise ValueError("storage evidence is missing")
@@ -818,9 +837,108 @@ def _median_round_summaries(rounds):
     return result
 
 
+def _write_summary(record):
+    """提取单个 round 的写入完成证据，缺项或类型不符即失败。"""
+    write = record.get("write")
+    if not isinstance(write, dict):
+        raise ValueError("write evidence is missing")
+    summary = {
+        field: _number(write.get(field), f"write {field} is invalid")
+        for field in WRITE_RATE_FIELDS
+    }
+    for field in WRITE_COUNT_FIELDS:
+        summary[field] = _integer(write.get(field), f"write {field} is invalid")
+    # openGauss 适配器无法读取协议层提交字节，runner 写入 "unavailable"，不折算为 0。
+    client_bytes = write.get(WRITE_CLIENT_BYTES_FIELD)
+    if client_bytes != "unavailable":
+        _integer(client_bytes, "write client submitted bytes are invalid")
+    summary[WRITE_CLIENT_BYTES_FIELD] = client_bytes
+    block_wall = write.get("block_wall_ms")
+    if not isinstance(block_wall, dict):
+        raise ValueError("write block_wall_ms is invalid")
+    summary["block_wall_ms"] = {
+        statistic: _number(block_wall.get(statistic), "write block_wall_ms is invalid")
+        for statistic in WRITE_BLOCK_STATISTICS
+    }
+    return summary
+
+
+def _storage_summary(record, engine, layout):
+    """提取单个 round 的分表空间与 Asset 对象存储证据，两引擎字段各自保留。"""
+    storage = record.get("storage")
+    if (
+        not isinstance(storage, dict)
+        or not isinstance(storage.get("tables"), dict)
+        or set(storage["tables"]) != set(LAYOUT_TARGETS[layout])
+    ):
+        raise ValueError("storage evidence is missing")
+    tables = {}
+    for name, table in storage["tables"].items():
+        if not isinstance(table, dict):
+            raise ValueError("storage evidence is missing")
+        tables[name] = {
+            field: _integer(table.get(field), f"storage {field} is invalid")
+            for field in STORAGE_TABLE_FIELDS[engine]
+        }
+    asset_store = storage.get("asset_store")
+    # 只有 asset_ref 有对象存储；其余 layout 的 null 表示没有存储，与空存储不同。
+    if layout != "asset_ref":
+        if "asset_store" not in storage:
+            raise ValueError("asset store evidence is missing")
+        if asset_store is not None:
+            raise ValueError("asset store evidence must be absent")
+    elif not isinstance(asset_store, dict):
+        raise ValueError("asset store evidence is missing")
+    else:
+        asset_store = {
+            field: _integer(asset_store.get(field), f"asset store {field} is invalid")
+            for field in STORAGE_ASSET_FIELDS
+        }
+    return {"tables": tables, "asset_store": asset_store}
+
+
+def _median_write_summaries(rounds):
+    """对四个 round 的写入测量取中位数，保留 unavailable 边界。"""
+    result = {
+        field: statistics.median(round_[field] for round_ in rounds)
+        for field in WRITE_RATE_FIELDS + WRITE_COUNT_FIELDS
+    }
+    client_bytes = [round_[WRITE_CLIENT_BYTES_FIELD] for round_ in rounds]
+    result[WRITE_CLIENT_BYTES_FIELD] = (
+        statistics.median(client_bytes)
+        if all(isinstance(value, int) for value in client_bytes)
+        else "unavailable"
+    )
+    result["block_wall_ms"] = {
+        statistic: statistics.median(round_["block_wall_ms"][statistic] for round_ in rounds)
+        for statistic in WRITE_BLOCK_STATISTICS
+    }
+    return result
+
+
+def _median_storage_summaries(rounds):
+    """对四个 round 的空间测量按表和字段取中位数，null 对象存储保持为 null。"""
+    tables = {
+        name: {
+            field: statistics.median(round_["tables"][name][field] for round_ in rounds)
+            for field in fields
+        }
+        for name, fields in rounds[0]["tables"].items()
+    }
+    asset_store = None
+    if rounds[0]["asset_store"] is not None:
+        asset_store = {
+            field: statistics.median(round_["asset_store"][field] for round_ in rounds)
+            for field in STORAGE_ASSET_FIELDS
+        }
+    return {"tables": tables, "asset_store": asset_store}
+
+
 def _target_summary(manifest, samples):
     """构造单 target 的三组性能 workload 结果。"""
     grouped = _validate_samples(manifest, samples)
+    records = _round_records(manifest, _workload_scope(manifest))
+    engine, layout = manifest["engine"], manifest["layout"]
     workloads = {}
     for workload in PERFORMANCE_WORKLOADS:
         scenarios = {}
@@ -838,7 +956,21 @@ def _target_summary(manifest, samples):
                 ],
                 "round_statistic_median": _median_round_summaries(round_summaries),
             }
-        workloads[workload] = {"scenarios": scenarios}
+        write_rounds = [_write_summary(record) for record in records[workload]]
+        storage_rounds = [
+            _storage_summary(record, engine, layout) for record in records[workload]
+        ]
+        workloads[workload] = {
+            "scenarios": scenarios,
+            "write": {
+                "round_count": 4,
+                "round_statistic_median": _median_write_summaries(write_rounds),
+            },
+            "storage": {
+                "round_count": 4,
+                "round_statistic_median": _median_storage_summaries(storage_rounds),
+            },
+        }
     return {"engine": manifest["engine"], "layout": manifest["layout"], "workloads": workloads}
 
 
@@ -3058,3 +3190,71 @@ def write_summary_atomic(output: Path, summary: dict[str, object]) -> None:
                 temporary.unlink()
             except FileNotFoundError:
                 pass
+
+
+def _bind_identity(trees, field, families):
+    """在实际携带该身份字段的族之间取共享值，不一致即失败。"""
+    first = trees[families[0]][field]
+    if any(trees[family][field] != first for family in families):
+        raise ValueError(
+            f"combined {field} identity differs between " + " and ".join(families)
+        )
+    return first
+
+
+def _combine_summaries(matrix, part_states, interference, asset_failures):
+    """装配四族各自独立的结果树，只绑定各族实际携带的身份字段。"""
+    trees = {
+        "matrix": matrix, "part_states": part_states,
+        "interference": interference, "asset_failures": asset_failures,
+    }
+    return {
+        "format": COMBINED_FORMAT,
+        "format_version": FORMAT_VERSION,
+        "input": _bind_identity(trees, "input", COMBINED_INPUT_FAMILIES),
+        "truth": _bind_identity(trees, "truth", COMBINED_TRUTH_FAMILIES),
+        "query_catalog_sha256": _bind_identity(
+            trees, "query_catalog_sha256", COMBINED_TRUTH_FAMILIES
+        ),
+        "identity_binding": {
+            "input": list(COMBINED_INPUT_FAMILIES),
+            "truth": list(COMBINED_TRUTH_FAMILIES),
+            "query_catalog_sha256": list(COMBINED_TRUTH_FAMILIES),
+            "unbound": {"asset_failures": COMBINED_ASSET_FAILURE_BINDING},
+        },
+        **trees,
+    }
+
+
+def build_parser():
+    """构造只接受调用方显式列出的运行目录的汇总解析器。"""
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", type=Path, required=True)
+    # 四族目录逐个列出：失败与被取代的尝试与有效运行并列存放，不得扫描父目录选取。
+    for option in ("matrix", "part-state", "interference", "asset-failure"):
+        parser.add_argument(f"--{option}", type=Path, nargs="+", required=True, metavar="DIR")
+    return parser
+
+
+def main(argv=None):
+    """汇总四族控制并原子发布组合结果；校验失败时在 stderr 说明原因并返回非零。"""
+    arguments = build_parser().parse_args(list(sys.argv[1:] if argv is None else argv))
+    output = arguments.output.resolve()
+    try:
+        if output.exists():
+            raise FileExistsError(f"summary output already exists: {output}")
+        summary = _combine_summaries(
+            summarize(arguments.matrix),
+            summarize_part_states(arguments.part_state),
+            summarize_interference(arguments.interference),
+            summarize_asset_failures(arguments.asset_failure),
+        )
+        write_summary_atomic(output, summary)
+    except (OSError, ValueError) as error:
+        print(f"{type(error).__name__}: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
