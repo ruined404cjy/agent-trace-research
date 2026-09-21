@@ -200,6 +200,18 @@ FAIRNESS_STAGE_MARKERS = (
 )
 CONTROL_COMPLETION_GATE = "记录了带证据的不适用结论"
 
+# 报告是与回传摘录并列的交付物：摘录供机器校验，报告供人阅读。
+REPORT_DELIVERABLE_TERMS = (
+    "docs/json-storage/json-storage-stage3-xstore-yellow-report-",
+    "../json-storage/json-storage-stage3-report-2026-09-20.md",
+    "../json-storage/json-storage-stage2-report-2026-09-10.md",
+    "场景设计、测试目的与预期、执行方式、结果、分析",
+)
+REPORT_CHAPTER_ROWS = (
+    "| 1 结论 |", "| 2 数据与语义契约 |", "| 3 结构与执行口径 |", "| 4 场景化测试 |",
+    "| 5 跨场景分析 |", "| 6 正确性、限制与后续测试 |", "| 7 使用建议 |",
+)
+
 ENVIRONMENT_PROBE_COMMANDS = (
     "uname -m", "/etc/os-release", "nproc", "free", "df -T", "findmnt",
     "timedatectl", "ulimit -a", "sysctl", "ss -ltn", "ps -ef", "systemctl",
@@ -761,6 +773,30 @@ class YellowGuideContractTest(unittest.TestCase):
         self.assertEqual(1, len(tree.findall("listen_host")), "生效 listen_host 必须只有一个")
         self.assertIn("<listen_host>::1</listen_host>", text, "包内注释示例保持注释状态")
         self.assertNotIn("<path>/var/lib/clickhouse/</path>", text, "数据目录必须指向状态目录")
+
+    def test_guide_requires_an_experiment_report_modeled_on_the_blue_zone(self):
+        """指南把实验报告列为交付物，给出七章结构并指向仓库内的蓝区报告范例。"""
+        content = self.read_guide()
+        for term in REPORT_DELIVERABLE_TERMS:
+            self.assertIn(term, content, f"指南缺少报告交付要求：{term}")
+        for row in REPORT_CHAPTER_ROWS:
+            self.assertIn(row, content, f"报告结构缺少章节：{row}")
+        for reference in (
+            "docs/json-storage/json-storage-stage3-report-2026-09-20.md",
+            "docs/json-storage/json-storage-stage2-report-2026-09-10.md",
+        ):
+            self.assertTrue(
+                (REPOSITORY_ROOT / reference).is_file(),
+                f"报告范例必须随分支交付：{reference}",
+            )
+        table = content[content.index("### 7.1"):content.index("### 7.2")]
+        self.assertLess(
+            table.index("12 实验报告"), table.index("13 回传摘录"),
+            "报告排在回传摘录之前，两者都在清理之前",
+        )
+        self.assertIn(
+            "debug 构建产生的耗时数据不进入报告", content, "报告必须排除 debug 构建数据",
+        )
 
     def test_guide_cleanup_requires_handback_summary_before_deleting(self):
         """回传摘录缺失或漏 target 时，清理片段拒绝执行且输出根保持完整。"""

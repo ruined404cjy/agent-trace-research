@@ -1092,7 +1092,8 @@ XStore 与 openGauss 同源，adapter 默认实现直接复用 openGauss adapter
 | 9 part-state | 对每个引擎与布局判定 part-state 控制是否适用；适用时执行 run_stage3.py part-states，记录 part 状态与合并证据；不适用时在运行记录中引用能力报告条目写明原因 | 每个 target 的结论为已执行通过，或记录不适用并附证据 |
 | 10 混合负载 | 执行 run_stage3.py interference，在单个 target 内部产生并发负载，并记录与串行基线的对比 | 混合负载证据与串行基线对比齐全，或记录不适用并附证据 |
 | 11 Asset 故障与恢复 | 执行 run_stage3.py asset-failures，记录失败注入、失败 block 证据、恢复动作与清理结果 | 失败与恢复证据齐全，或记录不适用并附证据 |
-| 12 回传摘录 | 按 9.2 节生成回传摘录并校验 | 摘录存在、非空且覆盖每个 target；未通过前不执行 9.1 节的删除动作 |
+| 12 实验报告 | 按 8.4 节写实验报告 | 七章齐备，场景编号与蓝区一致，不适用项写明原因与证据 |
+| 13 回传摘录 | 按 9.2 节生成回传摘录并校验 | 摘录存在、非空且覆盖每个 target；未通过前不执行 9.1 节的删除动作 |
 
 黄区对比只有在第 8 至第 11 阶段全部通过，或对不适用项记录了带证据的不适用结论之后才成立；任一阶段失败时保留产物并标为 diagnostic，不发布完整比较结论。第 9 至第 11 阶段在驱动方式上与第 8 阶段一致：同一冻结输入、同一代码 HEAD、同一串行约束。
 
@@ -1169,6 +1170,35 @@ python experiments/json-storage-stage3/runner/run_layout_matrix.py \
 ### 8.3 比较结论门禁
 
 比较表只在四个布局的 complete 结果、四轮 Latin square、访问路径、维护状态、清理证据，以及 7.1 节第 6 至第 8 阶段结论齐全后生成；控制项适用时给出通过证据，不适用时给出带证据的不适用结论。汇总器对不完整 provenance 报错时，结论保持未发布状态。报告按三层陈述：引擎内布局结论、黄区同机跨引擎结论、不可比较边界。ClickHouse 数值与蓝区结果的版本差异必须在报告中记录。
+
+### 8.4 实验报告
+
+回传摘录是机器可校验的证据，报告是人读的分析，两者都交付，互不替代。报告写入 $YELLOW_REPO 的 docs/json-storage/json-storage-stage3-xstore-yellow-report-<YYYY-MM-DD>.md，随代码改动一并回传。
+
+结构参照[阶段三实验报告](../json-storage/json-storage-stage3-report-2026-09-20.md)。该文件在本分支内，是流程、章节划分与排版的范例。黄区实验范围与蓝区不同，按下表取舍。
+
+| 章 | 蓝区内容 | 黄区要求 |
+|---|---|---|
+| 1 结论 | 布局排序与适用边界 | 同结构；结论限定为同机 XStore 与 ClickHouse 23.3.10.5 的对比 |
+| 2 数据与语义契约 | 冻结输入、布局与一致性语义 | 冻结输入身份照抄并核对，语义部分按 XStore 的实际存储形态改写 |
+| 3 结构与执行口径 | 物理结构、固定变量、计时与证据 | 增加三项：XStore 构建类型与证据、6.6 节访问路径门禁结果、5.6 节参数对齐的生效值 |
+| 4 场景化测试 | 十个场景，每个按五部分展开 | 场景集合与编号保持一致；不适用的场景保留编号，写明原因与证据条目 |
+| 5 跨场景分析 | 布局选择、成本转移边界、正交性、比较边界 | 同结构；比较边界写明黄区 ClickHouse 23.3 与蓝区 ClickHouse 25.12 不直接比较 |
+| 6 正确性、限制与后续测试 | 真值结论、限制、后续实验 | 同结构；限制一节列出本轮全部降级与偏离 |
+| 7 使用建议 | 面向生产的建议 | 同结构；建议限定在已测范围内 |
+
+每个场景小节按蓝区报告的五部分展开：场景设计、测试目的与预期、执行方式、结果、分析。结果表给出四布局并列的数值与样本数，分析只依据本轮实测数据。
+
+报告的写作约束：
+
+1. 语言朴实，用肯定句直陈事实与指令，不用比喻与口语化表达，采用数据库领域中文文档的通用表述。
+2. 文档可独立阅读，不引用对话、交接过程或未在文末列出的文档；需要引用时在文末给出来源。
+3. 每个数值给出出处，来源限定为本轮 run manifest、轮次 result.json 与合并汇总 summary.json；没有证据的数值不写入报告。
+4. “完成”只用于描述具体操作、运行、门禁、水位或样本，不用于声明实验整体完成。
+5. debug 构建产生的耗时数据不进入报告。
+6. 不适用项写明原因与证据条目，不留空白，也不用推测填补。
+
+阶段二报告[json-storage-stage2-report-2026-09-10.md](../json-storage/json-storage-stage2-report-2026-09-10.md)同样在本分支内，可作为跨引擎比较章节的补充范例。
 
 ## 9. 恢复、清理与回传
 
@@ -1409,7 +1439,7 @@ docs/project-background/json-storage-stage3-xstore-clickhouse-yellow-guide.md。
 XStore 构建类型门禁（release）→ ClickHouse 23.3.10.5 部署与 5.6 节参数对齐 →
 adapter 冒烟 → 单 target candidate → 6.6 节访问路径门禁 → 单布局冒烟倍率 →
 清理验证 → 两个引擎各自的四布局四轮四 workload 正式矩阵 →
-part-state、混合负载、Asset 故障与恢复（不适用时记录原因与证据）→ 回传摘录。
+part-state、混合负载、Asset 故障与恢复（不适用时记录原因与证据）→ 实验报告 → 回传摘录。
 
 三条硬性要求：
 1. 构建类型不是 release 时停止，不跑任何性能运行。
@@ -1424,12 +1454,16 @@ Latin square 与 30/5 测量次数不自适应；需要超出适配卡允许范�
 按该指南的 fail-closed 规则执行：分支或归档资产不可用时、能力报告字段缺少证据时、
 真值或水位或清理证据缺失时停止并报告，不猜测 XStore 能力。
 回传内容按指南第 9.2 节给出：代码提交或 diff --stat、文件清单与 SHA-256，
-以及 $YELLOW_OUTPUT/handback/summary.json。该摘录通过校验之前不执行第 9.1 节的删除动作。
+以及 $YELLOW_OUTPUT/handback/summary.json 与第 8.4 节的实验报告。
+摘录通过校验之前不执行第 9.1 节的删除动作。
+报告结构照仓库内的阶段三实验报告，不另起格式。
 ```
 
 ## 11. 参考入口
 
 - [阶段三实验设计与证据契约](../json-storage/json-storage-stage3-experiment-design-2026-09-09.md)
+- [阶段三实验报告](../json-storage/json-storage-stage3-report-2026-09-20.md)
+- [阶段二实验报告](../json-storage/json-storage-stage2-report-2026-09-10.md)
 - [阶段三四布局代表性评估](../json-storage/json-storage-stage3-representativeness-assessment-2026-09-17.md)
 - [阶段三黄区 xstore 对比交接设计](../superpowers/specs/2026-09-17-json-storage-stage3-xstore-yellow-handoff-design.md)
 - [阶段三黄区交接实施计划](../superpowers/plans/2026-09-17-json-storage-stage3-xstore-yellow-handoff.md)
