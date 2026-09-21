@@ -2176,12 +2176,13 @@ def interference_row(stream, sequence, layout, phase, segment, **overrides):
             "error": None,
             "validation": {"row_count": 1, "validated_payload_bytes": 100},
         }
+    offset = sequence / (INTERFERENCE_STREAM_RATES[stream] or 5.0)
     row = {
         "stream": stream,
         "sequence": sequence,
-        "scheduled_offset_seconds": sequence * 0.05,
-        "started_offset_seconds": sequence * 0.05,
-        "completed_offset_seconds": sequence * 0.05 + 0.1,
+        "scheduled_offset_seconds": offset,
+        "started_offset_seconds": offset,
+        "completed_offset_seconds": offset + 0.1,
         "duration_ms": 100.0,
         "application_ready_ms": 100.0,
         "status": "success",
@@ -2255,6 +2256,16 @@ def interference_published(rows, schedule, wall_seconds):
             "p99_minimum_successes": 1000,
         },
     }
+
+
+def percentile_oracle(values, fraction):
+    """以独立实现的线性插值百分位作为发布值的 oracle。"""
+    ordered = sorted(values)
+    position = fraction * (len(ordered) - 1)
+    floor, ceiling = math.floor(position), math.ceil(position)
+    if floor == ceiling:
+        return ordered[floor]
+    return ordered[floor] + (ordered[ceiling] - ordered[floor]) * (position - floor)
 
 
 def interference_query_evidence(records, layout):
@@ -2347,6 +2358,7 @@ def interference_spec(layout, *, schedules=None, segment_seconds=None,
             "layout": layout,
             "namespace": namespace,
             "cache_state": "warm-fixed-offered-load-no-os-cache-drop",
+            "child_pid": 4242,
             "warmup_seconds": seconds["warmup"],
             "measurement_seconds": seconds["measurement"],
             "schedules": schedules[phase],
@@ -2770,12 +2782,12 @@ class StageThreeInterferenceRawTest(unittest.TestCase):
         return report._parse_interference_raw(
             path, {"list": schedule}, query_scenarios=INTERFERENCE_QUERY_SCENARIOS,
             write_tables=LAYOUT_TARGETS["same_table"], block_size=INTERFERENCE_BLOCK_SIZE,
-            watermarks={27904},
+            watermarks={27904}, horizon=schedule["duration_seconds"] + 1.0,
         )
 
     def schedule(self, count):
         return {
-            "name": "list", "rate_per_second": 1.0, "duration_seconds": float(count),
+            "name": "list", "rate_per_second": 5.0, "duration_seconds": count / 5.0,
             "workers": 1, "timeout_seconds": 30.0, "late_tolerance_seconds": 0.05,
             "mode": "fixed",
         }
@@ -2800,6 +2812,32 @@ class StageThreeInterferenceRawTest(unittest.TestCase):
                 self.assertEqual(result["latency_ms"]["p99"] is None, not publishable)
                 self.assertEqual(result["latency_ms"]["minimum"], 100.0)
 
+    def test_publishes_percentiles_from_an_independent_oracle(self):
+        """以非常量时延和独立百分位实现校验发布的 p50/p95/p99。"""
+        count = 1000
+        latencies = [1.0 + (sequence * 7 % count) * 0.25 for sequence in range(count)]
+        with tempfile.TemporaryDirectory() as directory:
+            schedule = self.schedule(count)
+            rows = [
+                interference_row(
+                    "list", sequence, "same_table", "quiet", "measurement",
+                    application_ready_ms=latencies[sequence],
+                )
+                for sequence in range(count)
+            ]
+            parsed = self.parse(directory, rows, schedule)
+            result = report._interference_stream_statistics(
+                parsed["list"], schedule, float(count)
+            )
+            latency = result["latency_ms"]
+            for field, fraction in (("p50", 0.50), ("p95", 0.95), ("p99", 0.99)):
+                self.assertAlmostEqual(
+                    latency[field], percentile_oracle(latencies, fraction), places=9
+                )
+            self.assertEqual(latency["minimum"], min(latencies))
+            self.assertEqual(latency["maximum"], max(latencies))
+            self.assertNotEqual(latency["p50"], latency["p95"])
+
     def test_keeps_failed_timed_out_and_dropped_separate(self):
         with tempfile.TemporaryDirectory() as directory:
             schedule = self.schedule(4)
@@ -2818,6 +2856,55 @@ class StageThreeInterferenceRawTest(unittest.TestCase):
                 "successful_requests": 1, "failed_requests": 1, "timed_out_requests": 1,
                 "dropped_requests": 1, "late_requests": 0,
             })
+
+    def test_binds_scheduled_offsets_tighter_than_one_inter_arrival_interval(self):
+        """20 请求/秒下到达间隔与 late_tolerance 相等，半槽整体平移必须被拒绝。"""
+        count = 10
+        schedule = dict(
+            self.schedule(count), rate_per_second=20.0, duration_seconds=count / 20.0,
+        )
+        rows = []
+        for sequence in range(count):
+            offset = sequence / 20.0 + 0.025
+            rows.append(interference_row(
+                "list", sequence, "same_table", "quiet", "measurement",
+                scheduled_offset_seconds=offset, started_offset_seconds=offset,
+                completed_offset_seconds=offset + 0.1,
+            ))
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(
+                ValueError, "raw scheduled offset is off the published rate"
+            ):
+                self.parse(directory, rows, schedule)
+
+    def test_rejects_started_offsets_beyond_the_published_wall(self):
+        """timed_out 行没有完成时刻，起始时刻同样受 horizon 约束。"""
+        rows = [
+            interference_row("list", 0, "same_table", "quiet", "measurement"),
+            interference_row(
+                "list", 1, "same_table", "quiet", "measurement", status="timed_out",
+                started_offset_seconds=1e9, completed_offset_seconds=None,
+            ),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "raw start exceeds the published wall"):
+                self.parse(directory, rows, self.schedule(2))
+
+    def test_rejects_continuous_scheduled_offsets_beyond_the_published_wall(self):
+        """continuous stream 的调度偏移不由速率定位，仍需受 horizon 上界约束。"""
+        schedule = dict(self.schedule(2), rate_per_second=None, mode="continuous")
+        rows = [
+            interference_row("list", 0, "same_table", "quiet", "measurement"),
+            interference_row(
+                "list", 1, "same_table", "quiet", "measurement",
+                scheduled_offset_seconds=1e9,
+            ),
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(
+                ValueError, "raw scheduled offset exceeds the published wall"
+            ):
+                self.parse(directory, rows, schedule)
 
     def test_schedules_mirror_the_runner_fixed_factory(self):
         sys.path.insert(0, str(STAGE_DIR / "runner"))
@@ -2838,7 +2925,7 @@ class StageThreeInterferenceRawTest(unittest.TestCase):
 
     def test_rejects_raw_streams_without_rows(self):
         preview = {
-            "name": "preview", "rate_per_second": 1.0, "duration_seconds": 2.0,
+            "name": "preview", "rate_per_second": 5.0, "duration_seconds": 0.4,
             "workers": 1, "timeout_seconds": 30.0, "late_tolerance_seconds": 0.05,
             "mode": "fixed",
         }
@@ -2855,7 +2942,7 @@ class StageThreeInterferenceRawTest(unittest.TestCase):
                     path, {"list": self.schedule(2), "preview": preview},
                     query_scenarios=INTERFERENCE_QUERY_SCENARIOS,
                     write_tables=LAYOUT_TARGETS["same_table"],
-                    block_size=INTERFERENCE_BLOCK_SIZE, watermarks={27904},
+                    block_size=INTERFERENCE_BLOCK_SIZE, watermarks={27904}, horizon=2.0,
                 )
 
 
@@ -3554,6 +3641,177 @@ class StageThreeInterferenceGateTest(unittest.TestCase):
                 layout, row_mutate=drop_first_list_row if layout == "same_table" else None
             ),
         )
+
+    def test_rejects_raw_offsets_outside_the_published_schedule(self):
+        cases = (
+            (
+                lambda rows: rows[0].__setitem__("scheduled_offset_seconds", 9.0),
+                "raw scheduled offset is off the published rate",
+            ),
+            (
+                lambda rows: rows[0].__setitem__("completed_offset_seconds", 9.0),
+                "raw completion exceeds the published wall",
+            ),
+        )
+        for mutate, message in cases:
+            with self.subTest(message=message):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_interference_raw(
+                        runs[0], "quiet", "measurement", mutate
+                    ),
+                    message,
+                )
+
+    def test_rejects_coverage_beyond_the_published_wall(self):
+        def overrun(phase, manifest, rows):
+            if phase != "quiet":
+                return
+            manifest["execution_coverage"]["measurement_actual_seconds"] = 40.0
+            for item in manifest["statistics"].values():
+                item["phase_wall_seconds"] = 40.0
+                item["completed_throughput_requests_s"] = item["successful_requests"] / 40.0
+
+        self.reject(
+            lambda runs: None,
+            "formal coverage is inconsistent",
+            spec_factory=lambda layout: interference_spec(
+                layout, phase_mutate=overrun if layout == "same_table" else None
+            ),
+        )
+
+    def test_rejects_coverage_beyond_the_allowed_segment_overrun(self):
+        """coverage 的上界是固定的 segment 超出余量，而不是一个请求超时。"""
+        def overrun(phase, manifest, rows):
+            if phase != "quiet":
+                return
+            actual = INTERFERENCE_SEGMENT_SECONDS["measurement"] + 8.0
+            manifest["execution_coverage"]["measurement_actual_seconds"] = actual
+            for item in manifest["statistics"].values():
+                item["phase_wall_seconds"] = actual
+                item["completed_throughput_requests_s"] = (
+                    item["successful_requests"] / actual
+                )
+
+        self.reject(
+            lambda runs: None,
+            "formal coverage is inconsistent",
+            spec_factory=lambda layout: interference_spec(
+                layout, phase_mutate=overrun if layout == "same_table" else None
+            ),
+        )
+
+    def test_binds_index_scan_counts_instead_of_query_ids(self):
+        """index_scans 按索引名聚合，门禁只约束其计数值域。"""
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            rewrite_interference_phase_both(
+                runs[0], "quiet",
+                lambda m: m["query_evidence"].__setitem__(
+                    "index_scans", {"events_list_idx": 12}
+                ),
+            )
+            self.assertEqual(len(self.summarize(runs)["layouts"]), len(LAYOUTS))
+        for value in ("garbage", -1, True):
+            with self.subTest(value=value):
+                self.reject(
+                    lambda runs, value=value: rewrite_interference_phase_both(
+                        runs[0], "quiet",
+                        lambda m: m["query_evidence"].__setitem__(
+                            "index_scans",
+                            {next(iter(m["query_evidence"]["plans"])): value},
+                        ),
+                    ),
+                    "query evidence IDs mismatch",
+                )
+
+    def test_rejects_phase_namespace_outside_the_phase_prefix(self):
+        def mutate(namespace):
+            def apply(manifest):
+                manifest["namespace"] = namespace
+                manifest["cleanup"]["namespace"] = f"{namespace}_same_table"
+                manifest["layout_definition"]["database"] = f"{namespace}_same_table"
+
+            return apply
+
+        for namespace in ("jsons3_if_quiet_", "jsons3_other_quiet_0123abcd"):
+            with self.subTest(namespace=namespace):
+                self.reject(
+                    lambda runs, namespace=namespace: rewrite_interference_phase_both(
+                        runs[0], "quiet", mutate(namespace)
+                    ),
+                    "namespaces are invalid or duplicated",
+                )
+
+    def test_rejects_eligible_indices_beyond_the_final_watermark(self):
+        self.reject(
+            lambda runs: rewrite_interference_envelope(
+                runs[0],
+                lambda e: e["interference"].__setitem__(
+                    "eligible_block_indices", list(range(145, 190))
+                ),
+            ),
+            "metadata is invalid",
+        )
+
+    def test_rejects_incomplete_phase_and_root_evidence(self):
+        phase_cases = (
+            (lambda m: m.__setitem__("cache_state", "cold"), "phase manifest mismatch"),
+            (lambda m: m.pop("cache_state"), "phase manifest mismatch"),
+            (lambda m: m.pop("child_pid"), "phase manifest mismatch"),
+            (lambda m: m.__setitem__("child_pid", 0), "phase manifest mismatch"),
+            (
+                lambda m: m["query_evidence"].__setitem__("index_scans", []),
+                "query evidence IDs mismatch",
+            ),
+            (
+                lambda m: m["query_evidence"].__setitem__("index_scans", {"other": []}),
+                "query evidence IDs mismatch",
+            ),
+        )
+        for mutate, message in phase_cases:
+            with self.subTest(message=message):
+                self.reject(
+                    lambda runs, mutate=mutate: rewrite_interference_phase_both(
+                        runs[0], "quiet", mutate
+                    ),
+                    message,
+                )
+        self.reject(
+            lambda runs: rewrite_interference_child(
+                runs[0], lambda child: child.__setitem__("statistics_boundary", "other")
+            ),
+            "root manifest is not formal complete",
+        )
+
+    def test_rejects_run_identity_shared_between_layouts(self):
+        def share_envelope_run_id(runs):
+            envelope = json.loads((runs[0] / "run-manifest.json").read_text(encoding="utf-8"))
+            rewrite_interference_envelope(
+                runs[1], lambda other: other.__setitem__("run_id", envelope["run_id"])
+            )
+
+        def share_child_run_id(runs):
+            child = json.loads(
+                (runs[0] / "child" / "run-manifest.json").read_text(encoding="utf-8")
+            )
+            rewrite_interference_child(
+                runs[1], lambda other: other.__setitem__("run_id", child["run_id"])
+            )
+            rewrite_interference_envelope(
+                runs[1], lambda e: e["child"].__setitem__("run_id", child["run_id"])
+            )
+
+        for mutate in (share_envelope_run_id, share_child_run_id):
+            with self.subTest(mutate=mutate):
+                self.reject(mutate, "run identity is duplicated between runs")
+
+    def test_rejects_symlinked_child_directory(self):
+        def symlink_child(runs):
+            child = runs[0] / "child"
+            child.rename(runs[0] / "child-store")
+            os.symlink(runs[0] / "child-store", child)
+
+        self.reject(symlink_child, "child directory is a symlink")
 
 
 if __name__ == "__main__":

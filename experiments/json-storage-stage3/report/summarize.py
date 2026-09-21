@@ -112,6 +112,8 @@ INTERFERENCE_STREAM_WORKERS = {
 INTERFERENCE_STREAM_MODES = {"batch_loop": "continuous"}
 INTERFERENCE_TIMEOUT_SECONDS = 30.0
 INTERFERENCE_LATE_TOLERANCE_SECONDS = 0.05
+INTERFERENCE_COVERAGE_OVERRUN_SECONDS = 3.0
+INTERFERENCE_OFFSET_TOLERANCE_SECONDS = 1e-6
 INTERFERENCE_QUERY_SCENARIOS = {
     "list": ("list", "list:first"),
     "preview": ("preview", "preview:first"),
@@ -139,6 +141,7 @@ INTERFERENCE_CLEANUP_FIELDS = frozenset({
 INTERFERENCE_NAMESPACE_POLICY_FIELDS = frozenset({
     "strategy", "reuse", "phase_order", "namespace_prefix", "namespaces",
 })
+INTERFERENCE_CACHE_STATE = "warm-fixed-offered-load-no-os-cache-drop"
 INTERFERENCE_NAMESPACE_STRATEGY = "runner-fixed-phase-unique"
 INTERFERENCE_NAMESPACE_PREFIX = "jsons3_if_<phase>_"
 INTERFERENCE_CHILD_FIELDS = frozenset({
@@ -1514,6 +1517,7 @@ def _interference_metadata(metadata, truth, query_digest):
         or any(not _is_integer(value) for value in indices)
         or indices != sorted(set(indices))
         or len(indices) != INTERFERENCE_ELIGIBLE_BLOCK_COUNT
+        or (indices[-1] + 1) * truth["block_size"] > metadata["final_watermark"]
     ):
         raise ValueError(invalid)
     digests = metadata.get("eligible_block_sha256")
@@ -1659,6 +1663,8 @@ def _validate_interference_envelope(envelope):
 def _recompute_interference_artifacts(run):
     """流式重算十六项 child artifact 的 bytes/SHA，拒绝路径逃逸。"""
     root = Path(run).resolve()
+    if (root / "child").is_symlink():
+        raise ValueError("interference child directory is a symlink")
     child_root = (root / "child").resolve()
     identities = {}
     for relative in INTERFERENCE_ARTIFACT_PATHS:
@@ -1719,6 +1725,7 @@ def _validate_interference_root(manifest):
         "execution_scope": INTERFERENCE_SCOPE,
         "classification": INTERFERENCE_CLASSIFICATION,
         "phase_order": list(INTERFERENCE_PHASE_ORDER),
+        "statistics_boundary": INTERFERENCE_STATISTICS_BOUNDARY,
     }
     if (
         any(not _matches_contract(manifest.get(key), value) for key, value in fixed.items())
@@ -1957,8 +1964,8 @@ def _interference_success_evidence(row, accumulator, query_scenarios, write_tabl
 
 
 def _parse_interference_raw(path, schedules, *, query_scenarios, write_tables,
-                            block_size, watermarks):
-    """流式重算一个 raw JSONL 的 stream 计数、时延与成功 query 证据。"""
+                            block_size, watermarks, horizon):
+    """流式重算一个 raw JSONL 的 stream 计数、时延与成功 query 证据，horizon 为完成时刻上界。"""
     path = Path(path)
     if not path.is_file():
         raise ValueError("interference raw file is unavailable")
@@ -1966,6 +1973,7 @@ def _parse_interference_raw(path, schedules, *, query_scenarios, write_tables,
         raise ValueError("interference schedules mismatch")
     accumulators = {stream: _interference_accumulator(stream) for stream in schedules}
     sequences = {stream: [] for stream in schedules}
+    offsets = {stream: [] for stream in schedules}
     with open(path, "rb") as handle:
         for number, line in enumerate(handle, 1):
             if not line.strip():
@@ -1976,6 +1984,16 @@ def _parse_interference_raw(path, schedules, *, query_scenarios, write_tables,
             stream = row["stream"]
             schedule = schedules[stream]
             status = _interference_raw_evidence(row)
+            if (
+                row["completed_offset_seconds"] is not None
+                and row["completed_offset_seconds"] > horizon
+            ):
+                raise ValueError("interference raw completion exceeds the published wall")
+            if (
+                row["started_offset_seconds"] is not None
+                and row["started_offset_seconds"] > horizon
+            ):
+                raise ValueError("interference raw start exceeds the published wall")
             tolerance = _number(
                 schedule.get("late_tolerance_seconds"), "interference schedules mismatch"
             )
@@ -1985,6 +2003,7 @@ def _parse_interference_raw(path, schedules, *, query_scenarios, write_tables,
             counts["completed_requests"] += row["completed_offset_seconds"] is not None
             counts["late_requests"] += row["late_by_ms"] > tolerance * 1000
             sequences[stream].append(row["sequence"])
+            offsets[stream].append(row["scheduled_offset_seconds"])
             if status == "success":
                 _interference_success_evidence(
                     row, accumulators[stream], query_scenarios, write_tables,
@@ -2008,6 +2027,17 @@ def _parse_interference_raw(path, schedules, *, query_scenarios, write_tables,
             rate = _number(schedules[stream].get("rate_per_second"), mismatch)
             if len(rows) != math.ceil(duration * rate):
                 raise ValueError("interference raw fixed scheduled count is invalid")
+            # 偏移必须唯一定位到自身 sequence，容差远小于一个到达间隔。
+            if any(
+                not math.isclose(
+                    offset, sequence / rate,
+                    rel_tol=0.0, abs_tol=INTERFERENCE_OFFSET_TOLERANCE_SECONDS,
+                )
+                for sequence, offset in zip(rows, offsets[stream])
+            ):
+                raise ValueError("interference raw scheduled offset is off the published rate")
+        elif any(offset > horizon for offset in offsets[stream]):
+            raise ValueError("interference raw scheduled offset exceeds the published wall")
         results[stream] = accumulator
     return results
 
@@ -2113,6 +2143,12 @@ def _gate_interference_access(manifest, queries):
     for key in ("plans", "query_details", "query_finish"):
         if not isinstance(evidence.get(key), dict) or set(evidence[key]) != expected:
             raise ValueError("interference query evidence IDs mismatch")
+    # index_scans 按索引名聚合，与 query ID 无关，只核对计数值域。
+    scans = evidence["index_scans"]
+    if not isinstance(scans, dict):
+        raise ValueError("interference query evidence IDs mismatch")
+    for count in scans.values():
+        _integer(count, "interference query evidence IDs mismatch")
     for query_id, (_, planned) in queries.items():
         plan = evidence["plans"][query_id]
         detail = evidence["query_details"][query_id]
@@ -2156,6 +2192,7 @@ def _validate_interference_phase(run, phase, manifest, layout, metadata, schedul
         "execution_scope": INTERFERENCE_SCOPE,
         "classification": INTERFERENCE_CLASSIFICATION,
         "layout": layout,
+        "cache_state": INTERFERENCE_CACHE_STATE,
         "warmup_seconds": segment_seconds["warmup"],
         "measurement_seconds": segment_seconds["measurement"],
     }
@@ -2163,8 +2200,14 @@ def _validate_interference_phase(run, phase, manifest, layout, metadata, schedul
         raise ValueError("interference phase manifest mismatch")
     if any(key in manifest for key in ("error", "errors", "execution_resolution")):
         raise ValueError("interference phase manifest is not formal complete")
+    _integer(manifest.get("child_pid"), "interference phase manifest mismatch", 1)
     namespace = manifest.get("namespace")
-    if not isinstance(namespace, str) or not namespace:
+    prefix = INTERFERENCE_NAMESPACE_PREFIX.replace("<phase>", phase)
+    if (
+        not isinstance(namespace, str)
+        or not namespace.startswith(prefix)
+        or len(namespace) <= len(prefix)
+    ):
         raise ValueError("interference phase namespaces are invalid or duplicated")
     database = f"{namespace}_{layout}"
     cleanup = manifest.get("cleanup")
@@ -2203,7 +2246,7 @@ def _validate_interference_phase(run, phase, manifest, layout, metadata, schedul
             Path(run) / "child" / phase / INTERFERENCE_SEGMENT_FILES[segment],
             schedules[phase][segment], query_scenarios=INTERFERENCE_QUERY_SCENARIOS,
             write_tables=LAYOUT_TARGETS[layout], block_size=metadata["block_size"],
-            watermarks=watermarks,
+            watermarks=watermarks, horizon=coverage[f"{segment}_actual_seconds"],
         )
         published = manifest.get("warmup" if segment == "warmup" else "statistics")
         if not isinstance(published, dict) or set(published) != set(schedules[phase][segment]):
@@ -2230,10 +2273,15 @@ def _validate_interference_phase(run, phase, manifest, layout, metadata, schedul
                 queries[query_id] = (stream, evidence)
         if segment == "measurement":
             streams = statistics
+    # 连续 stream 的末次迭代只能把 wall 拖出固定的余量。
     for segment in INTERFERENCE_SEGMENTS:
-        if not math.isclose(
-            coverage[f"{segment}_actual_seconds"], min(walls[segment].values()),
-            rel_tol=1e-9, abs_tol=1e-9,
+        if (
+            not math.isclose(
+                coverage[f"{segment}_actual_seconds"], min(walls[segment].values()),
+                rel_tol=1e-9, abs_tol=1e-9,
+            )
+            or coverage[f"{segment}_actual_seconds"]
+            > segment_seconds[segment] + INTERFERENCE_COVERAGE_OVERRUN_SECONDS
         ):
             raise ValueError("interference formal coverage is inconsistent")
     _gate_interference_access(manifest, queries)
@@ -2281,6 +2329,12 @@ def _summarize_interference(runs, *, schedules, segment_seconds):
     ):
         if any(envelopes[layout][1][field] != first[field] for layout in LAYOUTS):
             raise ValueError(f"interference {name} differs between runs")
+    identities = [
+        (envelopes[layout][1]["run_id"], envelopes[layout][1]["child"]["run_id"])
+        for layout in LAYOUTS
+    ]
+    if any(len({item[index] for item in identities}) != len(identities) for index in (0, 1)):
+        raise ValueError("interference run identity is duplicated between runs")
     runtime_identity = _interference_runtime_identity(first)
     if any(
         _interference_runtime_identity(envelopes[layout][1]) != runtime_identity
