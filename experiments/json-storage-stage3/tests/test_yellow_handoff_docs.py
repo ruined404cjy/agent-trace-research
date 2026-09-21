@@ -555,7 +555,11 @@ class YellowGuideContractTest(unittest.TestCase):
     def test_guide_verifies_packages_and_frozen_input(self):
         """指南要求 SHA-512 校验安装包、SHA-256 校验冻结输入。"""
         content = self.read_guide()
-        for term in ("sha512sum -c", "sha256sum -c", "load_formal_input", "identity_sha256"):
+        # 官方 .sha512 的第二列是构建机绝对路径，包校验比对摘要字段而不是走 sha512sum -c。
+        for term in (
+            'expected=$(awk \'{print $1}\' "$file.sha512")', "sha512 mismatch for",
+            "sha256sum -c", "load_formal_input", "identity_sha256",
+        ):
             self.assertIn(term, content, f"指南缺少校验命令或字段：{term}")
         for term in ('"$file.sha512"', "package-names.txt"):
             self.assertIn(term, content, f"指南缺少包摘要或包身份记录：{term}")
@@ -728,6 +732,35 @@ class YellowGuideContractTest(unittest.TestCase):
         for name in ("outside", "root", "traversal", "relative", "missing", "empty_root"):
             self.assertNotEqual("0", values[name], f"守卫必须拒绝 {name}")
         self.assertIn("refusing", values["message"], "拒绝时必须输出 refusing 说明")
+
+    def test_guide_config_rewrite_tolerates_a_missing_caches_anchor(self):
+        """23.3 包内没有 custom_cached_disks_base_directory，缺失时跳过改写而不是失败。"""
+        fences = extract_code_fences(self.read_guide())
+        script = heredoc_body(fence_with(fences, "config anchor")["body"], "PY")
+        template_text = "\n".join(
+            line for line in CONFIG_TEMPLATE.splitlines()
+            if "custom_cached_disks_base_directory" not in line
+        ) + "\n"
+        self.assertNotIn("custom_cached_disks_base_directory", template_text)
+        with tempfile.TemporaryDirectory() as root:
+            template = Path(root) / "config.xml"
+            template.write_text(template_text, encoding="utf-8")
+            output = Path(root) / "etc" / "config.xml"
+            state = Path(root) / "state"
+            completed = subprocess.run(
+                ["python3", "-", str(template), str(output), str(state), "18123", "19000"],
+                input=script, text=True, capture_output=True, check=False,
+            )
+            self.assertEqual(
+                0, completed.returncode,
+                f"缺少缓存目录锚点时配置改写必须继续：{completed.stderr.strip()}",
+            )
+            tree = ElementTree.fromstring(output.read_text(encoding="utf-8"))
+        self.assertIsNone(
+            tree.find("custom_cached_disks_base_directory"), "缺失的锚点不得被补写",
+        )
+        self.assertEqual(f"{state}/data/", tree.findtext("path"), "其余路径照常改写")
+        self.assertEqual("1000", tree.findtext("merge_tree/parts_to_delay_insert"))
 
     def test_guide_config_rewrite_pins_state_paths_and_single_memory_ratio(self):
         """TGZ 配置改写把路径与端口指向状态目录，并只保留一个生效内存比例。"""

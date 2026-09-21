@@ -597,7 +597,15 @@ for name in clickhouse-common-static clickhouse-server clickhouse-client; do
   fi
   test -s "$file" || { printf 'missing package: %s\n' "$file" >&2; exit 1; }
   test -s "$file.sha512" || { printf 'missing checksum: %s\n' "$file.sha512" >&2; exit 1; }
-  sha512sum -c "$file.sha512"
+  # 摘要文件记录的是构建机路径（形如 /output/<file>），sha512sum -c 在下载目录找不到该路径，
+  # 因此比对摘要字段而不是执行 sha512sum -c。
+  expected=$(awk '{print $1}' "$file.sha512")
+  actual=$(sha512sum "$file" | awk '{print $1}')
+  if [ -z "$expected" ] || [ "$expected" != "$actual" ]; then
+    printf 'sha512 mismatch for %s\n  expected %s\n  actual   %s\n' \
+      "$file" "$expected" "$actual" >&2
+    exit 1
+  fi
 done
 
 sha512sum clickhouse-common-static-${CH_VERSION}-${CH_TGZ_SUFFIX}.tgz \
@@ -607,7 +615,7 @@ sha512sum clickhouse-common-static-${CH_VERSION}-${CH_TGZ_SUFFIX}.tgz \
 sha256sum clickhouse-*-${CH_VERSION}-${CH_TGZ_SUFFIX}.tgz | tee "$CH_STATE/pkg/package-names.txt"
 ```
 
-sha512sum -c 对三个包都必须输出 OK。摘要文件使用标准校验格式（摘要、两个空格、文件名），在校验目录内直接执行 sha512sum -c 即可。package-names.txt 记录实际文件名与 SHA-256，是 6.4 节包身份证据的来源。
+三个包的摘要字段都必须与实测值一致，任一不一致即退出。官方摘要文件的第二列是构建机上的绝对路径而不是本地文件名，`sha512sum -c` 会报 No such file or directory，所以本节比对摘要字段。package-names.txt 记录实际文件名与 SHA-256，是 6.4 节包身份证据的来源。
 
 ### 5.3 root 与 RPM 权限路径
 
@@ -731,7 +739,7 @@ export CH_INSTALL_MODE=tgz
 mkdir -p "$CH_STATE/opt" "$CH_STATE/etc"
 cd "$CH_STATE/pkg"
 for name in clickhouse-common-static clickhouse-server clickhouse-client; do
-  tar -xzf "${name}-${CH_VERSION}-arm64.tgz" -C "$CH_STATE/opt"
+  tar -xzf "${name}-${CH_VERSION}-${CH_TGZ_SUFFIX}.tgz" -C "$CH_STATE/opt"
 done
 test -x "$CH_BIN"
 
@@ -780,8 +788,14 @@ text = replace("<log>/var/log/clickhouse-server/clickhouse-server.log</log>",
                f"<log>{state}/log/clickhouse-server.log</log>")
 text = replace("<errorlog>/var/log/clickhouse-server/clickhouse-server.err.log</errorlog>",
                f"<errorlog>{state}/log/clickhouse-server.err.log</errorlog>")
-text = replace("<custom_cached_disks_base_directory>/var/lib/clickhouse/caches/</custom_cached_disks_base_directory>",
-               f"<custom_cached_disks_base_directory>{state}/caches/</custom_cached_disks_base_directory>")
+# 该元素自 24.x 才进入包内配置；23.3 没有，缺失时由 path 派生缓存目录，跳过改写。
+CACHES_ANCHOR = ("<custom_cached_disks_base_directory>/var/lib/clickhouse/caches/"
+                 "</custom_cached_disks_base_directory>")
+caches_present = text.count(CACHES_ANCHOR) == 1
+if caches_present:
+    text = replace(CACHES_ANCHOR,
+                   f"<custom_cached_disks_base_directory>{state}/caches/"
+                   "</custom_cached_disks_base_directory>")
 text = replace("<path>/var/lib/clickhouse/</path>", f"<path>{state}/data/</path>")
 text = replace("<tmp_path>/var/lib/clickhouse/tmp/</tmp_path>", f"<tmp_path>{state}/tmp/</tmp_path>")
 text = replace("<user_files_path>/var/lib/clickhouse/user_files/</user_files_path>",
@@ -822,7 +836,8 @@ expect("path", f"{state}/data/")
 expect("tmp_path", f"{state}/tmp/")
 expect("user_files_path", f"{state}/user_files/")
 expect("format_schema_path", f"{state}/format_schemas/")
-expect("custom_cached_disks_base_directory", f"{state}/caches/")
+if caches_present:
+    expect("custom_cached_disks_base_directory", f"{state}/caches/")
 expect("max_server_memory_usage", "0")
 expect("max_server_memory_usage_to_ram_ratio", "0.5")
 expect("merge_tree/parts_to_delay_insert", "1000")
@@ -923,7 +938,7 @@ grep -E '1000|3000' "$CH_STATE/merge-tree-settings.txt" | wc -l | grep -qx 2 || 
 }
 ```
 
-内存比例以 5.4 节配置断言的生效值为准；system.server_settings 在该版本可用时补记一行实测值，不可用时记 unavailable。
+内存比例由 5.4 节的配置断言核对；system.server_settings 在 23.3.10.5 可用，另记一行 max_server_memory_usage 与 max_server_memory_usage_to_ram_ratio 的实测值。
 
 ### 5.7 停止服务
 
