@@ -4,6 +4,7 @@ import json
 import os
 import sys
 import tempfile
+import types
 import unittest
 import uuid
 from dataclasses import fields
@@ -148,6 +149,52 @@ class OpenGaussAdapterUnitTest(unittest.TestCase):
         evidence = getattr(adapter, "ingest_failure_evidence", None)
         self.assertIsNotNone(evidence)
         self.assertEqual(evidence(), {})
+
+    def test_asset_status_transition_inlines_null_error_category(self):
+        """捕获空 error_category 走绑定参数：该位置没有类型上下文，派生引擎无法推断。"""
+        class StatusConnection:
+            def __init__(self):
+                self.executions = []
+
+            def transaction(self):
+                return self
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exception_type, exception, traceback):
+                return False
+
+            def execute(self, statement, parameters):
+                self.executions.append((statement, parameters))
+                return types.SimpleNamespace(rowcount=1)
+
+            def close(self):
+                return None
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            adapter = opengauss.OpenGaussAdapter(
+                "127.0.0.1", 15432, "unused", "jsons3_test", "asset_ref", root,
+                LocalAssetStore(root / "assets"),
+            )
+            connection = StatusConnection()
+            adapter.connect_worker = lambda: connection
+
+            adapter.set_asset_status("abc", "available")
+            adapter.set_asset_status("abc", "failed", "missing")
+
+        cleared, classified = connection.executions
+        self.assertIn("error_category=NULL,", cleared[0], "空 error_category 必须内联 NULL 字面量")
+        self.assertEqual(cleared[1], ("available", "abc"), "内联后不得再传 None 参数")
+        self.assertIn("error_category=%s,", classified[0], "非空 error_category 保持绑定参数")
+        self.assertEqual(classified[1], ("failed", "missing", "abc"))
+        for statement, _ in (cleared, classified):
+            self.assertIn("SET status=%s,", statement, "status 始终走绑定参数")
+            self.assertTrue(
+                statement.endswith("updated_at=CURRENT_TIMESTAMP WHERE asset_id=%s"),
+                "两条路径的赋值尾部与谓词保持一致",
+            )
 
     def test_asset_pending_insert_projects_every_logical_catalog_column(self):
         """捕获 pending INSERT 遗漏 logical Asset row 的显式 NULL 列。"""

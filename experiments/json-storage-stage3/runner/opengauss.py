@@ -472,12 +472,19 @@ class OpenGaussAdapter:
         """显式转换 catalog 状态，供故障实验控制。"""
         if self.layout != "asset_ref" or status not in ASSET_STATUSES:
             raise ValueError("invalid asset status transition")
+        # error_category 为空时内联 NULL 字面量：该位置的绑定参数没有类型上下文，
+        # 部分 openGauss 派生引擎无法推断参数类型，与 pending INSERT 的写法一致。
+        if error_category is None:
+            assignment, parameters = "error_category=NULL", (status, asset_id)
+        else:
+            assignment, parameters = "error_category=%s", (status, error_category, asset_id)
         connection = self.connect_worker()
         try:
             with connection.transaction():
                 cursor = connection.execute(
-                    f"UPDATE {self.schema}.assets SET status=%s,error_category=%s,updated_at=CURRENT_TIMESTAMP WHERE asset_id=%s",
-                    (status, error_category, asset_id),
+                    f"UPDATE {self.schema}.assets SET status=%s,{assignment},"
+                    "updated_at=CURRENT_TIMESTAMP WHERE asset_id=%s",
+                    parameters,
                 )
                 if cursor.rowcount != 1:
                     raise ValueError(f"unknown asset: {asset_id}")

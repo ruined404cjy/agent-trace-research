@@ -313,7 +313,11 @@ class StatefulConnection:
             }
             return StatefulCursor(rowcount=1)
         if sql.startswith("UPDATE") and "SET status=" in sql:
-            status, error_category, asset_id = parameters
+            # 空 error_category 由 adapter 内联为 NULL 字面量，参数表随之少一项。
+            if "error_category=NULL" in sql:
+                (status, asset_id), error_category = parameters, None
+            else:
+                status, error_category, asset_id = parameters
             if asset_id not in self.state.assets:
                 return StatefulCursor(rowcount=0)
             self.state.assets[asset_id].update(
