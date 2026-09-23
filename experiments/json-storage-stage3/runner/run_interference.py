@@ -17,8 +17,10 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field, is_dataclass, replace
 from pathlib import Path
 
-from common import AccessEvidence, BlockResult, CleanupResult, QuerySpec
-from run_clickhouse_part_states import capture_part_state
+from common import (
+    AccessEvidence, AssetStorageEvidence, BlockResult, CleanupResult,
+    QuerySpec, StorageEvidence, build_layout_catalog,
+)
 from run_layout_matrix import QuerySample, QueryTruth, measure_query, write_manifest_atomic
 
 
@@ -1271,13 +1273,50 @@ def _write_jsonl_atomic(path, load_results):
         temporary.unlink(missing_ok=True)
 
 
-def _snapshot(adapter, name, origin, clock, resource_collector, require_resources=False):
-    state = capture_part_state(adapter, name)
-    storage = {
-        "tables": state.tables,
-        "merges": state.active_merges,
-        "asset_store": state.asset_store,
+# 两类存储模型各自的物理指标。列存按 part 组织，行存按堆、索引与行外存储组织，
+# 两组字段互不重叠，据此判定快照采自哪种模型。
+STORAGE_MODEL_METRICS = {
+    "part": ("part_count", "marks", "compressed_bytes", "uncompressed_bytes"),
+    "row": ("heap_bytes", "index_bytes", "toast_bytes", "total_bytes"),
+}
+
+
+def capture_storage_snapshot(adapter):
+    """采集当前布局全部写目标的物理状态，返回存储模型、表指标、合并与 Asset 证据。
+
+    入参 adapter 为已建表的布局 adapter。按实际报出的字段集合判定存储模型，
+    两类模型的字段都不齐时报错，不猜测缺失值。
+    """
+    storage = adapter.collect_storage()
+    if not isinstance(storage, StorageEvidence):
+        raise ValueError("adapter returned invalid storage evidence")
+    catalog = build_layout_catalog(adapter.layout)
+    if set(storage.tables) != set(catalog.write_tables):
+        raise RuntimeError("storage snapshot tables do not match layout write targets")
+    models = {
+        name for name, metrics in STORAGE_MODEL_METRICS.items()
+        if all(metric in storage.tables[table] for table in catalog.write_tables for metric in metrics)
     }
+    if len(models) != 1:
+        raise RuntimeError("storage snapshot metrics match no single storage model")
+    model = models.pop()
+    tables = {}
+    for table in catalog.write_tables:
+        values = storage.tables[table]
+        if any(
+            type(values[metric]) is not int or values[metric] < 0
+            for metric in STORAGE_MODEL_METRICS[model]
+        ):
+            raise RuntimeError(f"storage snapshot metrics are incomplete: {table}")
+        tables[table] = {metric: values[metric] for metric in STORAGE_MODEL_METRICS[model]}
+    if catalog.name == "asset_ref" and not isinstance(storage.asset_store, AssetStorageEvidence):
+        raise RuntimeError("Asset storage evidence is missing")
+    return model, tables, tuple(dict(item) for item in storage.merges), storage.asset_store
+
+
+def _snapshot(adapter, name, origin, clock, resource_collector, require_resources=False):
+    model, tables, merges, asset_store = capture_storage_snapshot(adapter)
+    storage = {"tables": tables, "merges": merges, "asset_store": asset_store}
     resources = _json_value(resource_collector())
     if require_resources:
         validate_resource_snapshot(resources)
@@ -1285,12 +1324,13 @@ def _snapshot(adapter, name, origin, clock, resource_collector, require_resource
         "name": name,
         "captured_offset_seconds": clock() - origin,
         "resources": resources,
+        "storage_model": model,
         "storage": _json_value(storage),
+        # part 积压只在列存上有定义；行存没有等价物，记 0 并由 storage_model 区分。
         "active_part_backlog": sum(
-            max(0, int(table.get("part_count", 0)) - 1)
-            for table in state.tables.values()
-        ),
-        "active_merge_count": len(state.active_merges),
+            max(0, table["part_count"] - 1) for table in tables.values()
+        ) if model == "part" else 0,
+        "active_merge_count": len(merges),
     }
 
 

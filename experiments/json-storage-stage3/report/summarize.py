@@ -176,9 +176,11 @@ INTERFERENCE_ARTIFACT_PATHS = tuple(
         )
     ]
 )
-INTERFERENCE_SNAPSHOT_TABLE_METRICS = (
-    "part_count", "marks", "compressed_bytes", "uncompressed_bytes",
-)
+# 快照指标按存储模型区分：列存按 part 组织，行存按堆、索引与行外存储组织。
+INTERFERENCE_SNAPSHOT_TABLE_METRICS = {
+    "part": ("part_count", "marks", "compressed_bytes", "uncompressed_bytes"),
+    "row": ("heap_bytes", "index_bytes", "toast_bytes", "total_bytes"),
+}
 INTERFERENCE_QUERY_EVIDENCE_FIELDS = frozenset({
     "index_scans", "plans", "query_details", "query_finish",
 })
@@ -2055,6 +2057,30 @@ def _interference_asset_store(storage, layout):
     return {field: value[field] for field in PART_STATE_ASSET_FIELDS}
 
 
+def _interference_storage_model(snapshot, tables):
+    """判定该 snapshot 采自哪种存储模型。
+
+    入参 snapshot 为单个阶段快照，tables 为其写目标指标。快照声明 storage_model 时以声明
+    为准并核对字段齐备；未声明时按实际字段集合推断，两种模型都不匹配即报错。
+    """
+    declared = snapshot.get("storage_model")
+    if declared is not None:
+        if declared not in INTERFERENCE_SNAPSHOT_TABLE_METRICS:
+            raise ValueError("interference storage model is invalid")
+        return declared
+    # 未声明时按字段是否齐备推断模型；取值是否合法由调用方的逐字段校验负责。
+    matched = [
+        name for name, metrics in INTERFERENCE_SNAPSHOT_TABLE_METRICS.items()
+        if all(
+            isinstance(values, dict) and all(metric in values for metric in metrics)
+            for values in tables.values()
+        )
+    ]
+    if len(matched) != 1:
+        raise ValueError("interference storage model is invalid")
+    return matched[0]
+
+
 def _interference_snapshots(manifest, layout):
     """验证三个资源/存储 snapshot 的顺序、物理计数与 Asset 水位。"""
     snapshots = manifest.get("snapshots")
@@ -2080,15 +2106,17 @@ def _interference_snapshots(manifest, layout):
             )
         ):
             raise ValueError("interference storage evidence is incomplete")
+        model = _interference_storage_model(snapshot, tables)
         normalized = {}
         for table, values in tables.items():
-            if not isinstance(values, dict):
-                raise ValueError("interference storage metrics are invalid")
             normalized[table] = {
                 metric: _integer(values.get(metric), "interference storage metrics are invalid")
-                for metric in INTERFERENCE_SNAPSHOT_TABLE_METRICS
+                for metric in INTERFERENCE_SNAPSHOT_TABLE_METRICS[model]
             }
-        backlog = sum(max(0, values["part_count"] - 1) for values in normalized.values())
+        # part 积压只在列存上有定义，行存记 0；合并计数两种模型都成立。
+        backlog = sum(
+            max(0, values["part_count"] - 1) for values in normalized.values()
+        ) if model == "part" else 0
         if (
             _integer(snapshot.get("active_part_backlog"), "interference storage totals mismatch")
             != backlog
@@ -2099,6 +2127,7 @@ def _interference_snapshots(manifest, layout):
         results.append({
             "name": snapshot["name"],
             "captured_offset_seconds": snapshot["captured_offset_seconds"],
+            "storage_model": model,
             "resources": snapshot["resources"],
             "tables": normalized,
             "merges": merges,

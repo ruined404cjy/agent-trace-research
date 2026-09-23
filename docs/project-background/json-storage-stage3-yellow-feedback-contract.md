@@ -58,7 +58,7 @@ sha256sum experiments/json-storage-stage3/runner/{xstore.py,gaussdb_libpq.py,ope
 ### 1.4 引擎执行顺序
 
 两台使用同一顺序：XStore 主矩阵 → ClickHouse 主矩阵 → ClickHouse part 状态 →
-两个引擎的 Asset 故障。两个引擎串行，运行一个引擎的目标时停止另一个引擎的服务，使内存与
+两个引擎的混合负载 → 两个引擎的 Asset 故障。两个引擎串行，运行一个引擎的目标时停止另一个引擎的服务，使内存与
 页缓存不被另一侧占用。每次切换引擎之前重做一遍第 3 节的六项检查，不沿用上一次的结果。
 
 ## 2. 运行环境变量
@@ -153,7 +153,7 @@ WHERE active AND database = {database:String} AND column = 'payload';
 |---|---|---|---|
 | 主矩阵四布局四 workload | 重跑 | 重跑 | 两台此前使用各自本地修改的 adapter，数据不可合并；本轮两台使用同一提交，两个引擎都在统一工具包下产出 |
 | part 状态控制 | 不适用 | 重跑 | XStore 不使用 part 组织数据。重跑以取得四个布局、四个状态的时延，此前只有 part 数 |
-| 混合负载 | 本轮不跑 | 重跑 | 采集路径要求 MergeTree 指标，行存不满足；该缺口待工具包后续变更，本轮不作为不适用结论 |
+| 混合负载 | 重跑 | 重跑 | 阶段快照改为按引擎实际报出的物理模型采集，行存记堆、索引与行外存储字节，part 积压记 0；前台时延与丢弃计数两侧同口径，物理旁证两侧各记各的，不横向对照 |
 | Asset 故障六用例 | 重跑 | 重跑 | 结论为分类与状态转换，不产出时延 |
 
 主矩阵一次调用必须列出全部四个 workload，分次调用会覆盖同一 target 的产物，属无效运行。
@@ -223,7 +223,8 @@ ORDER BY start_time,event_id LIMIT 256;
 | A8 | 按引擎与布局 | `access_validation` 的 scanned_rows：list 最小 list 最大 detail 最小 detail 最大 trace 最小 trace 最大 |
 | B1 | XStore 按布局，每布局再按 profile 分行；ClickHouse 按布局 | XStore 行为 profile 行数 逻辑字节 存储字节；ClickHouse 行为 压缩后字节 压缩前字节 |
 | B2 | 按布局，每布局再按碎片态、合并中、自然稳定态、单 part 态分行 | `list:first` p50 受控表 active part 数 进行中 merge 数 |
-| B3 | 两个引擎各按 missing、corrupt、metadata_mismatch、upload_then_db_failure、publish_failure、delete_failure 分行 | 注入点 解析器错误分类 终态 事件可见 孤儿数 恢复动作 |
+| B3 | 按引擎与布局，每项再按 quiet、detail_2m、trace_long、batch_loop、continuous_ingest 五个阶段分行 | 前台 list p50 前台 preview p50 list 丢弃数 preview 丢弃数 存储模型 |
+| B4 | 两个引擎各按 missing、corrupt、metadata_mismatch、upload_then_db_failure、publish_failure、delete_failure 分行 | 注入点 解析器错误分类 终态 事件可见 孤儿数 恢复动作 |
 | C1 | 每项一行 | 第 3 节六项检查的原值，按该表的行序 |
 | C2 | 两行 | 第一行 XStore 运行提交短号 构建类型 构建类型证据；第二行 ClickHouse 运行版本 `parts_to_delay_insert` `parts_to_throw_insert` `max_server_memory_usage_to_ram_ratio` |
 | C3 | 一行 | 本机 IP 末段 内存总量 GB CPU 核数 数据盘类型 |

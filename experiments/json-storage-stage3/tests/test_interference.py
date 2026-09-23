@@ -1803,3 +1803,72 @@ class InterferenceRunnerTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class StorageSnapshotModelTest(unittest.TestCase):
+    """阶段快照按引擎实际报出的物理模型采集，行存与列存都能进入混合负载实验。"""
+
+    class _Adapter:
+        """只提供布局与存储证据的 adapter 替身。"""
+
+        def __init__(self, layout, tables, merges=(), asset_store=None):
+            self.layout = layout
+            self._evidence = StorageEvidence(tables, tuple(merges), asset_store)
+
+        def collect_storage(self):
+            return self._evidence
+
+    PART_TABLE = {
+        "part_count": 5, "marks": 12, "compressed_bytes": 19_017_603,
+        "uncompressed_bytes": 296_228_266, "rows": 48_534,
+    }
+    ROW_TABLE = {
+        "heap_bytes": 10_854_400, "index_bytes": 21_921_792,
+        "toast_bytes": 23_175_168, "total_bytes": 55_975_936,
+    }
+
+    def test_column_store_snapshot_reports_part_backlog(self):
+        """列存按 part 组织，积压为各写目标超出单 part 的部分之和。"""
+        adapter = self._Adapter("same_table", {"events": dict(self.PART_TABLE)},
+                                merges=({"table": "events"},))
+        snapshot = interference_runner._snapshot(
+            adapter, "quiet", 0.0, lambda: 1.0, lambda: {}, require_resources=False,
+        )
+        self.assertEqual("part", snapshot["storage_model"])
+        self.assertEqual(4, snapshot["active_part_backlog"])
+        self.assertEqual(1, snapshot["active_merge_count"])
+        self.assertEqual(
+            set(interference_runner.STORAGE_MODEL_METRICS["part"]),
+            set(snapshot["storage"]["tables"]["events"]),
+            "只保留该模型的物理指标，行数等非物理字段不进入快照",
+        )
+
+    def test_row_store_snapshot_records_its_own_metrics_without_part_backlog(self):
+        """行存没有 part，积压记 0；堆、索引与行外存储字节照常留证。
+
+        此前阶段快照借用了 part 状态实验的校验器，行存的字段集合对不上而直接报错，
+        混合负载因此无法在行存引擎上执行。
+        """
+        adapter = self._Adapter("same_table", {"events": dict(self.ROW_TABLE)})
+        snapshot = interference_runner._snapshot(
+            adapter, "quiet", 0.0, lambda: 1.0, lambda: {}, require_resources=False,
+        )
+        self.assertEqual("row", snapshot["storage_model"])
+        self.assertEqual(0, snapshot["active_part_backlog"])
+        self.assertEqual(0, snapshot["active_merge_count"])
+        self.assertEqual(
+            self.ROW_TABLE, snapshot["storage"]["tables"]["events"],
+        )
+
+    def test_unknown_metric_set_is_rejected(self):
+        """两种模型的字段都不齐时停止，不猜测缺失值。"""
+        adapter = self._Adapter("same_table", {"events": {"part_count": 5, "heap_bytes": 1}})
+        with self.assertRaises(RuntimeError):
+            interference_runner.capture_storage_snapshot(adapter)
+
+    def test_negative_metric_is_rejected(self):
+        """模型确定之后，取值仍需逐项为非负整数。"""
+        broken = dict(self.ROW_TABLE, heap_bytes=-1)
+        adapter = self._Adapter("same_table", {"events": broken})
+        with self.assertRaises(RuntimeError):
+            interference_runner.capture_storage_snapshot(adapter)
