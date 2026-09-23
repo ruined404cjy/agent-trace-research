@@ -28,3 +28,4 @@ JSON 存储流程图位于 `json-storage/assets/`，由原理文档、报告和�
 
 - `superpowers/` 保存已执行工作的设计说明与实施计划；阶段三黄区交接的[设计](superpowers/specs/2026-09-17-json-storage-stage3-xstore-yellow-handoff-design.md)与[实施计划](superpowers/plans/2026-09-17-json-storage-stage3-xstore-yellow-handoff.md)位于该目录。
 - `temp/` 保存本地运行清单、原始结果和内部核对材料；该目录不作为正式交付入口。
+- `yellow-handback/` 保存黄区按执行指南第 9.2 节通道一推送的结果文件，按 `<主机 IP 末段>-<日期>/` 分目录；每个目录含回传摘录、各 target `result.json` 与汇总器 `summary.json`。
