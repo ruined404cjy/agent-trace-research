@@ -970,7 +970,6 @@ def xstore_asset_failure_factories(
         adapter = XStoreAdapter(
             endpoints.xstore_host, endpoints.xstore_port,
             endpoints.xstore_container, namespace, "asset_ref", Path.cwd(), store,
-            user=endpoints.xstore_user, password=endpoints.xstore_password,
         )
         control = OpenGaussAssetFaultControl(adapter)
         controls.add(control)

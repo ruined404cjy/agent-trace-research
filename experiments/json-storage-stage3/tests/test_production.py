@@ -1,6 +1,7 @@
 import hashlib
 import json
 import operator
+import os
 import stat
 import sys
 import tempfile
@@ -1088,6 +1089,34 @@ class ProductionFactoryTest(unittest.TestCase):
         self.assertEqual((endpoints.opengauss_host, endpoints.clickhouse_host), ("db.example", "::1"))
 
 
+class XStoreAssetFailureProductionTest(unittest.TestCase):
+    """验证 XStore Asset 故障 factory 只用固定端点和环境账号构造 control。"""
+
+    def test_factory_builds_controls_from_endpoints_and_run_account(self):
+        """捕获 factory 引用端点上不存在的凭据字段或构造期连接数据库。"""
+        with self.assertRaisesRegex(ValueError, "endpoints"):
+            production.xstore_asset_failure_factories(object())
+        with tempfile.TemporaryDirectory() as directory, patch(
+            "opengauss.OpenGaussAdapter.connect_worker",
+            side_effect=AssertionError("factory connected to database"),
+        ), patch.dict(os.environ, {"XSTORE_USER": "jsons3_runner"}):
+            root = Path(directory)
+            factory, catalog_factory, injector = production.xstore_asset_failure_factories(
+                production.EngineEndpoints(),
+            )
+            first = factory("asset_failure_one", root / "one")
+            second = factory("asset_failure_two", root / "two")
+            self.assertIs(catalog_factory(first), first)
+            self.assertIsNot(first, second)
+            self.assertEqual(first.adapter.layout, "asset_ref")
+            self.assertEqual(first.adapter._xstore_user, "jsons3_runner")
+            self.assertEqual(first.store.root, (root / "one").resolve())
+            self.assertEqual(second.store.root, (root / "two").resolve())
+            with self.assertRaisesRegex(ValueError, "control"):
+                catalog_factory(object())
+            self.assertIsInstance(injector, production.DatabaseFaultInjector)
+
+
 class OpenGaussAssetFailureProductionTest(unittest.TestCase):
     """验证 openGauss Asset 故障 wrapper 的真实对象和事务观测边界。"""
 
@@ -1371,6 +1400,7 @@ class ClickHouseAssetFailureProductionTest(unittest.TestCase):
 
         for engine, expected in (
             ("opengauss", production.opengauss_asset_failure_factories),
+            ("xstore", production.xstore_asset_failure_factories),
             ("clickhouse", production.clickhouse_asset_failure_factories),
         ):
             token = (object(), object(), object())
