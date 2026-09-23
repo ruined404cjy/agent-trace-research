@@ -85,7 +85,7 @@ def _freeze_queries(query_cases):
 
 @dataclass(frozen=True)
 class EngineEndpoints:
-    """保存两个数据库 engine 的固定本地连接端点。"""
+    """保存数据库 engine 的固定本地连接端点。"""
 
     opengauss_host: str = "127.0.0.1"
     opengauss_port: int = 15432
@@ -93,13 +93,20 @@ class EngineEndpoints:
     clickhouse_host: str = "127.0.0.1"
     clickhouse_port: int = 18123
     clickhouse_container: str = "agent-trace-clickhouse-25-12"
+    xstore_host: str = "127.0.0.1"
+    xstore_port: int = 29000
+    xstore_container: str = ""
+    deployment: str = "container"
 
     def __post_init__(self):
-        """拒绝空连接身份和非正端口，避免工厂产生歧义配置。"""
-        for name in (
-            "opengauss_host", "opengauss_container",
-            "clickhouse_host", "clickhouse_container",
-        ):
+        """拒绝空连接身份、非正端口和未知部署模式，避免工厂产生歧义配置。"""
+        if self.deployment not in {"container", "native"}:
+            raise ValueError("deployment must be container or native")
+        required = ["opengauss_host", "opengauss_container", "clickhouse_host", "xstore_host"]
+        # 原生包部署没有容器名，容器身份由 run 侧的原生包证据替代。
+        if self.deployment == "container":
+            required.append("clickhouse_container")
+        for name in required:
             value = getattr(self, name)
             if (
                 not isinstance(value, str)
@@ -110,7 +117,7 @@ class EngineEndpoints:
                        for character in value)
             ):
                 raise ValueError(f"{name} must be a non-empty string")
-        for name in ("opengauss_port", "clickhouse_port"):
+        for name in ("opengauss_port", "clickhouse_port", "xstore_port"):
             value = getattr(self, name)
             if not isinstance(value, int) or isinstance(value, bool) or not 1 <= value <= 65_535:
                 raise ValueError(f"{name} must be a positive integer")
@@ -203,7 +210,7 @@ def create_adapter(engine: str, layout: str, namespace: str, formal: FormalInput
     formal = _require_formal_input(formal)
     if not isinstance(endpoints, EngineEndpoints):
         raise ValueError("endpoints must be EngineEndpoints")
-    if engine not in {"opengauss", "clickhouse"}:
+    if engine not in {"opengauss", "clickhouse", "xstore"}:
         raise ValueError(f"unsupported engine: {engine}")
     if layout not in LAYOUTS:
         raise ValueError(f"unsupported layout: {layout}")
@@ -224,6 +231,12 @@ def create_adapter(engine: str, layout: str, namespace: str, formal: FormalInput
         return OpenGaussAdapter(
             endpoints.opengauss_host, endpoints.opengauss_port,
             endpoints.opengauss_container, namespace, layout, formal.root, asset_store,
+        )
+    if engine == "xstore":
+        from xstore import XStoreAdapter
+        return XStoreAdapter(
+            endpoints.xstore_host, endpoints.xstore_port,
+            endpoints.xstore_container, namespace, layout, formal.root, asset_store,
         )
     from clickhouse import ClickHouseAdapter
     return ClickHouseAdapter(
@@ -330,8 +343,9 @@ def interference_factories(
     layout: str,
     asset_root: Path | None,
     endpoints: EngineEndpoints,
+    engine: str = "clickhouse",
 ) -> tuple[Callable, Callable, dict[str, object]]:
-    """构造 ClickHouse fixed interference factories 与静态输入 metadata。"""
+    """构造 fixed interference factories 与静态输入 metadata。"""
     formal = _require_formal_input(formal)
     if layout not in LAYOUTS:
         raise ValueError(f"unsupported layout: {layout}")
@@ -378,7 +392,7 @@ def interference_factories(
     used_namespaces = set()
 
     def adapter_factory(namespace, phase, seed):
-        """为一个 fixed phase 构造尚未 create 的 ClickHouse adapter。"""
+        """为一个 fixed phase 构造尚未 create 的 adapter。"""
         _phase_seed(phase, seed)
         if not isinstance(namespace, str) or not namespace:
             raise ValueError("namespace must be a non-empty string")
@@ -391,7 +405,7 @@ def interference_factories(
             raise ValueError("asset namespace must be fresh")
         used_namespaces.add(namespace)
         return create_adapter(
-            "clickhouse", layout, namespace, formal, namespace_asset_root, endpoints,
+            engine, layout, namespace, formal, namespace_asset_root, endpoints,
         )
 
     def targets_factory(adapter, phase, seed):
@@ -648,11 +662,14 @@ class ClickHouseAssetFaultControl:
             connection.close()
         if (
             len(rows) != 1 or not isinstance(rows[0], dict)
-            or set(rows[0]) != {"count"} or not isinstance(rows[0]["count"], int)
-            or isinstance(rows[0]["count"], bool) or rows[0]["count"] not in (0, 1)
+            or set(rows[0]) != {"count"}
+            or isinstance(rows[0]["count"], bool)
         ):
             raise RuntimeError("invalid ClickHouse event visibility response")
-        return rows[0]["count"] == 1
+        count = int(rows[0]["count"])
+        if count not in (0, 1):
+            raise RuntimeError("invalid ClickHouse event visibility response")
+        return count == 1
 
     def reachable_paths(self) -> set[Path]:
         """通过 event 与 catalog 的真实 JOIN 返回可达对象路径。"""
@@ -771,10 +788,10 @@ class ClickHouseAssetFaultControl:
             len(rows) != 1 or not isinstance(rows[0], dict)
             or set(rows[0]) != {"asset_id", "content_length"}
             or rows[0]["asset_id"] != asset_id
-            or not isinstance(rows[0]["content_length"], int)
             or isinstance(rows[0]["content_length"], bool)
-            or rows[0]["content_length"] != content_length
         ):
+            raise RuntimeError("ClickHouse metadata mutation readback mismatch")
+        if int(rows[0]["content_length"]) != content_length:
             raise RuntimeError("ClickHouse metadata mutation readback mismatch")
 
 
@@ -938,6 +955,36 @@ def opengauss_asset_failure_factories(
     return adapter_factory, catalog_factory, DatabaseFaultInjector()
 
 
+def xstore_asset_failure_factories(
+    endpoints: EngineEndpoints,
+) -> tuple[Callable, Callable, DatabaseFaultInjector]:
+    """构造可直接交给六故障 runner 的 XStore factories 与 injector。"""
+    if not isinstance(endpoints, EngineEndpoints):
+        raise ValueError("endpoints must be EngineEndpoints")
+    controls = set()
+
+    def adapter_factory(namespace, object_directory):
+        """构造独立 asset_ref control，不连接数据库或创建 schema。"""
+        from xstore import XStoreAdapter
+        store = LocalAssetStore(Path(object_directory).resolve())
+        adapter = XStoreAdapter(
+            endpoints.xstore_host, endpoints.xstore_port,
+            endpoints.xstore_container, namespace, "asset_ref", Path.cwd(), store,
+            user=endpoints.xstore_user, password=endpoints.xstore_password,
+        )
+        control = OpenGaussAssetFaultControl(adapter)
+        controls.add(control)
+        return control
+
+    def catalog_factory(control):
+        """仅向对应 factory 创建的同一 control 返回只读观测面。"""
+        if not isinstance(control, OpenGaussAssetFaultControl) or control not in controls:
+            raise ValueError("catalog factory requires its corresponding fault control")
+        return control
+
+    return adapter_factory, catalog_factory, DatabaseFaultInjector()
+
+
 def clickhouse_asset_failure_factories(
     endpoints: EngineEndpoints,
 ) -> tuple[Callable, Callable, DatabaseFaultInjector]:
@@ -975,6 +1022,8 @@ def asset_failure_factories(
         raise ValueError("endpoints must be EngineEndpoints")
     if engine == "opengauss":
         return opengauss_asset_failure_factories(endpoints)
+    if engine == "xstore":
+        return xstore_asset_failure_factories(endpoints)
     if engine == "clickhouse":
         return clickhouse_asset_failure_factories(endpoints)
     raise ValueError(f"unsupported engine: {engine}")

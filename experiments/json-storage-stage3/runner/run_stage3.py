@@ -66,9 +66,11 @@ def build_parser():
     interference.add_argument("--output", type=Path, required=True)
     interference.add_argument("--layout", choices=("same_table", "separate", "full_core", "asset_ref"),
                               required=True)
+    interference.add_argument("--engine", choices=("opengauss", "clickhouse", "xstore"),
+                              default="clickhouse")
     asset_failures = commands.add_parser("asset-failures")
     asset_failures.add_argument("--output", type=Path, required=True)
-    asset_failures.add_argument("--engine", choices=("opengauss", "clickhouse"), required=True)
+    asset_failures.add_argument("--engine", choices=("opengauss", "clickhouse", "xstore"), required=True)
     return parser
 
 
@@ -348,7 +350,7 @@ def _expected_asset_failure_result(case, namespace, output, delete_status=None):
 
 def _gate_asset_failures(child, output, engine):
     """从 child JSON bytes 独立门禁两引擎固定六故障证据。"""
-    if not isinstance(engine, str) or engine not in {"opengauss", "clickhouse"}:
+    if not isinstance(engine, str) or engine not in {"opengauss", "clickhouse", "xstore"}:
         raise ValueError("unsupported asset failure engine")
     output = Path(output).resolve()
     expected_path = (output / "child" / "run-manifest.json").resolve()
@@ -976,13 +978,18 @@ def _gate_candidate(child, formal, namespace):
     ):
         raise RuntimeError("candidate engine runtime evidence is invalid")
     container = _require_object(manifest, "container")
-    if container.get("container") != EngineEndpoints().clickhouse_container:
-        raise RuntimeError("candidate container identity mismatch")
-    if (
-        not isinstance(container.get("image"), str) or not container["image"]
-        or not isinstance(container.get("image_id"), str) or not container["image_id"]
-    ):
-        raise RuntimeError("candidate container image identity is missing")
+    if container.get("mode") == "native-package":
+        for required in ("engine", "engine_version", "package_checksums", "binary_sha256"):
+            if not container.get(required):
+                raise RuntimeError(f"candidate native package evidence missing: {required}")
+    else:
+        if container.get("container") != EngineEndpoints().clickhouse_container:
+            raise RuntimeError("candidate container identity mismatch")
+        if (
+            not isinstance(container.get("image"), str) or not container["image"]
+            or not isinstance(container.get("image_id"), str) or not container["image_id"]
+        ):
+            raise RuntimeError("candidate container image identity is missing")
     host = _require_object(manifest, "host")
     if (
         not isinstance(host.get("platform"), str) or not host["platform"]
@@ -1181,6 +1188,8 @@ def _database_runtime_evidence(adapter, engine, endpoints):
         container_name = endpoints.opengauss_container
     elif engine == "clickhouse":
         container_name = endpoints.clickhouse_container
+    elif engine == "xstore":
+        container_name = endpoints.xstore_container
     else:
         raise ValueError(f"unsupported runtime engine: {engine}")
     runtime = run_layout_matrix._engine_runtime(adapter, engine)
@@ -1192,7 +1201,11 @@ def _database_runtime_evidence(adapter, engine, endpoints):
         or not runtime["version"] or runtime.get("source") != "database-query"
     ):
         raise RuntimeError("database runtime evidence is invalid")
-    if (
+    if container.get("mode") == "native-package":
+        for required in ("engine_version", "package_checksums", "binary_sha256"):
+            if not container.get(required):
+                raise RuntimeError(f"native package evidence missing: {required}")
+    elif (
         not isinstance(container, dict) or set(container) != {"container", "image", "image_id"}
         or container.get("container") != container_name
         or not isinstance(container.get("image"), str) or not container["image"]
@@ -1280,9 +1293,10 @@ def _interference_partial_namespaces(output):
 
 
 def _run_interference(arguments, envelope):
-    """执行固定 ClickHouse interference，并发布门禁后的运行证据。"""
+    """执行固定 interference，并发布门禁后的运行证据。"""
     output = arguments.output.resolve()
     layout = arguments.layout
+    engine = arguments.engine
     formal = load_formal_input(arguments.input.resolve())
     _record_formal_evidence(envelope, formal)
     asset_root = output / "assets" if layout == "asset_ref" else None
@@ -1298,17 +1312,19 @@ def _run_interference(arguments, envelope):
     }
     endpoints = EngineEndpoints()
     probe = create_adapter(
-        "clickhouse", layout, "jsons3_runtime_probe", formal, asset_root, endpoints,
+        engine, layout, "jsons3_runtime_probe", formal, asset_root, endpoints,
     )
-    runtime, container, host = _database_runtime_evidence(probe, "clickhouse", endpoints)
+    runtime, container, host = _database_runtime_evidence(probe, engine, endpoints)
+    endpoint_host = getattr(endpoints, f"{engine}_host")
+    endpoint_port = getattr(endpoints, f"{engine}_port")
     envelope["runtime"] = {
-        "operation": "interference", "engine": "clickhouse", "layout": layout,
-        "endpoint": {"host": endpoints.clickhouse_host, "port": endpoints.clickhouse_port},
+        "operation": "interference", "engine": engine, "layout": layout,
+        "endpoint": {"host": endpoint_host, "port": endpoint_port},
         "container": _json_value(container), "engine_runtime": _json_value(runtime),
         "host": _json_value(host),
     }
     adapter_factory, targets_factory, metadata = production.interference_factories(
-        formal, layout, asset_root, endpoints,
+        formal, layout, asset_root, endpoints, engine,
     )
     try:
         metadata = _strict_json_snapshot(metadata, "interference factory metadata")
@@ -1398,6 +1414,8 @@ def _run_asset_failures(arguments, envelope):
     runtime, container, host = _database_runtime_evidence(adapter, engine, endpoints)
     if engine == "opengauss":
         endpoint = {"host": endpoints.opengauss_host, "port": endpoints.opengauss_port}
+    elif engine == "xstore":
+        endpoint = {"host": endpoints.xstore_host, "port": endpoints.xstore_port}
     else:
         endpoint = {"host": endpoints.clickhouse_host, "port": endpoints.clickhouse_port}
     envelope["runtime"] = {

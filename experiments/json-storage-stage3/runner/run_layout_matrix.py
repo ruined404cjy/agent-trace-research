@@ -1016,8 +1016,53 @@ def _host_evidence():
     }
 
 
+def _native_package_evidence(prefix="CH_NATIVE"):
+    """读取原生包引擎身份证据（无 Docker 路径）。
+
+    入参 prefix 为环境变量前缀。声明的 product_path 指向存在的文件时，binary_sha256 由该
+    文件实测得出，声明值另存为 binary_sha256_declared，两者不一致由回传方判读，不中断运行。
+    """
+    identity = {}
+    for key in (
+        "engine", "engine_version", "product_path", "package_files",
+        "package_checksums", "binary_sha256", "config_identity",
+        "service_identity", "host",
+    ):
+        val = os.environ.get(f"{prefix}_{key.upper()}")
+        if val:
+            identity[key] = val
+    binary = Path(identity["product_path"]) if identity.get("product_path") else None
+    if binary is not None and binary.is_file():
+        digest = hashlib.sha256()
+        with binary.open("rb") as handle:
+            for chunk in iter(lambda: handle.read(1 << 20), b""):
+                digest.update(chunk)
+        declared = identity.get("binary_sha256")
+        identity["binary_sha256"] = digest.hexdigest()
+        identity["binary_sha256_source"] = "measured"
+        if declared:
+            identity["binary_sha256_declared"] = declared
+    elif identity.get("binary_sha256"):
+        identity["binary_sha256_source"] = "declared"
+    return identity
+
+
 def _container_evidence(container_name):
-    """读取容器镜像名和不可变 image ID，不读取凭据。"""
+    """读取容器镜像名和不可变 image ID，不读取凭据。
+
+    原生包引擎（无 Docker）通过 CH_NATIVE_ENGINE 或 XSTORE_NATIVE_ENGINE 环境变量指示，
+    此时返回原生包身份证据而非容器证据。
+    """
+    if os.environ.get("CH_NATIVE_ENGINE"):
+        native = _native_package_evidence("CH_NATIVE")
+        native["container"] = None
+        native["mode"] = "native-package"
+        return native
+    if os.environ.get("XSTORE_NATIVE_ENGINE"):
+        native = _native_package_evidence("XSTORE_NATIVE")
+        native["container"] = None
+        native["mode"] = "native-package"
+        return native
     completed = subprocess.run(
         ["docker", "inspect", container_name, "--format", "{{.Config.Image}}|{{.Image}}"],
         capture_output=True, text=True, check=False,
@@ -1049,7 +1094,7 @@ def _engine_runtime(adapter, engine):
         return {"version": "test-double", "source": "unit-test"}
     connection = adapter.connect_worker()
     try:
-        if engine == "opengauss":
+        if engine in ("opengauss", "xstore"):
             version = connection.execute("SELECT version()").fetchone()[0]
         elif engine == "clickhouse":
             rows = adapter._json_rows(adapter._request(
@@ -1153,7 +1198,7 @@ def _expected_query_contract(engine, layout, kind, namespace=None):
         "asset_id" if layout == "asset_ref" else "payload"
     )
     payload_prefix = "p." if layout == "separate" and kind not in {"list", "preview"} else prefix
-    if engine == "opengauss":
+    if engine in ("opengauss", "xstore"):
         projection = [prefix + field + " as " + field for field in LOGICAL_FIELDS[:-1]]
         if kind == "list":
             projection[8] = "null::text as preview"
@@ -1220,12 +1265,21 @@ def _formal_access_structure(engine, kind, plan):
     if not isinstance(plan, str):
         return None
     normalized = plan.lower()
-    if engine == "opengauss":
-        has_runtime = "actual time=" in normalized and "rows=" in normalized and "buffers:" in normalized
+    if engine in ("opengauss", "xstore"):
+        has_runtime = "actual time=" in normalized and "rows=" in normalized
+        has_buffers = "buffers:" in normalized
         has_index = any(token in normalized for token in (
             "index scan", "index only scan", "bitmap index scan",
         ))
-        return "query-plan-index" if has_runtime and has_index else None
+        if not (has_runtime and has_index):
+            return None
+        # GaussDB 的 EXPLAIN (ANALYZE, BUFFERS) 不输出 Buffers 行；缓冲证据缺失时降级记录，
+        # 使清单能区分两种证据强度，不静默按同级通过。
+        if has_buffers:
+            return "query-plan-index"
+        if engine == "xstore":
+            return "query-plan-index-without-buffer-evidence"
+        return None
     if engine == "clickhouse":
         has_primary_key = "primarykey" in normalized or "primary key" in normalized
         has_mark_ranges = "marks" in normalized or "granules:" in normalized
@@ -1239,7 +1293,7 @@ def _formal_access_structure(engine, kind, plan):
 
 def _adapter_access_namespace(engine, adapter):
     """从 live adapter 读取 SQL 来源应使用的 schema 或 database。"""
-    attribute = {"opengauss": "schema", "clickhouse": "database"}.get(engine)
+    attribute = {"opengauss": "schema", "clickhouse": "database", "xstore": "schema"}.get(engine)
     if attribute is None:
         return None
     namespace = getattr(adapter, attribute, None)
@@ -1307,8 +1361,8 @@ def _evidence_gate(engine, layout, input_kind, samples, access, storage, cleanup
         raise RuntimeError("access plans do not cover every formal query")
     if engine == "clickhouse" and set(access.query_finish) != set(query_ids):
         raise RuntimeError("QueryFinish does not cover every formal query")
-    if engine == "opengauss" and not access.index_scans:
-        raise RuntimeError("openGauss index scan evidence is missing")
+    if engine in ("opengauss", "xstore") and not access.index_scans:
+        raise RuntimeError(f"{engine} index scan evidence is missing")
     access_validation = _validate_access(engine, layout, input_kind, samples, access, namespace)
     expected_tables = set(build_layout_catalog(layout).write_tables)
     if set(storage.tables) != expected_tables:
@@ -1371,7 +1425,11 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
         manifest["code"] = _code_evidence(adapter)
         manifest["engine_runtime"] = _engine_runtime(adapter, config.engine)
         container = _container_evidence(getattr(adapter, "container_name", "test-double"))
-        if config.engine in {"opengauss", "clickhouse"} and not container["image_id"]:
+        if container.get("mode") == "native-package":
+            for required in ("engine_version", "package_checksums", "binary_sha256"):
+                if not container.get(required):
+                    raise RuntimeError(f"native package evidence missing: {required}")
+        elif config.engine in {"opengauss", "clickhouse", "xstore"} and not container.get("image_id"):
             raise RuntimeError("container image digest evidence is missing")
         manifest["container"] = container
         events = build_workload_events(source_events, config.workload)
@@ -1559,6 +1617,15 @@ def _adapter(engine, layout, namespace, input_root, asset_root, arguments):
             arguments.opengauss_host, arguments.opengauss_port,
             arguments.opengauss_container, namespace, layout, input_root, asset_store,
         )
+    if engine == "xstore":
+        from xstore import XStoreAdapter
+
+        return XStoreAdapter(
+            getattr(arguments, "xstore_host", "127.0.0.1"),
+            getattr(arguments, "xstore_port", 29000),
+            getattr(arguments, "xstore_container", ""),
+            namespace, layout, input_root, asset_store,
+        )
     if engine == "clickhouse":
         from clickhouse import ClickHouseAdapter
 
@@ -1607,7 +1674,7 @@ def run_matrix(arguments):
     """按 workload 隔离执行 Latin square，并在全局清理后发布八个目标。"""
     input_root = Path(arguments.input).resolve()
     output_root = Path(arguments.output).resolve()
-    engines = _parse_csv(arguments.engines, {"opengauss", "clickhouse"}, "engines")
+    engines = _parse_csv(arguments.engines, {"opengauss", "clickhouse", "xstore"}, "engines")
     layouts = _parse_csv(arguments.layouts, set(LAYOUTS), "layouts")
     workloads = _parse_csv(getattr(arguments, "workloads", ",".join(WORKLOADS)), set(WORKLOADS), "workloads")
     if set(layouts) != set(LAYOUTS):
@@ -1616,7 +1683,7 @@ def run_matrix(arguments):
     command = (sys.executable, *sys.argv)
     target_states = {}
     for engine in engines:
-        for layout in LAYOUTS:
+        for layout in layouts:
             target_dir = output_root / engine / layout
             target_dir.mkdir(parents=True, exist_ok=True)
             state = {
@@ -1636,6 +1703,8 @@ def run_matrix(arguments):
                 "host": _host_evidence(),
                 "container": _container_evidence(
                     arguments.opengauss_container if engine == "opengauss"
+                    else getattr(arguments, "xstore_container", "")
+                    if engine == "xstore"
                     else arguments.clickhouse_container
                 ),
             }
@@ -1662,7 +1731,7 @@ def run_matrix(arguments):
     failures = []
     aggregate_samples = {
         (engine, layout, workload): []
-        for engine in engines for layout in LAYOUTS for workload in workloads
+        for engine in engines for layout in layouts for workload in workloads
     }
     for workload in workloads:
         workload_events = build_workload_events(events, workload)
@@ -1673,6 +1742,8 @@ def run_matrix(arguments):
         for round_index in rounds:
             order = schedule[round_index]
             for position, layout in enumerate(order):
+                if layout not in layouts:
+                    continue
                 for engine in engines:
                     state = target_states[(engine, layout)]
                     workload_state = state["workloads"][workload]
@@ -1735,7 +1806,7 @@ def run_matrix(arguments):
     if not asset_work_clean:
         failures.append("matrix: Asset workspace contains residual objects")
     for engine in engines:
-        for layout in LAYOUTS:
+        for layout in layouts:
             target_dir = output_root / engine / layout
             state = target_states[(engine, layout)]
             decorated = []
@@ -1831,6 +1902,9 @@ def _argument_parser():
     parser.add_argument("--clickhouse-host", default="127.0.0.1")
     parser.add_argument("--clickhouse-port", type=int, default=18123)
     parser.add_argument("--clickhouse-container", default="agent-trace-clickhouse-25-12")
+    parser.add_argument("--xstore-host", default="127.0.0.1")
+    parser.add_argument("--xstore-port", type=int, default=29000)
+    parser.add_argument("--xstore-container", default="")
     return parser
 
 

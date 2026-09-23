@@ -38,6 +38,7 @@ WRITE_BLOCK_STATISTICS = ("minimum", "median", "p95", "maximum")
 STORAGE_TABLE_FIELDS = {
     "clickhouse": ("part_count", "rows", "marks", "compressed_bytes", "uncompressed_bytes"),
     "opengauss": ("heap_bytes", "index_bytes", "toast_bytes", "total_bytes"),
+    "xstore": ("heap_bytes", "index_bytes", "toast_bytes", "total_bytes"),
 }
 STORAGE_ASSET_FIELDS = (
     "available_bytes", "available_object_count", "orphan_bytes", "orphan_object_count",
@@ -209,7 +210,8 @@ INTERFERENCE_RAW_FIELDS = frozenset({
 
 ASSET_FAILURE_FORMAT = "agent-trace-json-storage-stage3-asset-failure-run"
 ASSET_FAILURE_SUMMARY_FORMAT = "agent-trace-json-storage-stage3-asset-failures-summary"
-ASSET_FAILURE_ENGINES = ("opengauss", "clickhouse")
+ASSET_FAILURE_ENGINES = ("opengauss", "clickhouse", "xstore")
+ASSET_FAILURE_MINIMUM_ENGINES = 2
 ASSET_FAILURE_LAYOUT = "asset_ref"
 ASSET_FAILURE_CASE_ORDER = (
     "missing", "corrupt", "metadata_mismatch",
@@ -529,7 +531,7 @@ def _validate_round(manifest, workload, record, seen_positions):
         raise ValueError("access evidence is missing")
     if any(not isinstance(plan, str) or not plan.strip() for plan in access["plans"].values()):
         raise ValueError("access evidence is incomplete")
-    if engine == "opengauss":
+    if engine in ("opengauss", "xstore"):
         index_scans = access.get("index_scans")
         if not isinstance(index_scans, dict) or not index_scans:
             raise ValueError("access evidence is incomplete")
@@ -627,7 +629,7 @@ def validate_run(manifest: dict[str, object]) -> None:
         raise ValueError("target format/version is invalid")
     if manifest.get("status") != "complete":
         raise ValueError("status is not complete")
-    if manifest.get("engine") not in {"opengauss", "clickhouse"}:
+    if manifest.get("engine") not in {"opengauss", "clickhouse", "xstore"}:
         raise ValueError("target engine is invalid")
     if manifest.get("layout") not in LAYOUTS:
         raise ValueError("target layout is invalid")
@@ -1068,7 +1070,13 @@ def _part_state_runtime(envelope):
     ):
         raise ValueError("part-state runtime evidence is invalid")
     container = runtime.get("container")
-    if not isinstance(container, dict) or any(
+    if not isinstance(container, dict):
+        raise ValueError("part-state runtime evidence is invalid")
+    if container.get("mode") == "native-package":
+        for field in ("engine_version", "package_checksums", "binary_sha256"):
+            if not isinstance(container.get(field), str) or not container[field]:
+                raise ValueError("part-state runtime evidence is invalid")
+    elif any(
         not isinstance(container.get(field), str) or not container[field]
         for field in ("container", "image", "image_id")
     ):
@@ -1493,14 +1501,18 @@ def summarize_part_states(runs: list[Path]) -> dict[str, object]:
     ):
         if any(envelopes[layout][1][field] != first[field] for layout in LAYOUTS):
             raise ValueError(f"part-state {name} identity differs between runs")
+    def _container_identity(container):
+        if container.get("mode") == "native-package":
+            return (container.get("binary_sha256"), container.get("package_checksums"))
+        return (container.get("image"), container.get("image_id"))
     runtime_identity = (
         first["runtime"]["engine_runtime"]["version"],
-        first["runtime"]["container"]["image_id"],
+        _container_identity(first["runtime"]["container"]),
     )
     if any(
         (
             envelopes[layout][1]["runtime"]["engine_runtime"]["version"],
-            envelopes[layout][1]["runtime"]["container"]["image_id"],
+            _container_identity(envelopes[layout][1]["runtime"]["container"]),
         ) != runtime_identity
         for layout in LAYOUTS
     ):
@@ -1683,7 +1695,13 @@ def _interference_runtime(envelope):
     ):
         raise ValueError("interference runtime evidence is invalid")
     container = runtime.get("container")
-    if not isinstance(container, dict) or any(
+    if not isinstance(container, dict):
+        raise ValueError("interference runtime evidence is invalid")
+    if container.get("mode") == "native-package":
+        for field in ("engine_version", "package_checksums", "binary_sha256"):
+            if not isinstance(container.get(field), str) or not container[field]:
+                raise ValueError("interference runtime evidence is invalid")
+    elif any(
         not isinstance(container.get(field), str) or not container[field]
         for field in ("container", "image", "image_id")
     ):
@@ -1711,6 +1729,11 @@ def _interference_runtime_identity(envelope):
     """返回跨运行比较的引擎版本与镜像身份。"""
     runtime = envelope["runtime"]
     container = runtime["container"]
+    if container.get("mode") == "native-package":
+        return (
+            runtime["engine_runtime"]["version"],
+            container.get("binary_sha256"), container.get("package_checksums"),
+        )
     return (
         runtime["engine_runtime"]["version"], container["image"], container["image_id"],
     )
@@ -2649,7 +2672,13 @@ def _asset_failure_runtime(envelope):
         raise ValueError("asset-failure runtime evidence is invalid")
     _integer(endpoint.get("port"), "asset-failure runtime evidence is invalid", 1)
     container = runtime.get("container")
-    if not isinstance(container, dict) or any(
+    if not isinstance(container, dict):
+        raise ValueError("asset-failure runtime evidence is invalid")
+    if container.get("mode") == "native-package":
+        for field in ("engine_version", "package_checksums", "binary_sha256"):
+            if not isinstance(container.get(field), str) or not container[field]:
+                raise ValueError("asset-failure runtime evidence is invalid")
+    elif any(
         not isinstance(container.get(field), str) or not container[field]
         for field in ("container", "image", "image_id")
     ):
@@ -3083,26 +3112,29 @@ def summarize_asset_failures(runs: list[Path]) -> dict[str, object]:
         if engine in envelopes:
             raise ValueError(f"duplicate asset-failure engine: {engine}")
         envelopes[engine] = (Path(run), envelope)
-    if set(envelopes) != set(ASSET_FAILURE_ENGINES):
+    # 覆盖哪些引擎由调用方传入的运行目录决定，并作为事实写入汇总；
+    # 少于两个引擎无法构成对比，直接拒绝。
+    covered = tuple(engine for engine in ASSET_FAILURE_ENGINES if engine in envelopes)
+    if len(covered) != len(envelopes) or len(covered) < ASSET_FAILURE_MINIMUM_ENGINES:
         raise ValueError("asset-failure engine coverage is incomplete")
-    first = envelopes[ASSET_FAILURE_ENGINES[0]][1]
+    first = envelopes[covered[0]][1]
     for name, field in (
         ("input identity", "input"), ("truth identity", "truth"),
         ("query catalog identity", "query_catalog_sha256"),
     ):
         if any(
             envelopes[engine][1].get(field) != first.get(field)
-            for engine in ASSET_FAILURE_ENGINES
+            for engine in covered
         ):
             raise ValueError(f"asset-failure {name} differs between runs")
     identities = [
         (envelopes[engine][1]["run_id"], envelopes[engine][1]["child"]["run_id"])
-        for engine in ASSET_FAILURE_ENGINES
+        for engine in covered
     ]
     if any(len({item[index] for item in identities}) != len(identities) for index in (0, 1)):
         raise ValueError("asset-failure run identity is duplicated between runs")
     engines = []
-    for engine in ASSET_FAILURE_ENGINES:
+    for engine in covered:
         run, envelope = envelopes[engine]
         manifest = _read_asset_failure_child(run, envelope)
         cases = _validate_asset_failure_child(manifest)

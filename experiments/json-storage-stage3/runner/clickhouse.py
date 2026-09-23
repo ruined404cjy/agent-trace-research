@@ -171,7 +171,7 @@ class ClickHouseAdapter:
 
     def connect_worker(self):
         """建立供一个 worker 复用且由调用方关闭的 HTTP 连接。"""
-        connection = http.client.HTTPConnection(self.host, self.port, timeout=30)
+        connection = http.client.HTTPConnection(self.host, self.port, timeout=120)
         try:
             connection.connect()
         except Exception:
@@ -672,6 +672,8 @@ class ClickHouseAdapter:
         try:
             for raw in rows:
                 item = {field: raw[field] for field in LOGICAL_FIELDS}
+                if item.get("content_length") is not None:
+                    item["content_length"] = int(item["content_length"])
                 item["start_time"] = self._timestamp(item["start_time"])
                 if self.layout == "asset_ref" and raw["payload_value"] is not None:
                     if catalog_connection is None:
@@ -740,7 +742,7 @@ class ClickHouseAdapter:
         params = {"query_ids": "[" + ",".join("'" + value + "'" for value in query_ids) + "]"}
         connection = self.connect_worker()
         try:
-            self._request(connection, "SYSTEM FLUSH LOGS query_log")
+            self._request(connection, "SYSTEM FLUSH LOGS")
             for attempt in range(attempts):
                 rows = self._json_rows(self._request(connection, query_finish_sql(), parameters=params))
                 found = {}
@@ -829,7 +831,10 @@ class ClickHouseAdapter:
                         "WHERE asset_id IS NOT NULL ORDER BY ingest_seq FORMAT JSONEachRow",
                     )
                     target_protocol_bytes += len(mapping_body.encode("utf-8"))
-                    event_mappings = tuple(self._json_rows(mapping_body))
+                    event_mappings = tuple(
+                        {**m, "ingest_seq": int(m["ingest_seq"])}
+                        for m in self._json_rows(mapping_body)
+                    )
                 else:
                     fields = PAYLOAD_AUDIT_FIELDS if target == "event_payloads" else EVENT_AUDIT_FIELDS
                     if target == "events_analytics" and self.layout == "asset_ref":
@@ -848,6 +853,9 @@ class ClickHouseAdapter:
                     for timestamp in ("start_time", "end_time"):
                         if item.get(timestamp) is not None:
                             item[timestamp] = self._timestamp(item[timestamp])
+                    for int_field in ("ingest_seq", "duration_ms", "content_length"):
+                        if item.get(int_field) is not None:
+                            item[int_field] = int(item[int_field])
                 duplicate_identities = len(projected) - len({row[identity] for row in projected})
                 target_audits[target] = PhysicalTargetAudit(
                     tuple(projected), duplicate_identities, event_mappings,

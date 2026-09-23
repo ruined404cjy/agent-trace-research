@@ -1570,12 +1570,14 @@ class InterferenceCliTests(unittest.TestCase):
             calls.append("probe")
             return SimpleNamespace()
 
-        def fake_factories(formal_arg, layout_arg, asset_root, endpoints):
+        def fake_factories(formal_arg, layout_arg, asset_root, endpoints, engine_arg="clickhouse"):
             self.assertEqual(json.loads((output / "run-manifest.json").read_text())["status"], "running")
             self.assertIs(formal_arg, formal)
             self.assertEqual(layout_arg, layout)
             self.assertEqual(asset_root, output / "assets" if layout == "asset_ref" else None)
             self.assertIsInstance(endpoints, production.EngineEndpoints)
+            # 干扰实验的引擎由 CLI 传入，默认仍是 ClickHouse。
+            self.assertIn(engine_arg, {"clickhouse", "xstore", "opengauss"})
             value = metadata()
             if factory_mutate is not None:
                 factory_mutate(value)
