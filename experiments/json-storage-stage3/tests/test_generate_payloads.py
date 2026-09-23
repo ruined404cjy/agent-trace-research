@@ -65,7 +65,12 @@ class GeneratePayloadsTest(unittest.TestCase):
         json.loads(catalog.unicode_boundary.text)
 
     def test_frozen_stage_two_source_has_exact_identity_rows_and_blocks(self):
-        """捕获内部自洽 manifest 放行被替换的阶段二输入。"""
+        """捕获内部自洽 manifest 放行被替换的阶段二输入。
+
+        基础记录来自阶段二的跨引擎冻结输入，该产物在 docs/temp 下且不入版本控制。
+        只有生成输入的主机持有它；其余主机使用已冻结的正式输入归档，输入身份由归档
+        SHA-256 与解包后的 identity_sha256 校验，本项在那些主机上不适用。
+        """
         source_dir = (
             STAGE_DIR.parents[1]
             / "docs"
@@ -73,6 +78,8 @@ class GeneratePayloadsTest(unittest.TestCase):
             / "json-storage-stage2"
             / "cross-engine-input-20260907"
         )
+        if not (source_dir / "run-manifest.json").is_file():
+            self.skipTest(f"阶段二冻结输入不在本机：{source_dir}")
 
         rows, source = generator._read_frozen_source(source_dir)
 
