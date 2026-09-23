@@ -175,11 +175,15 @@ BACKUP_FENCE_MARKER = "# 5.3 备份既有系统配置"
 def seed_handback_summary(output_root):
     """按 9.1 节门禁写入覆盖全部 target 的回传摘录，使清理片段可以执行。"""
     output_root = Path(output_root)
-    targets = [
-        {"target": str(manifest.parent.relative_to(output_root))}
-        for manifest in output_root.rglob("run-manifest.json")
-        if "handback" not in manifest.parts
-    ]
+    targets = []
+    for manifest in output_root.rglob("run-manifest.json"):
+        if "handback" in manifest.parts:
+            continue
+        # 归档步骤要求两个文件同时存在，真实 target 目录也总是成对产出。
+        result = manifest.parent / "result.json"
+        if not result.is_file():
+            result.write_text("{}", encoding="utf-8")
+        targets.append({"target": str(manifest.parent.relative_to(output_root))})
     handback = output_root / "handback"
     handback.mkdir(parents=True, exist_ok=True)
     (handback / "summary.json").write_text(
@@ -856,6 +860,62 @@ class YellowGuideContractTest(unittest.TestCase):
                 self.assertNotEqual(0, result.returncode, f"{label} 时清理必须停止")
                 self.assertIn("handback summary", result.stderr + result.stdout, "必须给出摘录门禁原因")
                 self.assertTrue(target.is_dir(), f"{label} 时输出根必须保持完整")
+
+    def test_guide_cleanup_archives_target_evidence_before_deleting(self):
+        """清理片段先把每个 target 的两个证据文件原样归档，再删除输出根。"""
+        cleanup = fence_with(extract_code_fences(self.read_guide()), "already clean")["body"]
+        with tempfile.TemporaryDirectory() as root:
+            state = Path(root) / "state"
+            output = state / "runs"
+            target = output / GUIDE_OUTPUT_ROOTS[0] / "clickhouse" / "same_table"
+            target.mkdir(parents=True)
+            manifest = json.dumps({"engine": "clickhouse", "layout": "same_table"})
+            (target / "run-manifest.json").write_text(manifest, encoding="utf-8")
+            (target / "result.json").write_text('{"status": "complete"}', encoding="utf-8")
+            completed = self.run_guide_fragment(cleanup, state, extra_lines=(
+                f"export YELLOW_OUTPUT={shlex.quote(str(output))}",
+                "export CH_INSTALL_MODE=tgz",
+                "ss() { echo 'State Recv-Q Send-Q Local Address:Port Peer Address:Port'; }",
+            ))
+            self.assertEqual(0, completed.returncode, completed.stderr)
+            self.assertFalse(
+                (output / GUIDE_OUTPUT_ROOTS[0]).exists(), "输出根应在归档后删除",
+            )
+            archive = output / "handback" / "targets" / GUIDE_OUTPUT_ROOTS[0] / "clickhouse" / "same_table"
+            self.assertEqual(
+                manifest, (archive / "run-manifest.json").read_text(encoding="utf-8"),
+                "归档的 run-manifest.json 必须与原文件一致",
+            )
+            self.assertEqual(
+                '{"status": "complete"}', (archive / "result.json").read_text(encoding="utf-8"),
+                "归档的 result.json 必须与原文件一致",
+            )
+
+    def test_guide_cleanup_stops_when_target_evidence_is_incomplete(self):
+        """target 缺少 result.json 时归档失败，清理停止且输出根保持完整。"""
+        cleanup = fence_with(extract_code_fences(self.read_guide()), "already clean")["body"]
+        with tempfile.TemporaryDirectory() as root:
+            state = Path(root) / "state"
+            output = state / "runs"
+            target = output / GUIDE_OUTPUT_ROOTS[0] / "clickhouse" / "same_table"
+            target.mkdir(parents=True)
+            (target / "run-manifest.json").write_text("{}", encoding="utf-8")
+            handback = output / "handback"
+            handback.mkdir(parents=True)
+            (handback / "summary.json").write_text(json.dumps({
+                "targets": [{"target": str(target.relative_to(output))}],
+            }), encoding="utf-8")
+            completed = self.run_guide_fragment(cleanup, state, seed_handback=False, extra_lines=(
+                f"export YELLOW_OUTPUT={shlex.quote(str(output))}",
+                "export CH_INSTALL_MODE=tgz",
+                "ss() { echo 'State Recv-Q Send-Q Local Address:Port Peer Address:Port'; }",
+            ))
+            self.assertNotEqual(0, completed.returncode, "证据不全时清理必须停止")
+            self.assertIn(
+                "target evidence is missing", completed.stderr + completed.stdout,
+                "必须给出证据缺失的原因",
+            )
+            self.assertTrue(target.is_dir(), "证据不全时输出根必须保持完整")
 
     def test_guide_cleanup_is_idempotent_and_keeps_foreign_paths(self):
         """清理片段可重复执行：真实输出根与 Asset 工作树被删除，目录外路径不变。"""

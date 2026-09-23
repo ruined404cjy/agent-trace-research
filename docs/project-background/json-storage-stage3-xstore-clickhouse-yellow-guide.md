@@ -1056,7 +1056,7 @@ ClickHouse 依靠主键裁剪读取远小于全表的行数。XStore 侧只有�
 |---|---|---|
 | 统计存在 | SELECT relname, reltuples FROM pg_class WHERE relnamespace=(SELECT oid FROM pg_namespace WHERE nspname='<schema>') | 每个写目标的 reltuples 大于 0 |
 | 索引存在 | SELECT indexname, indexdef FROM pg_indexes WHERE schemaname='<schema>' | 每张表的 list 与 trace 两条索引都存在 |
-| 计划走索引 | 对 list:first、detail:text_64k、trace:p50 各执行一次 EXPLAIN | 计划出现索引访问节点，不是全表扫描 |
+| 计划走索引 | 对 list:first、detail:text_64k、trace:p50 各执行一次 EXPLAIN (ANALYZE, BUFFERS) | 计划出现索引访问节点，且 Buffers 行存在 |
 | 索引被实际使用 | 执行查询前后读取 pg_stat_user_indexes.idx_scan | 至少一条索引的 idx_scan 增量大于 0 |
 
 任一项不通过时停止，不进入正式矩阵，按以下顺序排查。
@@ -1065,7 +1065,7 @@ ClickHouse 依靠主键裁剪读取远小于全表的行数。XStore 侧只有�
 2. 确认索引在该存储形态下的实际类型。列存表的索引为 psort，要求运行账号具备 cstore schema 权限：GRANT USAGE, CREATE ON SCHEMA cstore TO <账号>。索引创建成功但计划不选时进入第 3 步。
 3. 区分优化器不选与索引不可用：SET enable_seqscan=off 后重跑 EXPLAIN。仍为全表扫描说明索引不能承载该谓词，属于能力限制，按 6.1 节记入能力报告并停止；改为索引扫描说明是代价估算问题，核对统计是否最新并记录。
 
-门禁产物写入 $YELLOW_OUTPUT/access-gate/<engine>/<layout>/，包含三类查询的 EXPLAIN 原文、idx_scan 前后值与判定结论。该目录不在 9.1 节删除范围内。
+门禁产物写入 $YELLOW_OUTPUT/access-gate/<engine>/<layout>/，包含三类查询的计划原文、idx_scan 前后值与判定结论。行存侧的计划原文带 Buffers 行，用于判断查询命中共享缓冲区还是从磁盘读取。该目录不在 9.1 节删除范围内。
 
 ClickHouse 侧执行同一门禁，判据改为计划出现主键裁剪且 QueryFinish 的 read_rows 小于表行数。两个引擎都通过后才进入正式矩阵。
 
@@ -1221,7 +1221,7 @@ python experiments/json-storage-stage3/runner/run_layout_matrix.py \
 
 删除主矩阵输出根会一并删除其中的每个 run-manifest.json，存储证据、访问路径与真值结论都在其中。9.2 节的回传摘录因此是本节的前置门禁：摘录不存在、为空或未覆盖全部 target 时停止，不执行任何删除动作。
 
-清理保持幂等：已经缺失的目录按已清理处理，最终断言始终执行。顺序为校验回传摘录，校验 CH_INSTALL_MODE，停止 XStore 侧查询与后台任务，删除 XStore namespace 与对象目录，停止 ClickHouse，按安装路径回滚 ClickHouse 配置，删除 $YELLOW_OUTPUT 下的 clickhouse-main 与 xstore-main 两个主矩阵输出根及 $YELLOW_STATE/clickhouse，确认端口不再监听。$YELLOW_STATE 下的 venv、冻结输入、Release 资产、$YELLOW_OUTPUT/access-gate、$YELLOW_OUTPUT/handback 与后续控制运行的证据不在本片段的删除范围内。
+清理保持幂等：已经缺失的目录按已清理处理，最终断言始终执行。顺序为校验回传摘录，校验 CH_INSTALL_MODE，停止 XStore 侧查询与后台任务，删除 XStore namespace 与对象目录，停止 ClickHouse，按安装路径回滚 ClickHouse 配置，删除 $YELLOW_OUTPUT 下的 clickhouse-main 与 xstore-main 两个主矩阵输出根及 $YELLOW_STATE/clickhouse，确认端口不再监听。$YELLOW_STATE 下的 venv、冻结输入、Release 资产、$YELLOW_OUTPUT/access-gate、$YELLOW_OUTPUT/handback（含 targets 证据归档）与后续控制运行的证据不在本片段的删除范围内。
 
 ```bash
 # 1) XStore 侧：确认无运行中的查询与后台任务后删除 namespace 与对象目录，命令来自能力报告，
@@ -1237,14 +1237,15 @@ case "${CH_INSTALL_MODE:-}" in
     ;;
 esac
 
-# 2.5) 回传摘录门禁：输出根下存在 run manifest 时，摘录必须覆盖全部 target，否则不删除任何目录。
+# 2.5) 回传摘录门禁与证据归档：摘录必须覆盖全部 target，每个 target 的 run-manifest.json
+#      与 result.json 必须先复制到 handback/targets/，两项都通过后才允许删除。
 "$PYTHON_BOOTSTRAP" - "$YELLOW_OUTPUT" <<'HANDBACK' || exit 1
-import json, sys
+import json, shutil, sys
 from pathlib import Path
 
 root = Path(sys.argv[1])
 expected = {
-    str(manifest.parent.relative_to(root))
+    manifest.parent.relative_to(root)
     for manifest in root.rglob("run-manifest.json")
     if "handback" not in manifest.parts
 } if root.is_dir() else set()
@@ -1255,10 +1256,22 @@ summary = root / "handback" / "summary.json"
 if not summary.is_file() or summary.stat().st_size == 0:
     raise SystemExit("handback summary missing or empty: %s" % summary)
 targets = json.loads(summary.read_text(encoding="utf-8")).get("targets", [])
-missing = sorted(expected - {entry["target"] for entry in targets})
+missing = sorted(str(item) for item in expected - {Path(entry["target"]) for entry in targets})
 if missing:
     raise SystemExit("handback summary misses targets: " + ", ".join(missing))
-print("handback summary covers %d targets" % len(targets))
+# 删除输出根会带走计划原文、扫描行数与逐查询统计；两个文件先原样归档到不在删除范围的目录。
+archive = root / "handback" / "targets"
+for target in sorted(expected):
+    destination = archive / target
+    destination.mkdir(parents=True, exist_ok=True)
+    for name in ("run-manifest.json", "result.json"):
+        source = root / target / name
+        if not source.is_file():
+            raise SystemExit("target evidence is missing: %s" % (target / name))
+        shutil.copy2(source, destination / name)
+        if (destination / name).stat().st_size != source.stat().st_size:
+            raise SystemExit("archived evidence is truncated: %s" % (target / name))
+print("handback summary covers %d targets; evidence archived under %s" % (len(targets), archive))
 HANDBACK
 
 # 3) ClickHouse 侧：RPM 路径在本片段内完成系统级回滚；读取备份与覆盖文件前不删除状态目录。
@@ -1442,7 +1455,11 @@ printf 'cleanup complete: %s\n' "$YELLOW_STATE"
 
 storage 与 access 两项在清理后无法重建，逐 target 落盘，不用聚合值代替。
 
+摘录之外，9.1 节的门禁把每个 target 的 run-manifest.json 与 result.json 原样复制到 $YELLOW_OUTPUT/handback/targets/<target>/。这两个文件保存逐查询统计、计划原文、扫描行数、缓冲命中与逐轮存储证据，是清理后唯一可追溯的完整记录；摘录只是它们的可读摘要。
+
 原始 payload、完整 samples.jsonl 与归档文件留在黄区本地只读目录，回复中只给出路径、摘要与失败项。
+
+每一轮的重跑范围、统计口径、保留路径与回传格式见[阶段三黄区结果反馈契约](json-storage-stage3-yellow-feedback-contract.md)。该文与本节的摘录并列交付，摘录是机器可校验的证据，契约规定人工回传的口径。
 
 ## 10. 转发用黄区 agent prompt
 
@@ -1476,6 +1493,7 @@ Latin square 与 30/5 测量次数不自适应；需要超出适配卡允许范�
 
 ## 11. 参考入口
 
+- [阶段三黄区结果反馈契约](json-storage-stage3-yellow-feedback-contract.md)
 - [阶段三实验设计与证据契约](../json-storage/json-storage-stage3-experiment-design-2026-09-09.md)
 - [阶段三实验报告](../json-storage/json-storage-stage3-report-2026-09-20.md)
 - [阶段二实验报告](../json-storage/json-storage-stage2-report-2026-09-10.md)
