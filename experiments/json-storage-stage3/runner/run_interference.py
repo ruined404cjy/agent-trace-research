@@ -1334,7 +1334,7 @@ def _snapshot(adapter, name, origin, clock, resource_collector, require_resource
     }
 
 
-def _query_evidence(adapter, warmup, measured):
+def _query_evidence(adapter, warmup, measured, storage_model):
     query_samples = []
     for result_set in (warmup, measured):
         for stream, result in result_set.items():
@@ -1384,14 +1384,23 @@ def _query_evidence(adapter, warmup, measured):
             or not detail["statement"]
             or not isinstance(detail.get("declared_source"), str)
             or not detail["declared_source"]
-            or any(type(detail.get(field)) is not int or detail[field] < 0
-                   for field in ("scanned_rows", "scanned_bytes"))
+            or type(detail.get("scanned_rows")) is not int
+            or detail["scanned_rows"] < sample_by_id[query_id].validation.row_count
+            or (storage_model == "part" and (
+                type(detail.get("scanned_bytes")) is not int or detail["scanned_bytes"] < 0
+            ))
+            or (storage_model == "row" and (
+                "scanned_bytes" not in detail or detail["scanned_bytes"] is not None
+                or detail.get("scanned_bytes_status") != "unavailable"
+            ))
             for query_id in batch
             for detail in (access.query_details.get(query_id, {}),)
         ):
-            raise RuntimeError("access details do not cover successful ClickHouse samples")
-        if set(access.query_finish) != set(batch):
+            raise RuntimeError("access details do not cover successful samples")
+        if storage_model == "part" and set(access.query_finish) != set(batch):
             raise RuntimeError("QueryFinish does not match successful ClickHouse samples")
+        if storage_model == "row" and access.query_finish:
+            raise RuntimeError("row storage must not invent QueryFinish evidence")
         plans.update(access.plans)
         query_finish.update(access.query_finish)
         query_details.update(access.query_details)
@@ -1401,7 +1410,7 @@ def _query_evidence(adapter, warmup, measured):
         plans, index_scans=index_scans, query_finish=query_finish,
         query_details=query_details,
     )
-    if set(access.query_finish) != set(query_ids):
+    if storage_model == "part" and set(access.query_finish) != set(query_ids):
         raise RuntimeError("QueryFinish does not match successful ClickHouse samples")
     if any(
         row.get("type") != "QueryFinish" or int(row.get("exception_code", -1)) != 0
@@ -1509,7 +1518,9 @@ def _execute_phase_child(adapter_factory, targets_factory, phase, namespace, see
         terminal["statistics"] = {
             name: summarize_load(result) for name, result in measured.items()
         }
-        terminal["query_evidence"] = _query_evidence(adapter, warmup, measured)
+        terminal["query_evidence"] = _query_evidence(
+            adapter, warmup, measured, first_snapshot["storage_model"]
+        )
     except UnresolvedExecution as unresolved:
         completion_unknown = True
         evidence = dict(unresolved.evidence)
@@ -1727,12 +1738,11 @@ def _run_phase(adapter_factory, targets_factory, output, phase, seed, *,
             not isinstance(target, DeadlineTarget) for target in targets.values()
         ):
             raise RuntimeError("phase targets do not match fixed schedules")
-        manifest["snapshots"] = [
-            _snapshot(
-                adapter, "before_warmup", origin, clock, resource_collector,
-                require_resources=scope == "formal",
-            ),
-        ]
+        first_snapshot = _snapshot(
+            adapter, "before_warmup", origin, clock, resource_collector,
+            require_resources=scope == "formal",
+        )
+        manifest["snapshots"] = [first_snapshot]
         warmup = _normalize_phase_wall(phase_runner(
             targets, fixed_phase_schedules(phase, measurement=False),
             clock=clock, sleep=sleep, executor_factory=executor_factory,
@@ -1761,7 +1771,9 @@ def _run_phase(adapter_factory, targets_factory, output, phase, seed, *,
         )
         manifest["warmup"] = {name: summarize_load(result) for name, result in warmup.items()}
         manifest["statistics"] = {name: summarize_load(result) for name, result in measured.items()}
-        manifest["query_evidence"] = _query_evidence(adapter, warmup, measured)
+        manifest["query_evidence"] = _query_evidence(
+            adapter, warmup, measured, first_snapshot["storage_model"]
+        )
     except UnresolvedExecution as exception:
         error = exception
         completion_unknown = True

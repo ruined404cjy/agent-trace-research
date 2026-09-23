@@ -1269,6 +1269,43 @@ class InterferenceProductionGateTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "artifact.*changed"):
             run_stage3._verify_interference_artifacts(output, evidence["artifacts"])
 
+    def test_gate_accepts_xstore_row_snapshots_and_unavailable_scan_bytes(self):
+        """父进程按行存物理指标核验完整阶段，不借用 part 与 QueryFinish。"""
+        def mutate(output, root):
+            for phase in root["phases"]:
+                for snapshot in phase["snapshots"]:
+                    snapshot["storage_model"] = "row"
+                    snapshot["storage"]["tables"] = {
+                        table: {"heap_bytes": 100, "index_bytes": 20,
+                                "toast_bytes": 0, "total_bytes": 120}
+                        for table in snapshot["storage"]["tables"]
+                    }
+                    snapshot["storage"]["merges"] = []
+                    snapshot["active_part_backlog"] = 0
+                    snapshot["active_merge_count"] = 0
+                phase["query_evidence"]["query_finish"] = {}
+                for detail in phase["query_evidence"]["query_details"].values():
+                    detail["scanned_bytes"] = None
+                    detail["scanned_bytes_status"] = "unavailable"
+                run_stage3.write_manifest_atomic(
+                    output / "child" / phase["phase"] / "run-manifest.json", phase,
+                )
+            run_stage3.write_manifest_atomic(output / "child" / "run-manifest.json", root)
+
+        output, child = self.run_gate(mutate)
+        evidence = run_stage3._gate_interference(child, self.formal, "same_table", "xstore")
+        self.assertEqual(5, len(evidence["phases"]))
+        root = child["_manifest"]
+        phase = root["phases"][0]
+        next(iter(phase["query_evidence"]["query_details"].values())).pop("scanned_bytes")
+        run_stage3.write_manifest_atomic(
+            output / "child" / phase["phase"] / "run-manifest.json", phase,
+        )
+        run_stage3.write_manifest_atomic(output / "child" / "run-manifest.json", root)
+        invalid = run_stage3._read_child(output, output / "child" / "run-manifest.json")
+        with self.assertRaisesRegex(RuntimeError, "row scan byte evidence is invalid"):
+            run_stage3._gate_interference(invalid, self.formal, "same_table", "xstore")
+
     def test_gate_rejects_root_phase_namespace_coverage_and_storage_mutations(self):
         def cases(name):
             def mutate(output, root):

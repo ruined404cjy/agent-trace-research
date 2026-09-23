@@ -221,6 +221,27 @@ class FakeAdapter:
         return CleanupResult(self.database, True)
 
 
+class FakeRowAdapter(FakeAdapter):
+    """以行存证据复用查询目标，验证公共混合负载门禁。"""
+
+    def collect_storage(self):
+        return StorageEvidence({"events": {
+            "heap_bytes": 100, "index_bytes": 20,
+            "toast_bytes": 0, "total_bytes": 120,
+        }})
+
+    def collect_access_evidence(self, query_ids):
+        return AccessEvidence(
+            {query_id: "Index Scan" for query_id in query_ids},
+            query_details={query_id: {
+                "kind": self.query_kinds[query_id],
+                "statement": "SELECT columns FROM events",
+                "declared_source": "events", "scanned_rows": 1,
+                "scanned_bytes": None, "scanned_bytes_status": "unavailable",
+            } for query_id in query_ids},
+        )
+
+
 def short_phase_runner(targets, schedules, **_):
     """保留真实 target 和 scheduler，只缩短单元测试的阶段时间。"""
     results = {}
@@ -939,6 +960,44 @@ class PhaseProcessBoundaryTest(unittest.TestCase):
 
 
 class InterferenceRunnerTest(unittest.TestCase):
+    def test_xstore_phase_accepts_explicit_row_evidence_without_query_finish(self):
+        """行存缺少读取字节计数时仍保留访问计划、扫描行数与清理证据。"""
+        adapters = []
+
+        def adapter_factory(namespace, _phase, _seed):
+            adapter = FakeRowAdapter(namespace)
+            adapters.append(adapter)
+            return adapter
+
+        def targets_factory(adapter, phase, _seed):
+            return {
+                name: fixed_query_target(adapter, name)
+                for name in fixed_phase_schedules(phase, measurement=True)
+            }
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "interference"
+            result = run_interference(
+                adapter_factory, targets_factory, output, scope="diagnostic",
+                phases=FIXED_PHASES[:1],
+                phase_runner=short_phase_runner,
+                resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
+                namespace_factory=lambda phase: "jsons3_row_" + phase.name,
+                process_policy=INLINE_PROCESS_POLICY,
+            )
+            phase = json.loads((output / "quiet" / "run-manifest.json").read_text())
+
+        self.assertEqual("complete", result.manifest["status"])
+        self.assertTrue(adapters[0].cleaned)
+        self.assertEqual("row", phase["snapshots"][0]["storage_model"])
+        self.assertEqual({}, phase["query_evidence"]["query_finish"])
+        self.assertTrue(phase["query_evidence"]["plans"])
+        self.assertTrue(all(
+            detail["scanned_bytes"] is None
+            and detail["scanned_bytes_status"] == "unavailable"
+            for detail in phase["query_evidence"]["query_details"].values()
+        ))
+
     def test_formal_scope_rejects_inline_phase_execution(self):
         """捕获 formal interference 继续使用不可强杀的 inline 边界。"""
         with tempfile.TemporaryDirectory() as directory:

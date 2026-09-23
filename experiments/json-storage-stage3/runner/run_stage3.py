@@ -584,8 +584,8 @@ def _gate_interference_summary(summary, parsed, schedules):
             raise RuntimeError("interference summary publication evidence is invalid")
 
 
-def _gate_interference_access(manifest, queries):
-    """核对成功 query 与 plan/detail/QueryFinish 的一一对应。"""
+def _gate_interference_access(manifest, queries, engine="clickhouse"):
+    """按引擎核对成功 query 的计划、扫描量和可用的查询结束证据。"""
     if not queries or any(not values for values in queries.values()):
         raise RuntimeError("interference query stream lacks a success")
     flattened = [sample for values in queries.values() for sample in values]
@@ -597,25 +597,34 @@ def _gate_interference_access(manifest, queries):
         raise RuntimeError("interference query evidence is missing")
     expected = set(samples)
     for key in ("plans", "query_details", "query_finish"):
-        if not isinstance(evidence.get(key), dict) or set(evidence[key]) != expected:
+        required = expected if key != "query_finish" or engine == "clickhouse" else set()
+        if not isinstance(evidence.get(key), dict) or set(evidence[key]) != required:
             raise RuntimeError("interference query evidence IDs mismatch")
     for query_id, sample in samples.items():
-        plan, detail, finish = (evidence[key][query_id]
-                                for key in ("plans", "query_details", "query_finish"))
+        plan = evidence["plans"][query_id]
+        detail = evidence["query_details"][query_id]
         validation = sample["validation"]
         if (not isinstance(plan, str) or not plan or not isinstance(detail, dict)
                 or detail.get("kind") != sample["kind"]
                 or not isinstance(detail.get("statement"), str) or not detail["statement"]
                 or not isinstance(detail.get("declared_source"), str) or not detail["declared_source"]
-                or not _is_int(detail.get("scanned_rows")) or not _is_int(detail.get("scanned_bytes"))
-                or not isinstance(finish, dict) or finish.get("type") != "QueryFinish"
-                or not _is_int(finish.get("exception_code")) or finish["exception_code"] != 0
-                or not _is_int(finish.get("read_rows"))
-                or not _is_int(finish.get("read_bytes"))
-                or detail["scanned_rows"] != finish["read_rows"]
-                or detail["scanned_bytes"] != finish["read_bytes"]
-                or finish["read_rows"] < validation["row_count"]):
-            raise RuntimeError("interference detail and QueryFinish evidence conflict")
+                or not _is_int(detail.get("scanned_rows"))
+                or detail["scanned_rows"] < validation["row_count"]):
+            raise RuntimeError("interference query detail evidence conflict")
+        if engine == "clickhouse":
+            finish = evidence["query_finish"][query_id]
+            if (not _is_int(detail.get("scanned_bytes"))
+                    or not isinstance(finish, dict) or finish.get("type") != "QueryFinish"
+                    or not _is_int(finish.get("exception_code")) or finish["exception_code"] != 0
+                    or not _is_int(finish.get("read_rows"))
+                    or not _is_int(finish.get("read_bytes"))
+                    or detail["scanned_rows"] != finish["read_rows"]
+                    or detail["scanned_bytes"] != finish["read_bytes"]
+                    or finish["read_rows"] < validation["row_count"]):
+                raise RuntimeError("interference detail and QueryFinish evidence conflict")
+        elif not ("scanned_bytes" in detail and detail["scanned_bytes"] is None
+                  and detail.get("scanned_bytes_status") == "unavailable"):
+            raise RuntimeError("interference row scan byte evidence is invalid")
 
 
 def _verify_interference_artifacts(output, artifacts):
@@ -637,7 +646,7 @@ def _verify_interference_artifacts(output, artifacts):
             raise RuntimeError("interference artifact changed after gate")
 
 
-def _gate_interference(child, formal, layout):
+def _gate_interference(child, formal, layout, engine="clickhouse"):
     """从 child bytes 独立门禁五阶段 formal interference 证据。"""
     root_path = Path(child["_path"]).resolve()
     output = root_path.parents[1]
@@ -725,11 +734,17 @@ def _gate_interference(child, formal, layout):
             merges = storage.get("merges") if isinstance(storage, dict) else None
             if not isinstance(tables, dict) or set(tables) != set(catalog.write_tables) or not isinstance(merges, list):
                 raise RuntimeError("interference storage evidence is incomplete")
+            model = snapshot.get("storage_model", "part" if engine == "clickhouse" else None)
+            expected_model = "part" if engine == "clickhouse" else "row"
+            if model != expected_model:
+                raise RuntimeError("interference storage model is invalid")
             for table in tables.values():
-                if not isinstance(table, dict) or any(not _is_int(table.get(key)) for key in (
-                    "part_count", "marks", "compressed_bytes", "uncompressed_bytes")):
+                if not isinstance(table, dict) or any(
+                    not _is_int(table.get(key))
+                    for key in run_interference.STORAGE_MODEL_METRICS[model]
+                ):
                     raise RuntimeError("interference storage metrics are invalid")
-            backlog = sum(max(0, table["part_count"] - 1) for table in tables.values())
+            backlog = sum(max(0, table["part_count"] - 1) for table in tables.values()) if model == "part" else 0
             if (not _is_int(snapshot.get("active_part_backlog"))
                     or snapshot["active_part_backlog"] != backlog
                     or not _is_int(snapshot.get("active_merge_count"))
@@ -754,7 +769,7 @@ def _gate_interference(child, formal, layout):
             for stream, item in parsed.items():
                 if stream != "continuous_ingest":
                     queries.setdefault(stream, []).extend(item["successful_queries"])
-        _gate_interference_access(phase_manifest, queries)
+        _gate_interference_access(phase_manifest, queries, engine)
         artifacts.extend([identity, *raw_evidence])
         phase_evidence.append({"phase": phase.name, "namespace": namespace,
                                "manifest": identity, "raw": raw_evidence})
@@ -1341,7 +1356,7 @@ def _run_interference(arguments, envelope):
         adapter_factory, targets_factory, child_root, scope="formal",
     )
     child = _read_child(output, child_root / "run-manifest.json")
-    evidence = _gate_interference(child, formal, layout)
+    evidence = _gate_interference(child, formal, layout, engine)
     cleanup = {
         "namespaces": list(evidence["namespaces"]), "namespaces_removed": True,
         "asset_directory_applicable": layout == "asset_ref",

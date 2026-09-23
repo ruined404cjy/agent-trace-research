@@ -2869,6 +2869,63 @@ class StageThreeInterferenceSummaryTest(unittest.TestCase):
                             self.assertNotIn("resolver_requests", streams[stream])
             self.assertEqual(summary, self.summarize(list(reversed(runs))))
 
+    def test_summarizes_xstore_row_evidence_without_clickhouse_counters(self):
+        """四布局行存控制可发布，且汇总时不能混入另一引擎的布局。"""
+        def row_phase(manifest):
+            definition = manifest["layout_definition"]
+            definition["schema"] = definition.pop("database")
+            for snapshot in manifest["snapshots"]:
+                snapshot["storage_model"] = "row"
+                snapshot["storage"]["tables"] = {
+                    table: {"heap_bytes": 100, "index_bytes": 20,
+                            "toast_bytes": 0, "total_bytes": 120}
+                    for table in snapshot["storage"]["tables"]
+                }
+                snapshot["active_part_backlog"] = 0
+            manifest["query_evidence"]["query_finish"] = {}
+            for detail in manifest["query_evidence"]["query_details"].values():
+                detail["scanned_bytes"] = None
+                detail["scanned_bytes_status"] = "unavailable"
+
+        with tempfile.TemporaryDirectory() as directory:
+            runs = self.runs(directory)
+            for run in runs:
+                rewrite_interference_envelope(
+                    run, lambda envelope: envelope["runtime"].update(engine="xstore"),
+                )
+                for phase in INTERFERENCE_PHASES:
+                    rewrite_interference_phase_both(run, phase, row_phase)
+            summary = self.summarize(runs)
+            self.assertEqual(
+                {"xstore"}, {item["runtime"]["engine"] for item in summary["layouts"]},
+            )
+            self.assertEqual(
+                {"row"}, {
+                    snapshot["storage_model"]
+                    for item in summary["layouts"]
+                    for phase in item["phases"] for snapshot in phase["snapshots"]
+                },
+            )
+            rewrite_interference_phase_both(
+                runs[0], "quiet",
+                lambda manifest: next(iter(
+                    manifest["query_evidence"]["query_details"].values()
+                )).pop("scanned_bytes_status"),
+            )
+            with self.assertRaisesRegex(ValueError, "query detail evidence is invalid"):
+                self.summarize(runs)
+            rewrite_interference_phase_both(
+                runs[0], "quiet",
+                lambda manifest: next(iter(
+                    manifest["query_evidence"]["query_details"].values()
+                )).__setitem__("scanned_bytes_status", "unavailable"),
+            )
+            rewrite_interference_envelope(
+                runs[0], lambda envelope: envelope["runtime"].update(engine="clickhouse"),
+            )
+            with self.assertRaisesRegex(ValueError, "engine.*differs"):
+                self.summarize(runs)
+
     def test_publishes_drops_without_counting_them_as_failures(self):
         def mutate(phase, rows):
             if phase != "quiet":

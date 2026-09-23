@@ -1680,12 +1680,12 @@ INTERFERENCE_SCHEDULES = _interference_schedules()
 
 
 def _interference_runtime(envelope):
-    """验证 interference runtime 的固定引擎与布局身份。"""
+    """验证 interference runtime 的引擎与布局身份。"""
     runtime = envelope.get("runtime")
     if (
         not isinstance(runtime, dict)
         or runtime.get("operation") != "interference"
-        or runtime.get("engine") != "clickhouse"
+        or runtime.get("engine") not in {"clickhouse", "opengauss", "xstore"}
         or runtime.get("layout") not in LAYOUTS
     ):
         raise ValueError("interference runtime identity mismatch")
@@ -2081,7 +2081,7 @@ def _interference_storage_model(snapshot, tables):
     return matched[0]
 
 
-def _interference_snapshots(manifest, layout):
+def _interference_snapshots(manifest, layout, engine):
     """验证三个资源/存储 snapshot 的顺序、物理计数与 Asset 水位。"""
     snapshots = manifest.get("snapshots")
     names = [
@@ -2107,6 +2107,9 @@ def _interference_snapshots(manifest, layout):
         ):
             raise ValueError("interference storage evidence is incomplete")
         model = _interference_storage_model(snapshot, tables)
+        expected_model = "part" if engine == "clickhouse" else "row"
+        if model != expected_model:
+            raise ValueError("interference storage model is invalid")
         normalized = {}
         for table, values in tables.items():
             normalized[table] = {
@@ -2413,8 +2416,8 @@ def _gate_interference_summary(published, statistics, schedules):
             raise ValueError("interference summary publication evidence is invalid")
 
 
-def _gate_interference_access(manifest, queries):
-    """核对成功 query 与 plan/detail/QueryFinish 的一一对应。"""
+def _gate_interference_access(manifest, queries, engine):
+    """按引擎核对成功 query 的计划、扫描量和可用的查询结束证据。"""
     grouped = defaultdict(dict)
     for query_id, (stream, evidence) in queries.items():
         grouped[stream][query_id] = evidence
@@ -2428,7 +2431,8 @@ def _gate_interference_access(manifest, queries):
         raise ValueError("interference query evidence is missing")
     expected = set(queries)
     for key in ("plans", "query_details", "query_finish"):
-        if not isinstance(evidence.get(key), dict) or set(evidence[key]) != expected:
+        required = expected if key != "query_finish" or engine == "clickhouse" else set()
+        if not isinstance(evidence.get(key), dict) or set(evidence[key]) != required:
             raise ValueError("interference query evidence IDs mismatch")
     # index_scans 按索引名聚合，与 query ID 无关，只核对计数值域。
     scans = evidence["index_scans"]
@@ -2439,7 +2443,6 @@ def _gate_interference_access(manifest, queries):
     for query_id, (_, planned) in queries.items():
         plan = evidence["plans"][query_id]
         detail = evidence["query_details"][query_id]
-        finish = evidence["query_finish"][query_id]
         if not isinstance(plan, str) or not plan.strip():
             raise ValueError("interference query plan is invalid")
         if (
@@ -2451,24 +2454,33 @@ def _gate_interference_access(manifest, queries):
             raise ValueError("interference query detail evidence is invalid")
         invalid = "interference query detail evidence is invalid"
         scanned_rows = _integer(detail.get("scanned_rows"), invalid)
-        scanned_bytes = _integer(detail.get("scanned_bytes"), invalid)
-        if (
-            not isinstance(finish, dict) or finish.get("type") != "QueryFinish"
-            or not _is_integer(finish.get("exception_code")) or finish["exception_code"] != 0
+        if engine == "clickhouse":
+            scanned_bytes = _integer(detail.get("scanned_bytes"), invalid)
+            finish = evidence["query_finish"][query_id]
+            if (
+                not isinstance(finish, dict) or finish.get("type") != "QueryFinish"
+                or not _is_integer(finish.get("exception_code")) or finish["exception_code"] != 0
+            ):
+                raise ValueError("interference QueryFinish evidence is invalid")
+            invalid = "interference QueryFinish evidence is invalid"
+            read_rows = _integer(finish.get("read_rows"), invalid)
+            read_bytes = _integer(finish.get("read_bytes"), invalid)
+            if (
+                scanned_rows != read_rows or scanned_bytes != read_bytes
+                or read_rows < planned["row_count"]
+            ):
+                raise ValueError("interference query evidence is inconsistent")
+        elif not (
+            "scanned_bytes" in detail and detail["scanned_bytes"] is None
+            and detail.get("scanned_bytes_status") == "unavailable"
         ):
-            raise ValueError("interference QueryFinish evidence is invalid")
-        invalid = "interference QueryFinish evidence is invalid"
-        read_rows = _integer(finish.get("read_rows"), invalid)
-        read_bytes = _integer(finish.get("read_bytes"), invalid)
-        if (
-            scanned_rows != read_rows or scanned_bytes != read_bytes
-            or read_rows < planned["row_count"]
-        ):
+            raise ValueError("interference query detail evidence is invalid")
+        elif scanned_rows < planned["row_count"]:
             raise ValueError("interference query evidence is inconsistent")
 
 
 def _validate_interference_phase(run, phase, manifest, layout, metadata, schedules,
-                                 segment_seconds):
+                                 segment_seconds, engine):
     """验证单个 phase 的固定 manifest、snapshot、raw 与访问证据。"""
     expected = {
         "format": INTERFERENCE_PHASE_FORMAT,
@@ -2504,8 +2516,9 @@ def _validate_interference_phase(run, phase, manifest, layout, metadata, schedul
     ):
         raise ValueError("interference phase cleanup evidence is invalid")
     definition = manifest.get("layout_definition")
+    identity_key = "database" if engine == "clickhouse" else "schema"
     if (
-        not isinstance(definition, dict) or definition.get("database") != database
+        not isinstance(definition, dict) or definition.get(identity_key) != database
         or not isinstance(definition.get("ddl"), str) or not definition["ddl"].strip()
     ):
         raise ValueError("interference phase layout definition is invalid")
@@ -2523,7 +2536,7 @@ def _validate_interference_phase(run, phase, manifest, layout, metadata, schedul
         )
         if actual < segment_seconds[segment]:
             raise ValueError("interference formal coverage is short")
-    snapshots = _interference_snapshots(manifest, layout)
+    snapshots = _interference_snapshots(manifest, layout, engine)
     watermarks = frozenset(
         (index + 1) * metadata["block_size"] for index in metadata["eligible_block_indices"]
     )
@@ -2571,7 +2584,7 @@ def _validate_interference_phase(run, phase, manifest, layout, metadata, schedul
             > segment_seconds[segment] + INTERFERENCE_COVERAGE_OVERRUN_SECONDS
         ):
             raise ValueError("interference formal coverage is inconsistent")
-    _gate_interference_access(manifest, queries)
+    _gate_interference_access(manifest, queries, engine)
     return {
         "phase": phase,
         "namespace": namespace,
@@ -2609,6 +2622,9 @@ def _summarize_interference(runs, *, schedules, segment_seconds):
     if set(envelopes) != set(LAYOUTS):
         raise ValueError("interference layout coverage is incomplete")
     first = envelopes[LAYOUTS[0]][1]
+    engine = first["runtime"]["engine"]
+    if any(envelopes[layout][1]["runtime"]["engine"] != engine for layout in LAYOUTS):
+        raise ValueError("interference engine differs between runs")
     for name, field in (
         ("input identity", "input"), ("truth identity", "truth"),
         ("query catalog identity", "query_catalog_sha256"),
@@ -2646,7 +2662,7 @@ def _summarize_interference(runs, *, schedules, segment_seconds):
                 raise ValueError("interference phase file and root value mismatch")
             result = _validate_interference_phase(
                 run, phase, phase_manifest, layout, envelope["interference"],
-                schedules, segment_seconds,
+                schedules, segment_seconds, engine,
             )
             if result["namespace"] in namespaces:
                 raise ValueError("interference phase namespaces are invalid or duplicated")
