@@ -1,0 +1,66 @@
+$ uname -a
+Linux localhost.localdomain 5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64 #1 SMP Thu Jun 27 04:40:22 UTC 2024 aarch64 aarch64 aarch64 GNU/Linux
+
+$ lscpu
+Architecture:                         aarch64
+CPU op-mode(s):                       64-bit
+Byte Order:                           Little Endian
+CPU(s):                               256
+On-line CPU(s) list:                  0-255
+Vendor ID:                            HiSilicon
+Model name:                           Kunpeng-920
+Model:                                0
+Thread(s) per core:                   1
+Core(s) per socket:                   64
+Socket(s):                            4
+Stepping:                             0x1
+BogoMIPS:                             200.00
+Flags:                                fp asimd evtstrm aes pmull sha1 sha2 crc32 atomics fphp asimdhp cpuid asimdrdm jscvt fcma dcpop asimddp asimdfhm ssbs
+L1d cache:                            16 MiB (256 instances)
+L1i cache:                            16 MiB (256 instances)
+L2 cache:                             128 MiB (256 instances)
+L3 cache:                             512 MiB (8 instances)
+NUMA node(s):                         8
+NUMA node0 CPU(s):                    0-31
+NUMA node1 CPU(s):                    32-63
+NUMA node2 CPU(s):                    64-95
+NUMA node3 CPU(s):                    96-127
+NUMA node4 CPU(s):                    128-159
+NUMA node5 CPU(s):                    160-191
+NUMA node6 CPU(s):                    192-223
+NUMA node7 CPU(s):                    224-255
+Vulnerability Gather data sampling:   Not affected
+Vulnerability Itlb multihit:          Not affected
+Vulnerability L1tf:                   Not affected
+Vulnerability Mds:                    Not affected
+Vulnerability Meltdown:               Not affected
+Vulnerability Mmio stale data:        Not affected
+Vulnerability Reg file data sampling: Not affected
+Vulnerability Retbleed:               Not affected
+Vulnerability Spec rstack overflow:   Not affected
+Vulnerability Spec store bypass:      Mitigation; Speculative Store Bypass disabled via prctl
+Vulnerability Spectre v1:             Mitigation; __user pointer sanitization
+Vulnerability Spectre v2:             Not affected
+Vulnerability Srbds:                  Not affected
+Vulnerability Tsx async abort:        Not affected
+
+$ free -g
+               total        used        free      shared  buff/cache   available
+Mem:            1999          93         493          10        1411        1887
+Swap:              0           0           0
+
+$ lsblk -d -o NAME,ROTA,SIZE,MODEL,TYPE
+NAME    ROTA   SIZE MODEL               TYPE
+sdb        0 447.1G SSSTC ER2-GD480     disk
+sdc        0 447.1G SSSTC ER2-GD480     disk
+nvme5n1    0   3.6T HWE52P434T0L005N    disk
+nvme4n1    0   3.6T HWE52P434T0L005N    disk
+nvme1n1    0   7.3T INTEL SSDPE2KX080T8 disk
+nvme0n1    0   7.3T INTEL SSDPE2KX080T8 disk
+nvme3n1    0   2.9T INTEL SSDPE2KE032T8 disk
+nvme2n1    0   2.9T INTEL SSDPE2KE032T8 disk
+
+$ findmnt -T /data3/tracecjy/agent-trace-yellow/.stage3-yellow
+TARGET SOURCE     FSTYPE OPTIONS
+/data3 /dev/md127 xfs    rw,relatime,seclabel,attr2,inode64,logbufs=8,logbsize=32k,sunit=1024,swidth=2048,noquota
+

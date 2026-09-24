@@ -1,0 +1,6198 @@
+{
+ "rounds": [
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "config_identity": "config.xml:sha256=ef40bcdd4985d805ec29003835a74a77dad9d4a0ac10653295d2886a2b2b06bc",
+    "container": null,
+    "engine": "clickhouse",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain aarch64",
+    "mode": "native-package",
+    "package_checksums": "binary_sha256=ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "package_files": "clickhouse-common-static-23.3.10.5-arm64.tgz,clickhouse-server-23.3.10.5-arm64.tgz,clickhouse-client-23.3.10.5-arm64.tgz",
+    "product_path": "/data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "service_identity": "pid=none,port=18123"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 2096172764,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 12007.608800195158,
+    "merge_wait_ms": 335.4317396879196,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 4,
+       "events_full": 2
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 4,
+       "events_full": 2
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 4,
+       "events_full": 2
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 335.4317396879196,
+    "watermark_wait_ms": 5769.124384969473,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 0,
+   "scenarios": {
+    "batch:correctness_only": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 2/2 > Granules: 7/7": 5
+     },
+     "read_bytes": {
+      "maximum": 2536695,
+      "minimum": 2536695
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 2536695,
+      "minimum": 2536695
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:unicode_boundary": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1647919,
+      "minimum": 1647919
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1647919,
+      "minimum": 1647919
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/4 > Granules: 4/9": 30
+     },
+     "read_bytes": {
+      "maximum": 5963877,
+      "minimum": 5963877
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5963877,
+      "minimum": 5963877
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/4 > Granules: 4/9": 30
+     },
+     "read_bytes": {
+      "maximum": 5963877,
+      "minimum": 5963877
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5963877,
+      "minimum": 5963877
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3194495,
+      "marks": 13,
+      "part_count": 4,
+      "rows": 48534,
+      "uncompressed_bytes": 9798786
+     },
+     "events_full": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "payload": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3191725,
+      "marks": 9,
+      "part_count": 2,
+      "rows": 48534,
+      "uncompressed_bytes": 9848345
+     }
+    }
+   },
+   "workload": "correctness_only",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 4250.516873784363,
+    "block_wall_ms": {
+     "maximum": 83.88856053352356,
+     "median": 21.77446475252509,
+     "minimum": 16.212190501391888,
+     "p95": 24.468387849628925
+    },
+    "rows_per_second": 4158.109631624096,
+    "wall_ms": 11672.130919992924
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "config_identity": "config.xml:sha256=ef40bcdd4985d805ec29003835a74a77dad9d4a0ac10653295d2886a2b2b06bc",
+    "container": null,
+    "engine": "clickhouse",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain aarch64",
+    "mode": "native-package",
+    "package_checksums": "binary_sha256=ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "package_files": "clickhouse-common-static-23.3.10.5-arm64.tgz,clickhouse-server-23.3.10.5-arm64.tgz,clickhouse-client-23.3.10.5-arm64.tgz",
+    "product_path": "/data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "service_identity": "pid=none,port=18123"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 2096172764,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 14304.369740188122,
+    "merge_wait_ms": 370.31736969947815,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 5,
+       "events_full": 5
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 5,
+       "events_full": 5
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 5,
+       "events_full": 5
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 370.31736969947815,
+    "watermark_wait_ms": 6385.009934194386,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 0,
+   "scenarios": {
+    "batch:equal_total_few_large": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 5/5 > Granules: 10/10": 5
+     },
+     "read_bytes": {
+      "maximum": 94041482,
+      "minimum": 94041482
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 94041482,
+      "minimum": 94041482
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/5 > Granules: 1/10": 30
+     },
+     "read_bytes": {
+      "maximum": 2567688,
+      "minimum": 2567688
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 2567688,
+      "minimum": 2567688
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/5 > Granules: 4/9": 30
+     },
+     "read_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/5 > Granules: 4/9": 30
+     },
+     "read_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3203693,
+      "marks": 14,
+      "part_count": 5,
+      "rows": 48534,
+      "uncompressed_bytes": 9811026
+     },
+     "events_full": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 799,
+        "uncompressed_bytes": 83167
+       },
+       "content_length": {
+        "compressed_bytes": 2045,
+        "uncompressed_bytes": 370944
+       },
+       "content_type": {
+        "compressed_bytes": 794,
+        "uncompressed_bytes": 82992
+       },
+       "duration_ms": {
+        "compressed_bytes": 87888,
+        "uncompressed_bytes": 329728
+       },
+       "encoding": {
+        "compressed_bytes": 781,
+        "uncompressed_bytes": 82607
+       },
+       "end_time": {
+        "compressed_bytes": 120913,
+        "uncompressed_bytes": 329728
+       },
+       "event_id": {
+        "compressed_bytes": 995556,
+        "uncompressed_bytes": 2060800
+       },
+       "framework": {
+        "compressed_bytes": 16205,
+        "uncompressed_bytes": 85225
+       },
+       "ingest_seq": {
+        "compressed_bytes": 165193,
+        "uncompressed_bytes": 329728
+       },
+       "level": {
+        "compressed_bytes": 2613,
+        "uncompressed_bytes": 329374
+       },
+       "parent_span_id": {
+        "compressed_bytes": 189867,
+        "uncompressed_bytes": 662736
+       },
+       "payload": {
+        "compressed_bytes": 20366,
+        "uncompressed_bytes": 73441641
+       },
+       "preview": {
+        "compressed_bytes": 3465,
+        "uncompressed_bytes": 89467
+       },
+       "profile": {
+        "compressed_bytes": 783,
+        "uncompressed_bytes": 82677
+       },
+       "project_id": {
+        "compressed_bytes": 3231,
+        "uncompressed_bytes": 741888
+       },
+       "sha256": {
+        "compressed_bytes": 3042,
+        "uncompressed_bytes": 84672
+       },
+       "span_id": {
+        "compressed_bytes": 698839,
+        "uncompressed_bytes": 700672
+       },
+       "span_type": {
+        "compressed_bytes": 28256,
+        "uncompressed_bytes": 195671
+       },
+       "start_time": {
+        "compressed_bytes": 109776,
+        "uncompressed_bytes": 329728
+       },
+       "trace_id": {
+        "compressed_bytes": 244080,
+        "uncompressed_bytes": 1360128
+       }
+      },
+      "compressed_bytes": 3221416,
+      "marks": 15,
+      "part_count": 5,
+      "rows": 48534,
+      "uncompressed_bytes": 93745760
+     }
+    }
+   },
+   "workload": "equal_total_few_large",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 5764.96942806989,
+    "block_wall_ms": {
+     "maximum": 105.5837906897068,
+     "median": 22.60220004245639,
+     "minimum": 20.224450156092644,
+     "p95": 59.44850896485149
+    },
+    "rows_per_second": 3483.1502991787816,
+    "wall_ms": 13933.9379100129
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "config_identity": "config.xml:sha256=ef40bcdd4985d805ec29003835a74a77dad9d4a0ac10653295d2886a2b2b06bc",
+    "container": null,
+    "engine": "clickhouse",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain aarch64",
+    "mode": "native-package",
+    "package_checksums": "binary_sha256=ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "package_files": "clickhouse-common-static-23.3.10.5-arm64.tgz,clickhouse-server-23.3.10.5-arm64.tgz,clickhouse-client-23.3.10.5-arm64.tgz",
+    "product_path": "/data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "service_identity": "pid=none,port=18123"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 2096172764,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 14270.107589662075,
+    "merge_wait_ms": 363.9850802719593,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 2,
+       "events_full": 5
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 2,
+       "events_full": 5
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 2,
+       "events_full": 5
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 363.9850802719593,
+    "watermark_wait_ms": 6303.075350821018,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 1,
+   "scenarios": {
+    "batch:equal_total_few_large": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 5/5 > Granules: 10/10": 5
+     },
+     "read_bytes": {
+      "maximum": 94041482,
+      "minimum": 94041482
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 94041482,
+      "minimum": 94041482
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/5 > Granules: 1/10": 30
+     },
+     "read_bytes": {
+      "maximum": 2567688,
+      "minimum": 2567688
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 2567688,
+      "minimum": 2567688
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3197165,
+      "marks": 9,
+      "part_count": 2,
+      "rows": 48534,
+      "uncompressed_bytes": 9811026
+     },
+     "events_full": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 799,
+        "uncompressed_bytes": 83167
+       },
+       "content_length": {
+        "compressed_bytes": 2045,
+        "uncompressed_bytes": 370944
+       },
+       "content_type": {
+        "compressed_bytes": 794,
+        "uncompressed_bytes": 82992
+       },
+       "duration_ms": {
+        "compressed_bytes": 87888,
+        "uncompressed_bytes": 329728
+       },
+       "encoding": {
+        "compressed_bytes": 781,
+        "uncompressed_bytes": 82607
+       },
+       "end_time": {
+        "compressed_bytes": 120913,
+        "uncompressed_bytes": 329728
+       },
+       "event_id": {
+        "compressed_bytes": 995556,
+        "uncompressed_bytes": 2060800
+       },
+       "framework": {
+        "compressed_bytes": 16205,
+        "uncompressed_bytes": 85225
+       },
+       "ingest_seq": {
+        "compressed_bytes": 165193,
+        "uncompressed_bytes": 329728
+       },
+       "level": {
+        "compressed_bytes": 2613,
+        "uncompressed_bytes": 329374
+       },
+       "parent_span_id": {
+        "compressed_bytes": 189867,
+        "uncompressed_bytes": 662736
+       },
+       "payload": {
+        "compressed_bytes": 20366,
+        "uncompressed_bytes": 73441641
+       },
+       "preview": {
+        "compressed_bytes": 3465,
+        "uncompressed_bytes": 89467
+       },
+       "profile": {
+        "compressed_bytes": 783,
+        "uncompressed_bytes": 82677
+       },
+       "project_id": {
+        "compressed_bytes": 3231,
+        "uncompressed_bytes": 741888
+       },
+       "sha256": {
+        "compressed_bytes": 3042,
+        "uncompressed_bytes": 84672
+       },
+       "span_id": {
+        "compressed_bytes": 698839,
+        "uncompressed_bytes": 700672
+       },
+       "span_type": {
+        "compressed_bytes": 28256,
+        "uncompressed_bytes": 195671
+       },
+       "start_time": {
+        "compressed_bytes": 109776,
+        "uncompressed_bytes": 329728
+       },
+       "trace_id": {
+        "compressed_bytes": 244080,
+        "uncompressed_bytes": 1360128
+       }
+      },
+      "compressed_bytes": 3221416,
+      "marks": 15,
+      "part_count": 5,
+      "rows": 48534,
+      "uncompressed_bytes": 93745760
+     }
+    }
+   },
+   "workload": "equal_total_few_large",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 5794.329851865768,
+    "block_wall_ms": {
+     "maximum": 104.66655995696783,
+     "median": 22.915159817785025,
+     "minimum": 19.980600103735924,
+     "p95": 60.493902303278446
+    },
+    "rows_per_second": 3490.144598730647,
+    "wall_ms": 13906.01409971714
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "config_identity": "config.xml:sha256=ef40bcdd4985d805ec29003835a74a77dad9d4a0ac10653295d2886a2b2b06bc",
+    "container": null,
+    "engine": "clickhouse",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain aarch64",
+    "mode": "native-package",
+    "package_checksums": "binary_sha256=ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "package_files": "clickhouse-common-static-23.3.10.5-arm64.tgz,clickhouse-server-23.3.10.5-arm64.tgz,clickhouse-client-23.3.10.5-arm64.tgz",
+    "product_path": "/data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "service_identity": "pid=none,port=18123"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 2096172764,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 14292.012699879706,
+    "merge_wait_ms": 399.2775194346905,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 3,
+       "events_full": 5
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 3,
+       "events_full": 5
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 3,
+       "events_full": 5
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 399.2775194346905,
+    "watermark_wait_ms": 6389.650725759566,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 2,
+   "scenarios": {
+    "batch:equal_total_few_large": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 5/5 > Granules: 10/10": 5
+     },
+     "read_bytes": {
+      "maximum": 94041482,
+      "minimum": 94041482
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 94041482,
+      "minimum": 94041482
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/5 > Granules: 1/10": 30
+     },
+     "read_bytes": {
+      "maximum": 2567688,
+      "minimum": 2567688
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 2567688,
+      "minimum": 2567688
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/3 > Granules: 4/8": 30
+     },
+     "read_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/3 > Granules: 4/8": 30
+     },
+     "read_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3201682,
+      "marks": 11,
+      "part_count": 3,
+      "rows": 48534,
+      "uncompressed_bytes": 9811026
+     },
+     "events_full": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 799,
+        "uncompressed_bytes": 83167
+       },
+       "content_length": {
+        "compressed_bytes": 2045,
+        "uncompressed_bytes": 370944
+       },
+       "content_type": {
+        "compressed_bytes": 794,
+        "uncompressed_bytes": 82992
+       },
+       "duration_ms": {
+        "compressed_bytes": 87888,
+        "uncompressed_bytes": 329728
+       },
+       "encoding": {
+        "compressed_bytes": 781,
+        "uncompressed_bytes": 82607
+       },
+       "end_time": {
+        "compressed_bytes": 120913,
+        "uncompressed_bytes": 329728
+       },
+       "event_id": {
+        "compressed_bytes": 995556,
+        "uncompressed_bytes": 2060800
+       },
+       "framework": {
+        "compressed_bytes": 16205,
+        "uncompressed_bytes": 85225
+       },
+       "ingest_seq": {
+        "compressed_bytes": 165193,
+        "uncompressed_bytes": 329728
+       },
+       "level": {
+        "compressed_bytes": 2613,
+        "uncompressed_bytes": 329374
+       },
+       "parent_span_id": {
+        "compressed_bytes": 189867,
+        "uncompressed_bytes": 662736
+       },
+       "payload": {
+        "compressed_bytes": 20366,
+        "uncompressed_bytes": 73441641
+       },
+       "preview": {
+        "compressed_bytes": 3465,
+        "uncompressed_bytes": 89467
+       },
+       "profile": {
+        "compressed_bytes": 783,
+        "uncompressed_bytes": 82677
+       },
+       "project_id": {
+        "compressed_bytes": 3231,
+        "uncompressed_bytes": 741888
+       },
+       "sha256": {
+        "compressed_bytes": 3042,
+        "uncompressed_bytes": 84672
+       },
+       "span_id": {
+        "compressed_bytes": 698839,
+        "uncompressed_bytes": 700672
+       },
+       "span_type": {
+        "compressed_bytes": 28256,
+        "uncompressed_bytes": 195671
+       },
+       "start_time": {
+        "compressed_bytes": 109776,
+        "uncompressed_bytes": 329728
+       },
+       "trace_id": {
+        "compressed_bytes": 244080,
+        "uncompressed_bytes": 1360128
+       }
+      },
+      "compressed_bytes": 3221416,
+      "marks": 15,
+      "part_count": 5,
+      "rows": 48534,
+      "uncompressed_bytes": 93745760
+     }
+    }
+   },
+   "workload": "equal_total_few_large",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 5704.248611815274,
+    "block_wall_ms": {
+     "maximum": 94.43408995866776,
+     "median": 22.544309962540865,
+     "minimum": 19.953309558331966,
+     "p95": 59.143012342974544
+    },
+    "rows_per_second": 3493.50837453817,
+    "wall_ms": 13892.624489963055
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "config_identity": "config.xml:sha256=ef40bcdd4985d805ec29003835a74a77dad9d4a0ac10653295d2886a2b2b06bc",
+    "container": null,
+    "engine": "clickhouse",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain aarch64",
+    "mode": "native-package",
+    "package_checksums": "binary_sha256=ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "package_files": "clickhouse-common-static-23.3.10.5-arm64.tgz,clickhouse-server-23.3.10.5-arm64.tgz,clickhouse-client-23.3.10.5-arm64.tgz",
+    "product_path": "/data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "service_identity": "pid=none,port=18123"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 2096172764,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 14403.774769976735,
+    "merge_wait_ms": 343.1912297382951,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 3,
+       "events_full": 5
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 3,
+       "events_full": 5
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 3,
+       "events_full": 5
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 343.1912297382951,
+    "watermark_wait_ms": 6472.561817616224,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 3,
+   "scenarios": {
+    "batch:equal_total_few_large": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 5/5 > Granules: 10/10": 5
+     },
+     "read_bytes": {
+      "maximum": 94041482,
+      "minimum": 94041482
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 94041482,
+      "minimum": 94041482
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/5 > Granules: 1/10": 30
+     },
+     "read_bytes": {
+      "maximum": 2567688,
+      "minimum": 2567688
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 2567688,
+      "minimum": 2567688
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/3 > Granules: 4/8": 30
+     },
+     "read_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/3 > Granules: 4/8": 30
+     },
+     "read_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3201682,
+      "marks": 11,
+      "part_count": 3,
+      "rows": 48534,
+      "uncompressed_bytes": 9811026
+     },
+     "events_full": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 799,
+        "uncompressed_bytes": 83167
+       },
+       "content_length": {
+        "compressed_bytes": 2045,
+        "uncompressed_bytes": 370944
+       },
+       "content_type": {
+        "compressed_bytes": 794,
+        "uncompressed_bytes": 82992
+       },
+       "duration_ms": {
+        "compressed_bytes": 87888,
+        "uncompressed_bytes": 329728
+       },
+       "encoding": {
+        "compressed_bytes": 781,
+        "uncompressed_bytes": 82607
+       },
+       "end_time": {
+        "compressed_bytes": 120913,
+        "uncompressed_bytes": 329728
+       },
+       "event_id": {
+        "compressed_bytes": 995556,
+        "uncompressed_bytes": 2060800
+       },
+       "framework": {
+        "compressed_bytes": 16205,
+        "uncompressed_bytes": 85225
+       },
+       "ingest_seq": {
+        "compressed_bytes": 165193,
+        "uncompressed_bytes": 329728
+       },
+       "level": {
+        "compressed_bytes": 2613,
+        "uncompressed_bytes": 329374
+       },
+       "parent_span_id": {
+        "compressed_bytes": 189867,
+        "uncompressed_bytes": 662736
+       },
+       "payload": {
+        "compressed_bytes": 20366,
+        "uncompressed_bytes": 73441641
+       },
+       "preview": {
+        "compressed_bytes": 3465,
+        "uncompressed_bytes": 89467
+       },
+       "profile": {
+        "compressed_bytes": 783,
+        "uncompressed_bytes": 82677
+       },
+       "project_id": {
+        "compressed_bytes": 3231,
+        "uncompressed_bytes": 741888
+       },
+       "sha256": {
+        "compressed_bytes": 3042,
+        "uncompressed_bytes": 84672
+       },
+       "span_id": {
+        "compressed_bytes": 698839,
+        "uncompressed_bytes": 700672
+       },
+       "span_type": {
+        "compressed_bytes": 28256,
+        "uncompressed_bytes": 195671
+       },
+       "start_time": {
+        "compressed_bytes": 109776,
+        "uncompressed_bytes": 329728
+       },
+       "trace_id": {
+        "compressed_bytes": 244080,
+        "uncompressed_bytes": 1360128
+       }
+      },
+      "compressed_bytes": 3221416,
+      "marks": 15,
+      "part_count": 5,
+      "rows": 48534,
+      "uncompressed_bytes": 93745760
+     }
+    }
+   },
+   "workload": "equal_total_few_large",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 5774.226434528828,
+    "block_wall_ms": {
+     "maximum": 97.0247695222497,
+     "median": 22.672885097563267,
+     "minimum": 20.1876200735569,
+     "p95": 58.80811549723147
+    },
+    "rows_per_second": 3451.803296750414,
+    "wall_ms": 14060.476750135422
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "config_identity": "config.xml:sha256=ef40bcdd4985d805ec29003835a74a77dad9d4a0ac10653295d2886a2b2b06bc",
+    "container": null,
+    "engine": "clickhouse",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain aarch64",
+    "mode": "native-package",
+    "package_checksums": "binary_sha256=ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "package_files": "clickhouse-common-static-23.3.10.5-arm64.tgz,clickhouse-server-23.3.10.5-arm64.tgz,clickhouse-client-23.3.10.5-arm64.tgz",
+    "product_path": "/data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "service_identity": "pid=none,port=18123"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 2096172764,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 14572.810299694538,
+    "merge_wait_ms": 342.75584015995264,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 4,
+       "events_full": 4
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 4,
+       "events_full": 4
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 4,
+       "events_full": 4
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 342.75584015995264,
+    "watermark_wait_ms": 6245.283637195826,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 0,
+   "scenarios": {
+    "batch:equal_total_many_medium": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 4/4 > Granules: 10/10": 5
+     },
+     "read_bytes": {
+      "maximum": 94531234,
+      "minimum": 94531234
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 94531234,
+      "minimum": 94531234
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/4 > Granules: 1/10": 30
+     },
+     "read_bytes": {
+      "maximum": 354377,
+      "minimum": 354377
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 354377,
+      "minimum": 354377
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/4 > Granules: 4/9": 30
+     },
+     "read_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/4 > Granules: 4/9": 30
+     },
+     "read_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3452252,
+      "marks": 13,
+      "part_count": 4,
+      "rows": 48534,
+      "uncompressed_bytes": 10204226
+     },
+     "events_full": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 13373,
+        "uncompressed_bytes": 125512
+       },
+       "content_length": {
+        "compressed_bytes": 14345,
+        "uncompressed_bytes": 433152
+       },
+       "content_type": {
+        "compressed_bytes": 13242,
+        "uncompressed_bytes": 116608
+       },
+       "duration_ms": {
+        "compressed_bytes": 100406,
+        "uncompressed_bytes": 385024
+       },
+       "encoding": {
+        "compressed_bytes": 12689,
+        "uncompressed_bytes": 102616
+       },
+       "end_time": {
+        "compressed_bytes": 142427,
+        "uncompressed_bytes": 385024
+       },
+       "event_id": {
+        "compressed_bytes": 1172890,
+        "uncompressed_bytes": 2406400
+       },
+       "framework": {
+        "compressed_bytes": 20244,
+        "uncompressed_bytes": 105101
+       },
+       "ingest_seq": {
+        "compressed_bytes": 192932,
+        "uncompressed_bytes": 385024
+       },
+       "level": {
+        "compressed_bytes": 3260,
+        "uncompressed_bytes": 384540
+       },
+       "parent_span_id": {
+        "compressed_bytes": 236877,
+        "uncompressed_bytes": 767680
+       },
+       "payload": {
+        "compressed_bytes": 123048,
+        "uncompressed_bytes": 83412464
+       },
+       "preview": {
+        "compressed_bytes": 106696,
+        "uncompressed_bytes": 351928
+       },
+       "profile": {
+        "compressed_bytes": 12819,
+        "uncompressed_bytes": 106432
+       },
+       "project_id": {
+        "compressed_bytes": 3826,
+        "uncompressed_bytes": 866304
+       },
+       "sha256": {
+        "compressed_bytes": 93065,
+        "uncompressed_bytes": 177664
+       },
+       "span_id": {
+        "compressed_bytes": 815324,
+        "uncompressed_bytes": 818176
+       },
+       "span_type": {
+        "compressed_bytes": 36962,
+        "uncompressed_bytes": 229318
+       },
+       "start_time": {
+        "compressed_bytes": 130070,
+        "uncompressed_bytes": 385024
+       },
+       "trace_id": {
+        "compressed_bytes": 298400,
+        "uncompressed_bytes": 1588224
+       }
+      },
+      "compressed_bytes": 3575214,
+      "marks": 14,
+      "part_count": 4,
+      "rows": 48534,
+      "uncompressed_bytes": 94141400
+     }
+    }
+   },
+   "workload": "equal_total_many_medium",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 5939.807185903192,
+    "block_wall_ms": {
+     "maximum": 58.416809886693954,
+     "median": 30.299684964120388,
+     "minimum": 19.305340014398098,
+     "p95": 41.2127835676074
+    },
+    "rows_per_second": 3410.7017513343353,
+    "wall_ms": 14229.916169308126
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "config_identity": "config.xml:sha256=ef40bcdd4985d805ec29003835a74a77dad9d4a0ac10653295d2886a2b2b06bc",
+    "container": null,
+    "engine": "clickhouse",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain aarch64",
+    "mode": "native-package",
+    "package_checksums": "binary_sha256=ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "package_files": "clickhouse-common-static-23.3.10.5-arm64.tgz,clickhouse-server-23.3.10.5-arm64.tgz,clickhouse-client-23.3.10.5-arm64.tgz",
+    "product_path": "/data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "service_identity": "pid=none,port=18123"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 2096172764,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 14507.129790261388,
+    "merge_wait_ms": 344.250469468534,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 5,
+       "events_full": 4
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 5,
+       "events_full": 4
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 5,
+       "events_full": 4
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 344.250469468534,
+    "watermark_wait_ms": 6364.167823456228,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 1,
+   "scenarios": {
+    "batch:equal_total_many_medium": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 4/4 > Granules: 10/10": 5
+     },
+     "read_bytes": {
+      "maximum": 94531234,
+      "minimum": 94531234
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 94531234,
+      "minimum": 94531234
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/4 > Granules: 1/10": 30
+     },
+     "read_bytes": {
+      "maximum": 354377,
+      "minimum": 354377
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 354377,
+      "minimum": 354377
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/5 > Granules: 4/10": 30
+     },
+     "read_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/5 > Granules: 4/10": 30
+     },
+     "read_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3451512,
+      "marks": 15,
+      "part_count": 5,
+      "rows": 48534,
+      "uncompressed_bytes": 10204226
+     },
+     "events_full": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 13373,
+        "uncompressed_bytes": 125512
+       },
+       "content_length": {
+        "compressed_bytes": 14345,
+        "uncompressed_bytes": 433152
+       },
+       "content_type": {
+        "compressed_bytes": 13242,
+        "uncompressed_bytes": 116608
+       },
+       "duration_ms": {
+        "compressed_bytes": 100406,
+        "uncompressed_bytes": 385024
+       },
+       "encoding": {
+        "compressed_bytes": 12689,
+        "uncompressed_bytes": 102616
+       },
+       "end_time": {
+        "compressed_bytes": 142427,
+        "uncompressed_bytes": 385024
+       },
+       "event_id": {
+        "compressed_bytes": 1172890,
+        "uncompressed_bytes": 2406400
+       },
+       "framework": {
+        "compressed_bytes": 20244,
+        "uncompressed_bytes": 105101
+       },
+       "ingest_seq": {
+        "compressed_bytes": 192932,
+        "uncompressed_bytes": 385024
+       },
+       "level": {
+        "compressed_bytes": 3260,
+        "uncompressed_bytes": 384540
+       },
+       "parent_span_id": {
+        "compressed_bytes": 236877,
+        "uncompressed_bytes": 767680
+       },
+       "payload": {
+        "compressed_bytes": 123048,
+        "uncompressed_bytes": 83412464
+       },
+       "preview": {
+        "compressed_bytes": 106696,
+        "uncompressed_bytes": 351928
+       },
+       "profile": {
+        "compressed_bytes": 12819,
+        "uncompressed_bytes": 106432
+       },
+       "project_id": {
+        "compressed_bytes": 3826,
+        "uncompressed_bytes": 866304
+       },
+       "sha256": {
+        "compressed_bytes": 93065,
+        "uncompressed_bytes": 177664
+       },
+       "span_id": {
+        "compressed_bytes": 815324,
+        "uncompressed_bytes": 818176
+       },
+       "span_type": {
+        "compressed_bytes": 36962,
+        "uncompressed_bytes": 229318
+       },
+       "start_time": {
+        "compressed_bytes": 130070,
+        "uncompressed_bytes": 385024
+       },
+       "trace_id": {
+        "compressed_bytes": 298400,
+        "uncompressed_bytes": 1588224
+       }
+      },
+      "compressed_bytes": 3575214,
+      "marks": 14,
+      "part_count": 4,
+      "rows": 48534,
+      "uncompressed_bytes": 94141400
+     }
+    }
+   },
+   "workload": "equal_total_many_medium",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 5831.307718530297,
+    "block_wall_ms": {
+     "maximum": 65.43903052806854,
+     "median": 29.711924493312836,
+     "minimum": 18.751350231468678,
+     "p95": 38.629347085952745
+    },
+    "rows_per_second": 3426.856227128378,
+    "wall_ms": 14162.835200317204
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "config_identity": "config.xml:sha256=ef40bcdd4985d805ec29003835a74a77dad9d4a0ac10653295d2886a2b2b06bc",
+    "container": null,
+    "engine": "clickhouse",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain aarch64",
+    "mode": "native-package",
+    "package_checksums": "binary_sha256=ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "package_files": "clickhouse-common-static-23.3.10.5-arm64.tgz,clickhouse-server-23.3.10.5-arm64.tgz,clickhouse-client-23.3.10.5-arm64.tgz",
+    "product_path": "/data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "service_identity": "pid=none,port=18123"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 2096172764,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 14269.23825033009,
+    "merge_wait_ms": 359.3942001461983,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 5,
+       "events_full": 4
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 5,
+       "events_full": 4
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 5,
+       "events_full": 4
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 359.3942001461983,
+    "watermark_wait_ms": 6225.593411363661,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 2,
+   "scenarios": {
+    "batch:equal_total_many_medium": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 4/4 > Granules: 10/10": 5
+     },
+     "read_bytes": {
+      "maximum": 94531234,
+      "minimum": 94531234
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 94531234,
+      "minimum": 94531234
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/4 > Granules: 1/10": 30
+     },
+     "read_bytes": {
+      "maximum": 354377,
+      "minimum": 354377
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 354377,
+      "minimum": 354377
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/5 > Granules: 4/10": 30
+     },
+     "read_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/5 > Granules: 4/10": 30
+     },
+     "read_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3451512,
+      "marks": 15,
+      "part_count": 5,
+      "rows": 48534,
+      "uncompressed_bytes": 10204226
+     },
+     "events_full": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 13373,
+        "uncompressed_bytes": 125512
+       },
+       "content_length": {
+        "compressed_bytes": 14345,
+        "uncompressed_bytes": 433152
+       },
+       "content_type": {
+        "compressed_bytes": 13242,
+        "uncompressed_bytes": 116608
+       },
+       "duration_ms": {
+        "compressed_bytes": 100406,
+        "uncompressed_bytes": 385024
+       },
+       "encoding": {
+        "compressed_bytes": 12689,
+        "uncompressed_bytes": 102616
+       },
+       "end_time": {
+        "compressed_bytes": 142427,
+        "uncompressed_bytes": 385024
+       },
+       "event_id": {
+        "compressed_bytes": 1172890,
+        "uncompressed_bytes": 2406400
+       },
+       "framework": {
+        "compressed_bytes": 20244,
+        "uncompressed_bytes": 105101
+       },
+       "ingest_seq": {
+        "compressed_bytes": 192932,
+        "uncompressed_bytes": 385024
+       },
+       "level": {
+        "compressed_bytes": 3260,
+        "uncompressed_bytes": 384540
+       },
+       "parent_span_id": {
+        "compressed_bytes": 236877,
+        "uncompressed_bytes": 767680
+       },
+       "payload": {
+        "compressed_bytes": 123048,
+        "uncompressed_bytes": 83412464
+       },
+       "preview": {
+        "compressed_bytes": 106696,
+        "uncompressed_bytes": 351928
+       },
+       "profile": {
+        "compressed_bytes": 12819,
+        "uncompressed_bytes": 106432
+       },
+       "project_id": {
+        "compressed_bytes": 3826,
+        "uncompressed_bytes": 866304
+       },
+       "sha256": {
+        "compressed_bytes": 93065,
+        "uncompressed_bytes": 177664
+       },
+       "span_id": {
+        "compressed_bytes": 815324,
+        "uncompressed_bytes": 818176
+       },
+       "span_type": {
+        "compressed_bytes": 36962,
+        "uncompressed_bytes": 229318
+       },
+       "start_time": {
+        "compressed_bytes": 130070,
+        "uncompressed_bytes": 385024
+       },
+       "trace_id": {
+        "compressed_bytes": 298400,
+        "uncompressed_bytes": 1588224
+       }
+      },
+      "compressed_bytes": 3575214,
+      "marks": 14,
+      "part_count": 4,
+      "rows": 48534,
+      "uncompressed_bytes": 94141400
+     }
+    }
+   },
+   "workload": "equal_total_many_medium",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 5703.422142192721,
+    "block_wall_ms": {
+     "maximum": 42.865789495408535,
+     "median": 29.62711500003934,
+     "minimum": 18.031849525868893,
+     "p95": 36.16189640015364
+    },
+    "rows_per_second": 3489.204544337551,
+    "wall_ms": 13909.760629758239
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "config_identity": "config.xml:sha256=ef40bcdd4985d805ec29003835a74a77dad9d4a0ac10653295d2886a2b2b06bc",
+    "container": null,
+    "engine": "clickhouse",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain aarch64",
+    "mode": "native-package",
+    "package_checksums": "binary_sha256=ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "package_files": "clickhouse-common-static-23.3.10.5-arm64.tgz,clickhouse-server-23.3.10.5-arm64.tgz,clickhouse-client-23.3.10.5-arm64.tgz",
+    "product_path": "/data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "service_identity": "pid=none,port=18123"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 2096172764,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 14512.018769979477,
+    "merge_wait_ms": 349.23409949988127,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 5,
+       "events_full": 4
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 5,
+       "events_full": 4
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 5,
+       "events_full": 4
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 349.23409949988127,
+    "watermark_wait_ms": 6270.3137788921595,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 3,
+   "scenarios": {
+    "batch:equal_total_many_medium": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 4/4 > Granules: 10/10": 5
+     },
+     "read_bytes": {
+      "maximum": 94531234,
+      "minimum": 94531234
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 94531234,
+      "minimum": 94531234
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/4 > Granules: 1/10": 30
+     },
+     "read_bytes": {
+      "maximum": 354377,
+      "minimum": 354377
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 354377,
+      "minimum": 354377
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/5 > Granules: 4/10": 30
+     },
+     "read_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/5 > Granules: 4/10": 30
+     },
+     "read_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3451512,
+      "marks": 15,
+      "part_count": 5,
+      "rows": 48534,
+      "uncompressed_bytes": 10204226
+     },
+     "events_full": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 13373,
+        "uncompressed_bytes": 125512
+       },
+       "content_length": {
+        "compressed_bytes": 14345,
+        "uncompressed_bytes": 433152
+       },
+       "content_type": {
+        "compressed_bytes": 13242,
+        "uncompressed_bytes": 116608
+       },
+       "duration_ms": {
+        "compressed_bytes": 100406,
+        "uncompressed_bytes": 385024
+       },
+       "encoding": {
+        "compressed_bytes": 12689,
+        "uncompressed_bytes": 102616
+       },
+       "end_time": {
+        "compressed_bytes": 142427,
+        "uncompressed_bytes": 385024
+       },
+       "event_id": {
+        "compressed_bytes": 1172890,
+        "uncompressed_bytes": 2406400
+       },
+       "framework": {
+        "compressed_bytes": 20244,
+        "uncompressed_bytes": 105101
+       },
+       "ingest_seq": {
+        "compressed_bytes": 192932,
+        "uncompressed_bytes": 385024
+       },
+       "level": {
+        "compressed_bytes": 3260,
+        "uncompressed_bytes": 384540
+       },
+       "parent_span_id": {
+        "compressed_bytes": 236877,
+        "uncompressed_bytes": 767680
+       },
+       "payload": {
+        "compressed_bytes": 123048,
+        "uncompressed_bytes": 83412464
+       },
+       "preview": {
+        "compressed_bytes": 106696,
+        "uncompressed_bytes": 351928
+       },
+       "profile": {
+        "compressed_bytes": 12819,
+        "uncompressed_bytes": 106432
+       },
+       "project_id": {
+        "compressed_bytes": 3826,
+        "uncompressed_bytes": 866304
+       },
+       "sha256": {
+        "compressed_bytes": 93065,
+        "uncompressed_bytes": 177664
+       },
+       "span_id": {
+        "compressed_bytes": 815324,
+        "uncompressed_bytes": 818176
+       },
+       "span_type": {
+        "compressed_bytes": 36962,
+        "uncompressed_bytes": 229318
+       },
+       "start_time": {
+        "compressed_bytes": 130070,
+        "uncompressed_bytes": 385024
+       },
+       "trace_id": {
+        "compressed_bytes": 298400,
+        "uncompressed_bytes": 1588224
+       }
+      },
+      "compressed_bytes": 3575214,
+      "marks": 14,
+      "part_count": 4,
+      "rows": 48534,
+      "uncompressed_bytes": 94141400
+     }
+    }
+   },
+   "workload": "equal_total_many_medium",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 5790.182721801102,
+    "block_wall_ms": {
+     "maximum": 46.87715973705053,
+     "median": 30.02419974654913,
+     "minimum": 19.56248003989458,
+     "p95": 38.440367532894
+    },
+    "rows_per_second": 3426.9054330282356,
+    "wall_ms": 14162.631840445101
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "config_identity": "config.xml:sha256=ef40bcdd4985d805ec29003835a74a77dad9d4a0ac10653295d2886a2b2b06bc",
+    "container": null,
+    "engine": "clickhouse",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain aarch64",
+    "mode": "native-package",
+    "package_checksums": "binary_sha256=ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "package_files": "clickhouse-common-static-23.3.10.5-arm64.tgz,clickhouse-server-23.3.10.5-arm64.tgz,clickhouse-client-23.3.10.5-arm64.tgz",
+    "product_path": "/data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "service_identity": "pid=none,port=18123"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 335,
+    "response_bytes_validated": true,
+    "successful_samples": 335,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 2096172764,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 16644.336190074682,
+    "merge_wait_ms": 480.80299980938435,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 1,
+      "parts": {
+       "events_core": 7,
+       "events_full": 5
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 6,
+       "events_full": 5
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 6,
+       "events_full": 5
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 6,
+       "events_full": 5
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 480.80299980938435,
+    "watermark_wait_ms": 7337.874588556588,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 0,
+   "scenarios": {
+    "batch:main": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 5/5 > Granules: 14/14": 5
+     },
+     "read_bytes": {
+      "maximum": 138612472,
+      "minimum": 138612472
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 138612472,
+      "minimum": 138612472
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:entropy_512k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/5 > Granules: 1/14": 30
+     },
+     "read_bytes": {
+      "maximum": 3302068,
+      "minimum": 3302068
+     },
+     "read_rows": {
+      "maximum": 4318,
+      "minimum": 4318
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 3302068,
+      "minimum": 3302068
+     },
+     "scanned_rows": {
+      "maximum": 4318,
+      "minimum": 4318
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/5 > Granules: 1/14": 30
+     },
+     "read_bytes": {
+      "maximum": 2648060,
+      "minimum": 2648060
+     },
+     "read_rows": {
+      "maximum": 4096,
+      "minimum": 4096
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 2648060,
+      "minimum": 2648060
+     },
+     "scanned_rows": {
+      "maximum": 4096,
+      "minimum": 4096
+     }
+    },
+    "detail:text_512k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/5 > Granules: 1/14": 30
+     },
+     "read_bytes": {
+      "maximum": 21190838,
+      "minimum": 21190838
+     },
+     "read_rows": {
+      "maximum": 4318,
+      "minimum": 4318
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 21190838,
+      "minimum": 21190838
+     },
+     "scanned_rows": {
+      "maximum": 4318,
+      "minimum": 4318
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/5 > Granules: 1/14": 30
+     },
+     "read_bytes": {
+      "maximum": 9706721,
+      "minimum": 9706721
+     },
+     "read_rows": {
+      "maximum": 5565,
+      "minimum": 5565
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 9706721,
+      "minimum": 9706721
+     },
+     "scanned_rows": {
+      "maximum": 5565,
+      "minimum": 5565
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "preview:first": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "preview:middle": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "trace:p25": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 1/5 > Granules: 1/14": 30
+     },
+     "read_bytes": {
+      "maximum": 6790316,
+      "minimum": 6790316
+     },
+     "read_rows": {
+      "maximum": 4096,
+      "minimum": 4096
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6790316,
+      "minimum": 6790316
+     },
+     "scanned_rows": {
+      "maximum": 4096,
+      "minimum": 4096
+     }
+    },
+    "trace:p50": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 1/5 > Granules: 1/14": 30
+     },
+     "read_bytes": {
+      "maximum": 1423162,
+      "minimum": 1423162
+     },
+     "read_rows": {
+      "maximum": 4318,
+      "minimum": 4318
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1423162,
+      "minimum": 1423162
+     },
+     "scanned_rows": {
+      "maximum": 4318,
+      "minimum": 4318
+     }
+    },
+    "trace:p95": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 1/5 > Granules: 2/14": 30
+     },
+     "read_bytes": {
+      "maximum": 15515150,
+      "minimum": 15515150
+     },
+     "read_rows": {
+      "maximum": 7853,
+      "minimum": 7853
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 15515150,
+      "minimum": 15515150
+     },
+     "scanned_rows": {
+      "maximum": 7853,
+      "minimum": 7853
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3235614,
+      "marks": 17,
+      "part_count": 6,
+      "rows": 48534,
+      "uncompressed_bytes": 9846306
+     },
+     "events_full": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 2190,
+        "uncompressed_bytes": 96384
+       },
+       "content_length": {
+        "compressed_bytes": 3640,
+        "uncompressed_bytes": 430848
+       },
+       "content_type": {
+        "compressed_bytes": 2239,
+        "uncompressed_bytes": 98304
+       },
+       "duration_ms": {
+        "compressed_bytes": 100988,
+        "uncompressed_bytes": 382976
+       },
+       "encoding": {
+        "compressed_bytes": 2192,
+        "uncompressed_bytes": 96544
+       },
+       "end_time": {
+        "compressed_bytes": 141847,
+        "uncompressed_bytes": 382976
+       },
+       "event_id": {
+        "compressed_bytes": 1168306,
+        "uncompressed_bytes": 2393600
+       },
+       "framework": {
+        "compressed_bytes": 20085,
+        "uncompressed_bytes": 104275
+       },
+       "ingest_seq": {
+        "compressed_bytes": 191892,
+        "uncompressed_bytes": 382976
+       },
+       "level": {
+        "compressed_bytes": 3226,
+        "uncompressed_bytes": 382502
+       },
+       "parent_span_id": {
+        "compressed_bytes": 235447,
+        "uncompressed_bytes": 763984
+       },
+       "payload": {
+        "compressed_bytes": 15790227,
+        "uncompressed_bytes": 128498792
+       },
+       "preview": {
+        "compressed_bytes": 19014,
+        "uncompressed_bytes": 127904
+       },
+       "profile": {
+        "compressed_bytes": 2272,
+        "uncompressed_bytes": 97184
+       },
+       "project_id": {
+        "compressed_bytes": 3859,
+        "uncompressed_bytes": 861696
+       },
+       "sha256": {
+        "compressed_bytes": 12316,
+        "uncompressed_bytes": 105984
+       },
+       "span_id": {
+        "compressed_bytes": 814980,
+        "uncompressed_bytes": 813824
+       },
+       "span_type": {
+        "compressed_bytes": 36761,
+        "uncompressed_bytes": 227981
+       },
+       "start_time": {
+        "compressed_bytes": 129509,
+        "uncompressed_bytes": 382976
+       },
+       "trace_id": {
+        "compressed_bytes": 298787,
+        "uncompressed_bytes": 1579776
+       }
+      },
+      "compressed_bytes": 19027321,
+      "marks": 19,
+      "part_count": 5,
+      "rows": 48534,
+      "uncompressed_bytes": 138345760
+     }
+    }
+   },
+   "workload": "main",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 6870.358861982822,
+    "block_wall_ms": {
+     "maximum": 145.48754040151834,
+     "median": 30.10689001530409,
+     "minimum": 15.027230605483055,
+     "p95": 69.79707423597571
+    },
+    "rows_per_second": 3002.701624039804,
+    "wall_ms": 16163.44415023923
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "config_identity": "config.xml:sha256=ef40bcdd4985d805ec29003835a74a77dad9d4a0ac10653295d2886a2b2b06bc",
+    "container": null,
+    "engine": "clickhouse",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain aarch64",
+    "mode": "native-package",
+    "package_checksums": "binary_sha256=ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "package_files": "clickhouse-common-static-23.3.10.5-arm64.tgz,clickhouse-server-23.3.10.5-arm64.tgz,clickhouse-client-23.3.10.5-arm64.tgz",
+    "product_path": "/data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "service_identity": "pid=none,port=18123"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 335,
+    "response_bytes_validated": true,
+    "successful_samples": 335,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 2096172764,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 15835.759039968252,
+    "merge_wait_ms": 489.4773103296757,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 1,
+      "parts": {
+       "events_core": 7,
+       "events_full": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 6,
+       "events_full": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 6,
+       "events_full": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 6,
+       "events_full": 6
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 489.4773103296757,
+    "watermark_wait_ms": 6743.937477469444,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 1,
+   "scenarios": {
+    "batch:main": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 6/6 > Granules: 15/15": 5
+     },
+     "read_bytes": {
+      "maximum": 138546004,
+      "minimum": 138546004
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 138546004,
+      "minimum": 138546004
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:entropy_512k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 1/15": 30
+     },
+     "read_bytes": {
+      "maximum": 10589444,
+      "minimum": 10589444
+     },
+     "read_rows": {
+      "maximum": 4405,
+      "minimum": 4405
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 10589444,
+      "minimum": 10589444
+     },
+     "scanned_rows": {
+      "maximum": 4405,
+      "minimum": 4405
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 1/15": 30
+     },
+     "read_bytes": {
+      "maximum": 18365931,
+      "minimum": 18365931
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 18365931,
+      "minimum": 18365931
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "detail:text_512k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 1/15": 30
+     },
+     "read_bytes": {
+      "maximum": 3644537,
+      "minimum": 3644537
+     },
+     "read_rows": {
+      "maximum": 2688,
+      "minimum": 2688
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 3644537,
+      "minimum": 3644537
+     },
+     "scanned_rows": {
+      "maximum": 2688,
+      "minimum": 2688
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 1/15": 30
+     },
+     "read_bytes": {
+      "maximum": 653411,
+      "minimum": 653411
+     },
+     "read_rows": {
+      "maximum": 3245,
+      "minimum": 3245
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 653411,
+      "minimum": 653411
+     },
+     "scanned_rows": {
+      "maximum": 3245,
+      "minimum": 3245
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "preview:first": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "preview:middle": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "trace:p25": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 1/15": 30
+     },
+     "read_bytes": {
+      "maximum": 6954761,
+      "minimum": 6954761
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6954761,
+      "minimum": 6954761
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "trace:p50": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 1/15": 30
+     },
+     "read_bytes": {
+      "maximum": 4455096,
+      "minimum": 4455096
+     },
+     "read_rows": {
+      "maximum": 3245,
+      "minimum": 3245
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 4455096,
+      "minimum": 4455096
+     },
+     "scanned_rows": {
+      "maximum": 3245,
+      "minimum": 3245
+     }
+    },
+    "trace:p95": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 2/15": 30
+     },
+     "read_bytes": {
+      "maximum": 15515150,
+      "minimum": 15515150
+     },
+     "read_rows": {
+      "maximum": 7853,
+      "minimum": 7853
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 15515150,
+      "minimum": 15515150
+     },
+     "scanned_rows": {
+      "maximum": 7853,
+      "minimum": 7853
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3235614,
+      "marks": 17,
+      "part_count": 6,
+      "rows": 48534,
+      "uncompressed_bytes": 9846306
+     },
+     "events_full": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 2202,
+        "uncompressed_bytes": 93808
+       },
+       "content_length": {
+        "compressed_bytes": 3555,
+        "uncompressed_bytes": 419328
+       },
+       "content_type": {
+        "compressed_bytes": 2265,
+        "uncompressed_bytes": 95680
+       },
+       "duration_ms": {
+        "compressed_bytes": 101369,
+        "uncompressed_bytes": 372736
+       },
+       "encoding": {
+        "compressed_bytes": 2206,
+        "uncompressed_bytes": 93964
+       },
+       "end_time": {
+        "compressed_bytes": 139160,
+        "uncompressed_bytes": 372736
+       },
+       "event_id": {
+        "compressed_bytes": 1132767,
+        "uncompressed_bytes": 2329600
+       },
+       "framework": {
+        "compressed_bytes": 19742,
+        "uncompressed_bytes": 100025
+       },
+       "ingest_seq": {
+        "compressed_bytes": 186746,
+        "uncompressed_bytes": 372736
+       },
+       "level": {
+        "compressed_bytes": 3034,
+        "uncompressed_bytes": 372316
+       },
+       "parent_span_id": {
+        "compressed_bytes": 227832,
+        "uncompressed_bytes": 745696
+       },
+       "payload": {
+        "compressed_bytes": 15792873,
+        "uncompressed_bytes": 127317856
+       },
+       "preview": {
+        "compressed_bytes": 18732,
+        "uncompressed_bytes": 124540
+       },
+       "profile": {
+        "compressed_bytes": 2322,
+        "uncompressed_bytes": 94590
+       },
+       "project_id": {
+        "compressed_bytes": 3768,
+        "uncompressed_bytes": 838656
+       },
+       "sha256": {
+        "compressed_bytes": 12212,
+        "uncompressed_bytes": 103168
+       },
+       "span_id": {
+        "compressed_bytes": 793052,
+        "uncompressed_bytes": 792064
+       },
+       "span_type": {
+        "compressed_bytes": 38432,
+        "uncompressed_bytes": 221284
+       },
+       "start_time": {
+        "compressed_bytes": 126882,
+        "uncompressed_bytes": 372736
+       },
+       "trace_id": {
+        "compressed_bytes": 287084,
+        "uncompressed_bytes": 1537536
+       }
+      },
+      "compressed_bytes": 19032758,
+      "marks": 21,
+      "part_count": 6,
+      "rows": 48534,
+      "uncompressed_bytes": 138345760
+     }
+    }
+   },
+   "workload": "main",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 6655.86462430656,
+    "block_wall_ms": {
+     "maximum": 143.63205060362816,
+     "median": 26.340600103139877,
+     "minimum": 15.699800103902817,
+     "p95": 66.52300413697958
+    },
+    "rows_per_second": 3162.608089109308,
+    "wall_ms": 15346.194859594107
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "config_identity": "config.xml:sha256=ef40bcdd4985d805ec29003835a74a77dad9d4a0ac10653295d2886a2b2b06bc",
+    "container": null,
+    "engine": "clickhouse",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain aarch64",
+    "mode": "native-package",
+    "package_checksums": "binary_sha256=ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "package_files": "clickhouse-common-static-23.3.10.5-arm64.tgz,clickhouse-server-23.3.10.5-arm64.tgz,clickhouse-client-23.3.10.5-arm64.tgz",
+    "product_path": "/data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "service_identity": "pid=none,port=18123"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 335,
+    "response_bytes_validated": true,
+    "successful_samples": 335,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 2096172764,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 15218.449809588492,
+    "merge_wait_ms": 347.2612602636218,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 5,
+       "events_full": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 5,
+       "events_full": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 5,
+       "events_full": 6
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 347.2612602636218,
+    "watermark_wait_ms": 6393.88722460717,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 2,
+   "scenarios": {
+    "batch:main": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 6/6 > Granules: 15/15": 5
+     },
+     "read_bytes": {
+      "maximum": 138546004,
+      "minimum": 138546004
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 138546004,
+      "minimum": 138546004
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:entropy_512k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 1/15": 30
+     },
+     "read_bytes": {
+      "maximum": 10589444,
+      "minimum": 10589444
+     },
+     "read_rows": {
+      "maximum": 4405,
+      "minimum": 4405
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 10589444,
+      "minimum": 10589444
+     },
+     "scanned_rows": {
+      "maximum": 4405,
+      "minimum": 4405
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 1/15": 30
+     },
+     "read_bytes": {
+      "maximum": 18365931,
+      "minimum": 18365931
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 18365931,
+      "minimum": 18365931
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "detail:text_512k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 1/15": 30
+     },
+     "read_bytes": {
+      "maximum": 3644537,
+      "minimum": 3644537
+     },
+     "read_rows": {
+      "maximum": 2688,
+      "minimum": 2688
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 3644537,
+      "minimum": 3644537
+     },
+     "scanned_rows": {
+      "maximum": 2688,
+      "minimum": 2688
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 1/15": 30
+     },
+     "read_bytes": {
+      "maximum": 653411,
+      "minimum": 653411
+     },
+     "read_rows": {
+      "maximum": 3245,
+      "minimum": 3245
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 653411,
+      "minimum": 653411
+     },
+     "scanned_rows": {
+      "maximum": 3245,
+      "minimum": 3245
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/5 > Granules: 4/10": 30
+     },
+     "read_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/5 > Granules: 4/10": 30
+     },
+     "read_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "preview:first": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/5 > Granules: 4/10": 30
+     },
+     "read_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "preview:middle": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/5 > Granules: 4/10": 30
+     },
+     "read_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "trace:p25": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 1/15": 30
+     },
+     "read_bytes": {
+      "maximum": 6954761,
+      "minimum": 6954761
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6954761,
+      "minimum": 6954761
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "trace:p50": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 1/15": 30
+     },
+     "read_bytes": {
+      "maximum": 4455096,
+      "minimum": 4455096
+     },
+     "read_rows": {
+      "maximum": 3245,
+      "minimum": 3245
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 4455096,
+      "minimum": 4455096
+     },
+     "scanned_rows": {
+      "maximum": 3245,
+      "minimum": 3245
+     }
+    },
+    "trace:p95": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 2/15": 30
+     },
+     "read_bytes": {
+      "maximum": 15515150,
+      "minimum": 15515150
+     },
+     "read_rows": {
+      "maximum": 7853,
+      "minimum": 7853
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 15515150,
+      "minimum": 15515150
+     },
+     "scanned_rows": {
+      "maximum": 7853,
+      "minimum": 7853
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3234924,
+      "marks": 15,
+      "part_count": 5,
+      "rows": 48534,
+      "uncompressed_bytes": 9846306
+     },
+     "events_full": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 2202,
+        "uncompressed_bytes": 93808
+       },
+       "content_length": {
+        "compressed_bytes": 3555,
+        "uncompressed_bytes": 419328
+       },
+       "content_type": {
+        "compressed_bytes": 2265,
+        "uncompressed_bytes": 95680
+       },
+       "duration_ms": {
+        "compressed_bytes": 101369,
+        "uncompressed_bytes": 372736
+       },
+       "encoding": {
+        "compressed_bytes": 2206,
+        "uncompressed_bytes": 93964
+       },
+       "end_time": {
+        "compressed_bytes": 139160,
+        "uncompressed_bytes": 372736
+       },
+       "event_id": {
+        "compressed_bytes": 1132782,
+        "uncompressed_bytes": 2329600
+       },
+       "framework": {
+        "compressed_bytes": 19742,
+        "uncompressed_bytes": 100025
+       },
+       "ingest_seq": {
+        "compressed_bytes": 186746,
+        "uncompressed_bytes": 372736
+       },
+       "level": {
+        "compressed_bytes": 3034,
+        "uncompressed_bytes": 372316
+       },
+       "parent_span_id": {
+        "compressed_bytes": 228018,
+        "uncompressed_bytes": 745696
+       },
+       "payload": {
+        "compressed_bytes": 15793010,
+        "uncompressed_bytes": 127317856
+       },
+       "preview": {
+        "compressed_bytes": 18732,
+        "uncompressed_bytes": 124540
+       },
+       "profile": {
+        "compressed_bytes": 2322,
+        "uncompressed_bytes": 94590
+       },
+       "project_id": {
+        "compressed_bytes": 3768,
+        "uncompressed_bytes": 838656
+       },
+       "sha256": {
+        "compressed_bytes": 12212,
+        "uncompressed_bytes": 103168
+       },
+       "span_id": {
+        "compressed_bytes": 793067,
+        "uncompressed_bytes": 792064
+       },
+       "span_type": {
+        "compressed_bytes": 38432,
+        "uncompressed_bytes": 221284
+       },
+       "start_time": {
+        "compressed_bytes": 126882,
+        "uncompressed_bytes": 372736
+       },
+       "trace_id": {
+        "compressed_bytes": 287114,
+        "uncompressed_bytes": 1537536
+       }
+      },
+      "compressed_bytes": 19033141,
+      "marks": 21,
+      "part_count": 6,
+      "rows": 48534,
+      "uncompressed_bytes": 138345760
+     }
+    }
+   },
+   "workload": "main",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 6561.376174911857,
+    "block_wall_ms": {
+     "maximum": 140.77607076615095,
+     "median": 25.70698969066143,
+     "minimum": 14.965160749852657,
+     "p95": 65.49760308116672
+    },
+    "rows_per_second": 3263.6451819926388,
+    "wall_ms": 14871.101879514754
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "config_identity": "config.xml:sha256=ef40bcdd4985d805ec29003835a74a77dad9d4a0ac10653295d2886a2b2b06bc",
+    "container": null,
+    "engine": "clickhouse",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain aarch64",
+    "mode": "native-package",
+    "package_checksums": "binary_sha256=ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "package_files": "clickhouse-common-static-23.3.10.5-arm64.tgz,clickhouse-server-23.3.10.5-arm64.tgz,clickhouse-client-23.3.10.5-arm64.tgz",
+    "product_path": "/data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "service_identity": "pid=none,port=18123"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 335,
+    "response_bytes_validated": true,
+    "successful_samples": 335,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 2096172764,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 16195.020680315793,
+    "merge_wait_ms": 563.0250601097941,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 1,
+      "parts": {
+       "events_core": 7,
+       "events_full": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 6,
+       "events_full": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 6,
+       "events_full": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "events_core": 6,
+       "events_full": 6
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 563.0250601097941,
+    "watermark_wait_ms": 7000.753202475607,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 3,
+   "scenarios": {
+    "batch:main": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 6/6 > Granules: 15/15": 5
+     },
+     "read_bytes": {
+      "maximum": 138546004,
+      "minimum": 138546004
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 138546004,
+      "minimum": 138546004
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:entropy_512k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 1/15": 30
+     },
+     "read_bytes": {
+      "maximum": 10589444,
+      "minimum": 10589444
+     },
+     "read_rows": {
+      "maximum": 4405,
+      "minimum": 4405
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 10589444,
+      "minimum": 10589444
+     },
+     "scanned_rows": {
+      "maximum": 4405,
+      "minimum": 4405
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 1/15": 30
+     },
+     "read_bytes": {
+      "maximum": 18365931,
+      "minimum": 18365931
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 18365931,
+      "minimum": 18365931
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "detail:text_512k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 1/15": 30
+     },
+     "read_bytes": {
+      "maximum": 3644537,
+      "minimum": 3644537
+     },
+     "read_rows": {
+      "maximum": 2688,
+      "minimum": 2688
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 3644537,
+      "minimum": 3644537
+     },
+     "scanned_rows": {
+      "maximum": 2688,
+      "minimum": 2688
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 1/15": 30
+     },
+     "read_bytes": {
+      "maximum": 653411,
+      "minimum": 653411
+     },
+     "read_rows": {
+      "maximum": 3245,
+      "minimum": 3245
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 653411,
+      "minimum": 653411
+     },
+     "scanned_rows": {
+      "maximum": 3245,
+      "minimum": 3245
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "preview:first": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "preview:middle": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_core) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "trace:p25": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 1/15": 30
+     },
+     "read_bytes": {
+      "maximum": 6954761,
+      "minimum": 6954761
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6954761,
+      "minimum": 6954761
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "trace:p50": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 1/15": 30
+     },
+     "read_bytes": {
+      "maximum": 4455096,
+      "minimum": 4455096
+     },
+     "read_rows": {
+      "maximum": 3245,
+      "minimum": 3245
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 4455096,
+      "minimum": 4455096
+     },
+     "scanned_rows": {
+      "maximum": 3245,
+      "minimum": 3245
+     }
+    },
+    "trace:p95": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_full) > Parts: 1/6 > Granules: 2/15": 30
+     },
+     "read_bytes": {
+      "maximum": 15515150,
+      "minimum": 15515150
+     },
+     "read_rows": {
+      "maximum": 7853,
+      "minimum": 7853
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 15515150,
+      "minimum": 15515150
+     },
+     "scanned_rows": {
+      "maximum": 7853,
+      "minimum": 7853
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3235614,
+      "marks": 17,
+      "part_count": 6,
+      "rows": 48534,
+      "uncompressed_bytes": 9846306
+     },
+     "events_full": {
+      "columns": {
+       "cohort": {
+        "compressed_bytes": 2202,
+        "uncompressed_bytes": 93808
+       },
+       "content_length": {
+        "compressed_bytes": 3555,
+        "uncompressed_bytes": 419328
+       },
+       "content_type": {
+        "compressed_bytes": 2265,
+        "uncompressed_bytes": 95680
+       },
+       "duration_ms": {
+        "compressed_bytes": 101369,
+        "uncompressed_bytes": 372736
+       },
+       "encoding": {
+        "compressed_bytes": 2206,
+        "uncompressed_bytes": 93964
+       },
+       "end_time": {
+        "compressed_bytes": 139160,
+        "uncompressed_bytes": 372736
+       },
+       "event_id": {
+        "compressed_bytes": 1132767,
+        "uncompressed_bytes": 2329600
+       },
+       "framework": {
+        "compressed_bytes": 19742,
+        "uncompressed_bytes": 100025
+       },
+       "ingest_seq": {
+        "compressed_bytes": 186746,
+        "uncompressed_bytes": 372736
+       },
+       "level": {
+        "compressed_bytes": 3034,
+        "uncompressed_bytes": 372316
+       },
+       "parent_span_id": {
+        "compressed_bytes": 227832,
+        "uncompressed_bytes": 745696
+       },
+       "payload": {
+        "compressed_bytes": 15792873,
+        "uncompressed_bytes": 127317856
+       },
+       "preview": {
+        "compressed_bytes": 18732,
+        "uncompressed_bytes": 124540
+       },
+       "profile": {
+        "compressed_bytes": 2322,
+        "uncompressed_bytes": 94590
+       },
+       "project_id": {
+        "compressed_bytes": 3768,
+        "uncompressed_bytes": 838656
+       },
+       "sha256": {
+        "compressed_bytes": 12212,
+        "uncompressed_bytes": 103168
+       },
+       "span_id": {
+        "compressed_bytes": 793052,
+        "uncompressed_bytes": 792064
+       },
+       "span_type": {
+        "compressed_bytes": 38432,
+        "uncompressed_bytes": 221284
+       },
+       "start_time": {
+        "compressed_bytes": 126882,
+        "uncompressed_bytes": 372736
+       },
+       "trace_id": {
+        "compressed_bytes": 287084,
+        "uncompressed_bytes": 1537536
+       }
+      },
+      "compressed_bytes": 19032758,
+      "marks": 21,
+      "part_count": 6,
+      "rows": 48534,
+      "uncompressed_bytes": 138345760
+     }
+    }
+   },
+   "workload": "main",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 6729.762173257768,
+    "block_wall_ms": {
+     "maximum": 147.16310985386372,
+     "median": 28.111495077610016,
+     "minimum": 15.803489834070206,
+     "p95": 66.92618364468217
+    },
+    "rows_per_second": 3104.8136376411458,
+    "wall_ms": 15631.856099702418
+   }
+  }
+ ],
+ "target": "/data3/tracecjy/agent-trace-yellow/.stage3-yellow/runs-20260924/clickhouse-main/clickhouse/full_core"
+}

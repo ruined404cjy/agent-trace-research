@@ -235,7 +235,7 @@ def other_engine_running(phase, clickhouse_port):
     if phase == "xstore" and _port_open(clickhouse_port):
         return f"ClickHouse still listens on 127.0.0.1:{clickhouse_port}; stop it before the xstore phase"
     if phase == "clickhouse":
-        found = subprocess.run(["pgrep", "-x", "gaussdb"], capture_output=True, text=True)
+        found = subprocess.run(["pgrep", "-x", "-u", os.environ.get("USER", ""), "gaussdb"], capture_output=True, text=True)
         if found.returncode == 0:
             return "a gaussdb process is running; stop XStore before the clickhouse phase"
     return None

@@ -1,0 +1,15 @@
+$ SELECT version()
+23.3.10.5
+
+$ SELECT name, value FROM system.merge_tree_settings WHERE name IN ('parts_to_delay_insert','parts_to_throw_insert')
+parts_to_delay_insert	1000
+parts_to_throw_insert	3000
+
+$ grep -rn max_server_memory_usage_to_ram_ratio /data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/etc
+/data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/etc/config.xml.template:316:         Zero value or unset means default. Default is "max_server_memory_usage_to_ram_ratio" of available physical RAM.
+/data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/etc/config.xml.template:317:         If the value is larger than "max_server_memory_usage_to_ram_ratio" of available physical RAM, it will be cut down.
+/data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/etc/config.xml.template:353:    <max_server_memory_usage_to_ram_ratio>0.9</max_server_memory_usage_to_ram_ratio>
+/data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/etc/config.xml:317:         Zero value or unset means default. Default is "max_server_memory_usage_to_ram_ratio" of available physical RAM.
+/data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/etc/config.xml:318:         If the value is larger than "max_server_memory_usage_to_ram_ratio" of available physical RAM, it will be cut down.
+/data3/tracecjy/agent-trace-yellow/.stage3-yellow/clickhouse/etc/config.xml:354:    <max_server_memory_usage_to_ram_ratio>0.5</max_server_memory_usage_to_ram_ratio>
+

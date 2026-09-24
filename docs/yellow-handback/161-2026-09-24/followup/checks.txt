@@ -1,0 +1,1735 @@
+F1 runs 127 non_head 0
+F1 head_run ch-asset-failures/run-manifest.json
+F1 head_run ch-interference-asset_ref/run-manifest.json
+F1 head_run ch-interference-full_core/run-manifest.json
+F1 head_run ch-interference-same_table/run-manifest.json
+F1 head_run ch-interference-separate/run-manifest.json
+F1 head_run ch-part-states-asset_ref/run-manifest.json
+F1 head_run ch-part-states-full_core/run-manifest.json
+F1 head_run ch-part-states-same_table/run-manifest.json
+F1 head_run ch-part-states-separate/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/asset_ref/rounds/correctness_only/round-1/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/asset_ref/rounds/equal_total_few_large/round-1/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/asset_ref/rounds/equal_total_few_large/round-2/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/asset_ref/rounds/equal_total_few_large/round-3/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/asset_ref/rounds/equal_total_few_large/round-4/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/asset_ref/rounds/equal_total_many_medium/round-1/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/asset_ref/rounds/equal_total_many_medium/round-2/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/asset_ref/rounds/equal_total_many_medium/round-3/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/asset_ref/rounds/equal_total_many_medium/round-4/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/asset_ref/rounds/main/round-1/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/asset_ref/rounds/main/round-2/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/asset_ref/rounds/main/round-3/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/asset_ref/rounds/main/round-4/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/asset_ref/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/full_core/rounds/correctness_only/round-1/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/full_core/rounds/equal_total_few_large/round-1/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/full_core/rounds/equal_total_few_large/round-2/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/full_core/rounds/equal_total_few_large/round-3/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/full_core/rounds/equal_total_few_large/round-4/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/full_core/rounds/equal_total_many_medium/round-1/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/full_core/rounds/equal_total_many_medium/round-2/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/full_core/rounds/equal_total_many_medium/round-3/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/full_core/rounds/equal_total_many_medium/round-4/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/full_core/rounds/main/round-1/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/full_core/rounds/main/round-2/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/full_core/rounds/main/round-3/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/full_core/rounds/main/round-4/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/full_core/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/same_table/rounds/correctness_only/round-1/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/same_table/rounds/equal_total_few_large/round-1/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/same_table/rounds/equal_total_few_large/round-2/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/same_table/rounds/equal_total_few_large/round-3/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/same_table/rounds/equal_total_few_large/round-4/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/same_table/rounds/equal_total_many_medium/round-1/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/same_table/rounds/equal_total_many_medium/round-2/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/same_table/rounds/equal_total_many_medium/round-3/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/same_table/rounds/equal_total_many_medium/round-4/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/same_table/rounds/main/round-1/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/same_table/rounds/main/round-2/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/same_table/rounds/main/round-3/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/same_table/rounds/main/round-4/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/same_table/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/separate/rounds/correctness_only/round-1/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/separate/rounds/equal_total_few_large/round-1/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/separate/rounds/equal_total_few_large/round-2/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/separate/rounds/equal_total_few_large/round-3/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/separate/rounds/equal_total_few_large/round-4/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/separate/rounds/equal_total_many_medium/round-1/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/separate/rounds/equal_total_many_medium/round-2/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/separate/rounds/equal_total_many_medium/round-3/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/separate/rounds/equal_total_many_medium/round-4/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/separate/rounds/main/round-1/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/separate/rounds/main/round-2/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/separate/rounds/main/round-3/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/separate/rounds/main/round-4/run-manifest.json
+F1 head_run clickhouse-main/clickhouse/separate/run-manifest.json
+F1 head_run xstore-asset-failures/run-manifest.json
+F1 head_run xstore-interference-asset_ref/run-manifest.json
+F1 head_run xstore-interference-full_core/run-manifest.json
+F1 head_run xstore-interference-same_table/run-manifest.json
+F1 head_run xstore-interference-separate/run-manifest.json
+F1 head_run xstore-main/xstore/asset_ref/rounds/correctness_only/round-1/run-manifest.json
+F1 head_run xstore-main/xstore/asset_ref/rounds/equal_total_few_large/round-1/run-manifest.json
+F1 head_run xstore-main/xstore/asset_ref/rounds/equal_total_few_large/round-2/run-manifest.json
+F1 head_run xstore-main/xstore/asset_ref/rounds/equal_total_few_large/round-3/run-manifest.json
+F1 head_run xstore-main/xstore/asset_ref/rounds/equal_total_few_large/round-4/run-manifest.json
+F1 head_run xstore-main/xstore/asset_ref/rounds/equal_total_many_medium/round-1/run-manifest.json
+F1 head_run xstore-main/xstore/asset_ref/rounds/equal_total_many_medium/round-2/run-manifest.json
+F1 head_run xstore-main/xstore/asset_ref/rounds/equal_total_many_medium/round-3/run-manifest.json
+F1 head_run xstore-main/xstore/asset_ref/rounds/equal_total_many_medium/round-4/run-manifest.json
+F1 head_run xstore-main/xstore/asset_ref/rounds/main/round-1/run-manifest.json
+F1 head_run xstore-main/xstore/asset_ref/rounds/main/round-2/run-manifest.json
+F1 head_run xstore-main/xstore/asset_ref/rounds/main/round-3/run-manifest.json
+F1 head_run xstore-main/xstore/asset_ref/rounds/main/round-4/run-manifest.json
+F1 head_run xstore-main/xstore/asset_ref/run-manifest.json
+F1 head_run xstore-main/xstore/full_core/rounds/correctness_only/round-1/run-manifest.json
+F1 head_run xstore-main/xstore/full_core/rounds/equal_total_few_large/round-1/run-manifest.json
+F1 head_run xstore-main/xstore/full_core/rounds/equal_total_few_large/round-2/run-manifest.json
+F1 head_run xstore-main/xstore/full_core/rounds/equal_total_few_large/round-3/run-manifest.json
+F1 head_run xstore-main/xstore/full_core/rounds/equal_total_few_large/round-4/run-manifest.json
+F1 head_run xstore-main/xstore/full_core/rounds/equal_total_many_medium/round-1/run-manifest.json
+F1 head_run xstore-main/xstore/full_core/rounds/equal_total_many_medium/round-2/run-manifest.json
+F1 head_run xstore-main/xstore/full_core/rounds/equal_total_many_medium/round-3/run-manifest.json
+F1 head_run xstore-main/xstore/full_core/rounds/equal_total_many_medium/round-4/run-manifest.json
+F1 head_run xstore-main/xstore/full_core/rounds/main/round-1/run-manifest.json
+F1 head_run xstore-main/xstore/full_core/rounds/main/round-2/run-manifest.json
+F1 head_run xstore-main/xstore/full_core/rounds/main/round-3/run-manifest.json
+F1 head_run xstore-main/xstore/full_core/rounds/main/round-4/run-manifest.json
+F1 head_run xstore-main/xstore/full_core/run-manifest.json
+F1 head_run xstore-main/xstore/same_table/rounds/correctness_only/round-1/run-manifest.json
+F1 head_run xstore-main/xstore/same_table/rounds/equal_total_few_large/round-1/run-manifest.json
+F1 head_run xstore-main/xstore/same_table/rounds/equal_total_few_large/round-2/run-manifest.json
+F1 head_run xstore-main/xstore/same_table/rounds/equal_total_few_large/round-3/run-manifest.json
+F1 head_run xstore-main/xstore/same_table/rounds/equal_total_few_large/round-4/run-manifest.json
+F1 head_run xstore-main/xstore/same_table/rounds/equal_total_many_medium/round-1/run-manifest.json
+F1 head_run xstore-main/xstore/same_table/rounds/equal_total_many_medium/round-2/run-manifest.json
+F1 head_run xstore-main/xstore/same_table/rounds/equal_total_many_medium/round-3/run-manifest.json
+F1 head_run xstore-main/xstore/same_table/rounds/equal_total_many_medium/round-4/run-manifest.json
+F1 head_run xstore-main/xstore/same_table/rounds/main/round-1/run-manifest.json
+F1 head_run xstore-main/xstore/same_table/rounds/main/round-2/run-manifest.json
+F1 head_run xstore-main/xstore/same_table/rounds/main/round-3/run-manifest.json
+F1 head_run xstore-main/xstore/same_table/rounds/main/round-4/run-manifest.json
+F1 head_run xstore-main/xstore/same_table/run-manifest.json
+F1 head_run xstore-main/xstore/separate/rounds/correctness_only/round-1/run-manifest.json
+F1 head_run xstore-main/xstore/separate/rounds/equal_total_few_large/round-1/run-manifest.json
+F1 head_run xstore-main/xstore/separate/rounds/equal_total_few_large/round-2/run-manifest.json
+F1 head_run xstore-main/xstore/separate/rounds/equal_total_few_large/round-3/run-manifest.json
+F1 head_run xstore-main/xstore/separate/rounds/equal_total_few_large/round-4/run-manifest.json
+F1 head_run xstore-main/xstore/separate/rounds/equal_total_many_medium/round-1/run-manifest.json
+F1 head_run xstore-main/xstore/separate/rounds/equal_total_many_medium/round-2/run-manifest.json
+F1 head_run xstore-main/xstore/separate/rounds/equal_total_many_medium/round-3/run-manifest.json
+F1 head_run xstore-main/xstore/separate/rounds/equal_total_many_medium/round-4/run-manifest.json
+F1 head_run xstore-main/xstore/separate/rounds/main/round-1/run-manifest.json
+F1 head_run xstore-main/xstore/separate/rounds/main/round-2/run-manifest.json
+F1 head_run xstore-main/xstore/separate/rounds/main/round-3/run-manifest.json
+F1 head_run xstore-main/xstore/separate/rounds/main/round-4/run-manifest.json
+F1 head_run xstore-main/xstore/separate/run-manifest.json
+F1 head_run xstore-row-probe.json
+F2 xstore-interference-same_table batch_loop batch_loop 167 status=success:167 dropped_by= p50/p95/p99/max=1757.7/1977.8/2139.8/2311.7 max_consecutive_dropped=0
+F2 xstore-interference-same_table batch_loop list 6000 status=dropped:2134,success:3866 dropped_by=arrival_deadline_missed:2,worker_capacity_unavailable:2132 p50/p95/p99/max=79.5/413.1/490.9/662.9 max_consecutive_dropped=10
+F2 xstore-interference-same_table batch_loop preview 6000 status=dropped:2110,success:3890 dropped_by=arrival_deadline_missed:4,worker_capacity_unavailable:2106 p50/p95/p99/max=76.7/416.1/482.1/708.1 max_consecutive_dropped=12
+F2 xstore-interference-same_table continuous_ingest continuous_ingest 300 status=success:300 dropped_by= p50/p95/p99/max=74.1/140.6/180.3/220.1 max_consecutive_dropped=0
+F2 xstore-interference-same_table continuous_ingest list 6000 status=dropped:405,success:5595 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:404 p50/p95/p99/max=61.5/120.2/156.7/287.9 max_consecutive_dropped=4
+F2 xstore-interference-same_table continuous_ingest preview 6000 status=dropped:396,success:5604 dropped_by=arrival_deadline_missed:2,worker_capacity_unavailable:394 p50/p95/p99/max=60.6/119.0/156.7/265.1 max_consecutive_dropped=3
+F2 xstore-interference-same_table detail_2m detail_2m 300 status=success:300 dropped_by= p50/p95/p99/max=33.8/42.3/46.3/55.5 max_consecutive_dropped=0
+F2 xstore-interference-same_table detail_2m list 6000 status=dropped:96,success:5904 dropped_by=arrival_deadline_missed:2,worker_capacity_unavailable:94 p50/p95/p99/max=59.5/82.2/122.0/244.7 max_consecutive_dropped=3
+F2 xstore-interference-same_table detail_2m preview 6000 status=dropped:97,success:5903 dropped_by=arrival_deadline_missed:2,worker_capacity_unavailable:95 p50/p95/p99/max=57.8/77.8/119.6/275.3 max_consecutive_dropped=3
+F2 xstore-interference-same_table quiet list 6000 status=dropped:121,success:5879 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:120 p50/p95/p99/max=59.7/84.5/122.1/282.2 max_consecutive_dropped=4
+F2 xstore-interference-same_table quiet preview 6000 status=dropped:116,success:5884 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:115 p50/p95/p99/max=61.0/85.7/123.7/263.0 max_consecutive_dropped=2
+F2 xstore-interference-same_table trace_long list 6000 status=dropped:159,success:5841 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:158 p50/p95/p99/max=59.5/95.8/132.5/259.7 max_consecutive_dropped=3
+F2 xstore-interference-same_table trace_long preview 6000 status=dropped:158,success:5842 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:157 p50/p95/p99/max=60.4/98.1/133.8/246.4 max_consecutive_dropped=2
+F2 xstore-interference-same_table trace_long trace_long 60 status=success:60 dropped_by= p50/p95/p99/max=49.2/75.6/80.3/80.3 max_consecutive_dropped=0
+F2 xstore-interference-separate batch_loop batch_loop 176 status=success:176 dropped_by= p50/p95/p99/max=1698.6/1782.4/1843.3/1854.4 max_consecutive_dropped=0
+F2 xstore-interference-separate batch_loop list 6000 status=dropped:1955,success:4045 dropped_by=worker_capacity_unavailable:1955 p50/p95/p99/max=68.2/407.4/460.8/543.6 max_consecutive_dropped=8
+F2 xstore-interference-separate batch_loop preview 6000 status=dropped:1944,success:4056 dropped_by=arrival_deadline_missed:4,worker_capacity_unavailable:1940 p50/p95/p99/max=67.7/402.3/456.8/531.1 max_consecutive_dropped=8
+F2 xstore-interference-separate continuous_ingest continuous_ingest 300 status=success:300 dropped_by= p50/p95/p99/max=104.4/171.7/195.4/240.3 max_consecutive_dropped=0
+F2 xstore-interference-separate continuous_ingest list 6000 status=dropped:353,success:5647 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:352 p50/p95/p99/max=60.1/116.6/143.9/226.9 max_consecutive_dropped=2
+F2 xstore-interference-separate continuous_ingest preview 6000 status=dropped:344,success:5656 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:343 p50/p95/p99/max=59.8/115.2/144.1/242.0 max_consecutive_dropped=2
+F2 xstore-interference-separate detail_2m detail_2m 300 status=success:300 dropped_by= p50/p95/p99/max=35.6/41.9/48.6/51.6 max_consecutive_dropped=0
+F2 xstore-interference-separate detail_2m list 6000 status=dropped:82,success:5918 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:81 p50/p95/p99/max=58.0/73.8/115.1/239.8 max_consecutive_dropped=2
+F2 xstore-interference-separate detail_2m preview 6000 status=dropped:87,success:5913 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:86 p50/p95/p99/max=60.0/77.8/116.7/229.9 max_consecutive_dropped=2
+F2 xstore-interference-separate quiet list 6000 status=dropped:51,success:5949 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:50 p50/p95/p99/max=58.7/68.0/107.7/223.1 max_consecutive_dropped=2
+F2 xstore-interference-separate quiet preview 6000 status=dropped:50,success:5950 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:49 p50/p95/p99/max=59.0/68.2/108.7/233.8 max_consecutive_dropped=2
+F2 xstore-interference-separate trace_long list 6000 status=dropped:106,success:5894 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:105 p50/p95/p99/max=58.6/84.1/123.3/252.3 max_consecutive_dropped=2
+F2 xstore-interference-separate trace_long preview 6000 status=dropped:110,success:5890 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:109 p50/p95/p99/max=58.3/80.5/125.0/236.3 max_consecutive_dropped=2
+F2 xstore-interference-separate trace_long trace_long 60 status=success:60 dropped_by= p50/p95/p99/max=52.2/83.0/88.0/88.0 max_consecutive_dropped=0
+F2 xstore-interference-full_core batch_loop batch_loop 164 status=success:164 dropped_by= p50/p95/p99/max=1819.3/1936.4/1983.6/1992.6 max_consecutive_dropped=0
+F2 xstore-interference-full_core batch_loop list 6000 status=dropped:1796,success:4204 dropped_by=arrival_deadline_missed:4,worker_capacity_unavailable:1792 p50/p95/p99/max=65.8/391.3/455.4/601.1 max_consecutive_dropped=10
+F2 xstore-interference-full_core batch_loop preview 6000 status=dropped:1803,success:4197 dropped_by=arrival_deadline_missed:3,worker_capacity_unavailable:1800 p50/p95/p99/max=64.6/392.7/460.5/559.9 max_consecutive_dropped=9
+F2 xstore-interference-full_core continuous_ingest continuous_ingest 300 status=success:300 dropped_by= p50/p95/p99/max=121.5/224.2/249.1/270.4 max_consecutive_dropped=0
+F2 xstore-interference-full_core continuous_ingest list 6000 status=dropped:388,success:5612 dropped_by=arrival_deadline_missed:2,worker_capacity_unavailable:386 p50/p95/p99/max=59.4/118.5/152.7/244.9 max_consecutive_dropped=3
+F2 xstore-interference-full_core continuous_ingest preview 6000 status=dropped:412,success:5588 dropped_by=arrival_deadline_missed:2,worker_capacity_unavailable:410 p50/p95/p99/max=59.9/120.0/154.2/254.5 max_consecutive_dropped=4
+F2 xstore-interference-full_core detail_2m detail_2m 300 status=success:300 dropped_by= p50/p95/p99/max=35.1/41.5/46.0/51.9 max_consecutive_dropped=0
+F2 xstore-interference-full_core detail_2m list 6000 status=dropped:131,success:5869 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:130 p50/p95/p99/max=58.1/87.4/126.0/286.6 max_consecutive_dropped=3
+F2 xstore-interference-full_core detail_2m preview 6000 status=dropped:133,success:5867 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:132 p50/p95/p99/max=59.1/89.6/126.5/276.5 max_consecutive_dropped=3
+F2 xstore-interference-full_core quiet list 6000 status=dropped:56,success:5944 dropped_by=arrival_deadline_missed:2,worker_capacity_unavailable:54 p50/p95/p99/max=58.9/67.2/109.4/224.4 max_consecutive_dropped=2
+F2 xstore-interference-full_core quiet preview 6000 status=dropped:58,success:5942 dropped_by=arrival_deadline_missed:2,worker_capacity_unavailable:56 p50/p95/p99/max=56.8/66.2/105.1/300.0 max_consecutive_dropped=3
+F2 xstore-interference-full_core trace_long list 6000 status=dropped:96,success:5904 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:95 p50/p95/p99/max=58.1/74.5/119.6/264.9 max_consecutive_dropped=2
+F2 xstore-interference-full_core trace_long preview 6000 status=dropped:92,success:5908 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:91 p50/p95/p99/max=57.1/72.2/115.6/216.9 max_consecutive_dropped=2
+F2 xstore-interference-full_core trace_long trace_long 60 status=success:60 dropped_by= p50/p95/p99/max=55.7/83.8/91.7/91.7 max_consecutive_dropped=0
+F2 xstore-interference-asset_ref batch_loop batch_loop 178 status=success:178 dropped_by= p50/p95/p99/max=1649.1/2018.6/2120.5/2163.0 max_consecutive_dropped=0
+F2 xstore-interference-asset_ref batch_loop list 6000 status=dropped:2594,success:3406 dropped_by=worker_capacity_unavailable:2594 p50/p95/p99/max=149.5/214.8/255.0/358.6 max_consecutive_dropped=4
+F2 xstore-interference-asset_ref batch_loop preview 6000 status=dropped:2631,success:3369 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:2630 p50/p95/p99/max=150.7/220.8/267.5/476.7 max_consecutive_dropped=5
+F2 xstore-interference-asset_ref continuous_ingest continuous_ingest 300 status=success:300 dropped_by= p50/p95/p99/max=74.7/114.0/132.9/222.4 max_consecutive_dropped=0
+F2 xstore-interference-asset_ref continuous_ingest list 6000 status=dropped:656,success:5344 dropped_by=arrival_deadline_missed:2,worker_capacity_unavailable:654 p50/p95/p99/max=61.2/141.2/185.8/291.8 max_consecutive_dropped=4
+F2 xstore-interference-asset_ref continuous_ingest preview 6000 status=dropped:676,success:5324 dropped_by=arrival_deadline_missed:2,worker_capacity_unavailable:674 p50/p95/p99/max=61.8/143.5/190.0/289.7 max_consecutive_dropped=3
+F2 xstore-interference-asset_ref detail_2m detail_2m 300 status=success:300 dropped_by= p50/p95/p99/max=45.8/63.6/84.5/96.5 max_consecutive_dropped=0
+F2 xstore-interference-asset_ref detail_2m list 6000 status=dropped:797,success:5203 dropped_by=worker_capacity_unavailable:797 p50/p95/p99/max=63.1/158.0/207.1/337.8 max_consecutive_dropped=4
+F2 xstore-interference-asset_ref detail_2m preview 6000 status=dropped:773,success:5227 dropped_by=worker_capacity_unavailable:773 p50/p95/p99/max=62.6/154.5/204.7/310.4 max_consecutive_dropped=4
+F2 xstore-interference-asset_ref quiet list 6000 status=dropped:159,success:5841 dropped_by=arrival_deadline_missed:2,worker_capacity_unavailable:157 p50/p95/p99/max=59.8/92.6/138.6/319.2 max_consecutive_dropped=3
+F2 xstore-interference-asset_ref quiet preview 6000 status=dropped:164,success:5836 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:163 p50/p95/p99/max=60.2/93.1/140.1/256.4 max_consecutive_dropped=3
+F2 xstore-interference-asset_ref trace_long list 6000 status=dropped:639,success:5361 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:638 p50/p95/p99/max=61.8/147.7/207.3/285.7 max_consecutive_dropped=4
+F2 xstore-interference-asset_ref trace_long preview 6000 status=dropped:638,success:5362 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:637 p50/p95/p99/max=59.6/149.9/207.3/341.2 max_consecutive_dropped=4
+F2 xstore-interference-asset_ref trace_long trace_long 60 status=success:60 dropped_by= p50/p95/p99/max=73.9/100.5/114.7/114.7 max_consecutive_dropped=0
+F2 ch-interference-same_table batch_loop batch_loop 114 status=success:114 dropped_by= p50/p95/p99/max=2597.3/2891.4/3530.9/3636.7 max_consecutive_dropped=0
+F2 ch-interference-same_table batch_loop list 6000 status=dropped:1725,success:4275 dropped_by=arrival_deadline_missed:958,worker_capacity_unavailable:767 p50/p95/p99/max=28.3/213.4/483.9/708.1 max_consecutive_dropped=11
+F2 ch-interference-same_table batch_loop preview 6000 status=dropped:1724,success:4276 dropped_by=arrival_deadline_missed:953,worker_capacity_unavailable:771 p50/p95/p99/max=26.3/209.5/476.8/743.6 max_consecutive_dropped=11
+F2 ch-interference-same_table continuous_ingest continuous_ingest 300 status=success:300 dropped_by= p50/p95/p99/max=36.9/73.0/84.5/88.8 max_consecutive_dropped=0
+F2 ch-interference-same_table continuous_ingest list 6000 status=dropped:3,success:5997 dropped_by=arrival_deadline_missed:3 p50/p95/p99/max=22.6/35.4/44.2/223.6 max_consecutive_dropped=3
+F2 ch-interference-same_table continuous_ingest preview 6000 status=dropped:3,success:5997 dropped_by=arrival_deadline_missed:3 p50/p95/p99/max=23.0/35.7/45.1/219.2 max_consecutive_dropped=3
+F2 ch-interference-same_table detail_2m detail_2m 300 status=success:300 dropped_by= p50/p95/p99/max=87.1/101.6/120.6/210.9 max_consecutive_dropped=0
+F2 ch-interference-same_table detail_2m list 6000 status=dropped:2,success:5998 dropped_by=arrival_deadline_missed:2 p50/p95/p99/max=26.6/37.0/50.0/179.9 max_consecutive_dropped=2
+F2 ch-interference-same_table detail_2m preview 6000 status=dropped:2,success:5998 dropped_by=arrival_deadline_missed:2 p50/p95/p99/max=21.8/35.6/49.2/171.6 max_consecutive_dropped=2
+F2 ch-interference-same_table quiet list 6000 status=dropped:3,success:5997 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:2 p50/p95/p99/max=26.3/35.1/49.4/158.5 max_consecutive_dropped=1
+F2 ch-interference-same_table quiet preview 6000 status=dropped:1,success:5999 dropped_by=arrival_deadline_missed:1 p50/p95/p99/max=21.4/35.2/48.4/152.3 max_consecutive_dropped=1
+F2 ch-interference-same_table trace_long list 6000 status=dropped:3,success:5997 dropped_by=arrival_deadline_missed:3 p50/p95/p99/max=26.0/35.9/48.9/219.4 max_consecutive_dropped=3
+F2 ch-interference-same_table trace_long preview 6000 status=dropped:3,success:5997 dropped_by=arrival_deadline_missed:3 p50/p95/p99/max=21.1/34.7/47.4/215.2 max_consecutive_dropped=3
+F2 ch-interference-same_table trace_long trace_long 60 status=success:60 dropped_by= p50/p95/p99/max=69.9/87.5/109.3/109.3 max_consecutive_dropped=0
+F2 ch-interference-separate batch_loop batch_loop 103 status=success:103 dropped_by= p50/p95/p99/max=2919.1/3173.4/3359.0/3724.4 max_consecutive_dropped=0
+F2 ch-interference-separate batch_loop list 6000 status=dropped:1528,success:4472 dropped_by=arrival_deadline_missed:783,worker_capacity_unavailable:745 p50/p95/p99/max=37.0/216.6/476.4/597.4 max_consecutive_dropped=9
+F2 ch-interference-separate batch_loop preview 6000 status=dropped:1531,success:4469 dropped_by=arrival_deadline_missed:774,worker_capacity_unavailable:757 p50/p95/p99/max=37.9/218.8/480.3/625.9 max_consecutive_dropped=9
+F2 ch-interference-separate continuous_ingest continuous_ingest 300 status=success:300 dropped_by= p50/p95/p99/max=51.6/87.5/98.2/206.1 max_consecutive_dropped=0
+F2 ch-interference-separate continuous_ingest list 6000 status=dropped:1,success:5999 dropped_by=arrival_deadline_missed:1 p50/p95/p99/max=24.2/41.5/50.4/142.9 max_consecutive_dropped=1
+F2 ch-interference-separate continuous_ingest preview 6000 status=dropped:1,success:5999 dropped_by=arrival_deadline_missed:1 p50/p95/p99/max=25.7/43.1/50.1/150.3 max_consecutive_dropped=1
+F2 ch-interference-separate detail_2m detail_2m 300 status=success:300 dropped_by= p50/p95/p99/max=168.9/203.9/219.2/231.1 max_consecutive_dropped=0
+F2 ch-interference-separate detail_2m list 6000 status=dropped:2,success:5998 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:1 p50/p95/p99/max=36.3/47.9/59.8/143.7 max_consecutive_dropped=1
+F2 ch-interference-separate detail_2m preview 6000 status=dropped:2,success:5998 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:1 p50/p95/p99/max=37.4/48.9/59.9/139.1 max_consecutive_dropped=1
+F2 ch-interference-separate quiet list 6000 status=dropped:2,success:5998 dropped_by=arrival_deadline_missed:2 p50/p95/p99/max=37.6/47.1/54.8/232.7 max_consecutive_dropped=2
+F2 ch-interference-separate quiet preview 6000 status=dropped:2,success:5998 dropped_by=arrival_deadline_missed:2 p50/p95/p99/max=39.1/48.0/55.5/177.9 max_consecutive_dropped=2
+F2 ch-interference-separate trace_long list 6000 status=dropped:4,success:5996 dropped_by=arrival_deadline_missed:4 p50/p95/p99/max=36.3/47.0/54.2/262.3 max_consecutive_dropped=4
+F2 ch-interference-separate trace_long preview 6000 status=dropped:4,success:5996 dropped_by=arrival_deadline_missed:4 p50/p95/p99/max=37.7/48.2/54.0/269.0 max_consecutive_dropped=4
+F2 ch-interference-separate trace_long trace_long 60 status=success:60 dropped_by= p50/p95/p99/max=158.4/190.3/209.0/209.0 max_consecutive_dropped=0
+F2 ch-interference-full_core batch_loop batch_loop 118 status=success:118 dropped_by= p50/p95/p99/max=2544.8/2801.9/3041.4/3189.8 max_consecutive_dropped=0
+F2 ch-interference-full_core batch_loop list 6000 status=dropped:1811,success:4189 dropped_by=arrival_deadline_missed:935,worker_capacity_unavailable:876 p50/p95/p99/max=38.5/244.2/509.1/696.3 max_consecutive_dropped=10
+F2 ch-interference-full_core batch_loop preview 6000 status=dropped:1811,success:4189 dropped_by=arrival_deadline_missed:936,worker_capacity_unavailable:875 p50/p95/p99/max=39.7/240.5/505.7/718.8 max_consecutive_dropped=11
+F2 ch-interference-full_core continuous_ingest continuous_ingest 300 status=success:300 dropped_by= p50/p95/p99/max=55.1/83.7/99.8/236.2 max_consecutive_dropped=0
+F2 ch-interference-full_core continuous_ingest list 6000 status=dropped:5,success:5995 dropped_by=arrival_deadline_missed:5 p50/p95/p99/max=37.1/47.7/56.2/217.9 max_consecutive_dropped=3
+F2 ch-interference-full_core continuous_ingest preview 6000 status=dropped:6,success:5994 dropped_by=arrival_deadline_missed:5,worker_capacity_unavailable:1 p50/p95/p99/max=38.6/48.9/57.0/212.5 max_consecutive_dropped=3
+F2 ch-interference-full_core detail_2m detail_2m 300 status=success:300 dropped_by= p50/p95/p99/max=86.2/105.2/114.1/124.4 max_consecutive_dropped=0
+F2 ch-interference-full_core detail_2m list 6000 status=dropped:2,success:5998 dropped_by=arrival_deadline_missed:2 p50/p95/p99/max=36.5/47.5/54.9/163.1 max_consecutive_dropped=2
+F2 ch-interference-full_core detail_2m preview 6000 status=dropped:2,success:5998 dropped_by=arrival_deadline_missed:2 p50/p95/p99/max=37.6/47.8/56.4/157.6 max_consecutive_dropped=2
+F2 ch-interference-full_core quiet list 6000 status=dropped:2,success:5998 dropped_by=arrival_deadline_missed:2 p50/p95/p99/max=38.4/48.7/57.9/172.1 max_consecutive_dropped=2
+F2 ch-interference-full_core quiet preview 6000 status=dropped:2,success:5998 dropped_by=arrival_deadline_missed:2 p50/p95/p99/max=40.1/48.8/56.9/176.6 max_consecutive_dropped=2
+F2 ch-interference-full_core trace_long list 6000 status=dropped:3,success:5997 dropped_by=arrival_deadline_missed:3 p50/p95/p99/max=36.0/46.4/53.1/232.5 max_consecutive_dropped=3
+F2 ch-interference-full_core trace_long preview 6000 status=dropped:3,success:5997 dropped_by=arrival_deadline_missed:3 p50/p95/p99/max=37.2/47.0/54.9/225.3 max_consecutive_dropped=3
+F2 ch-interference-full_core trace_long trace_long 60 status=success:60 dropped_by= p50/p95/p99/max=69.3/94.0/101.6/101.6 max_consecutive_dropped=0
+F2 ch-interference-asset_ref batch_loop batch_loop 140 status=success:140 dropped_by= p50/p95/p99/max=2097.4/2440.6/2672.0/3002.2 max_consecutive_dropped=0
+F2 ch-interference-asset_ref batch_loop list 6000 status=dropped:4,success:5996 dropped_by=arrival_deadline_missed:4 p50/p95/p99/max=38.5/49.0/60.9/286.3 max_consecutive_dropped=4
+F2 ch-interference-asset_ref batch_loop preview 6000 status=dropped:4,success:5996 dropped_by=arrival_deadline_missed:4 p50/p95/p99/max=40.0/49.8/61.5/295.0 max_consecutive_dropped=4
+F2 ch-interference-asset_ref continuous_ingest continuous_ingest 300 status=success:300 dropped_by= p50/p95/p99/max=27.5/33.7/41.0/48.0 max_consecutive_dropped=0
+F2 ch-interference-asset_ref continuous_ingest list 6000 status=dropped:4,success:5996 dropped_by=arrival_deadline_missed:4 p50/p95/p99/max=38.5/48.6/56.9/287.7 max_consecutive_dropped=4
+F2 ch-interference-asset_ref continuous_ingest preview 6000 status=dropped:4,success:5996 dropped_by=arrival_deadline_missed:4 p50/p95/p99/max=40.1/49.2/58.5/291.4 max_consecutive_dropped=4
+F2 ch-interference-asset_ref detail_2m detail_2m 300 status=dropped:1,success:299 dropped_by=arrival_deadline_missed:1 p50/p95/p99/max=36.3/49.6/65.9/102.0 max_consecutive_dropped=1
+F2 ch-interference-asset_ref detail_2m list 6000 status=dropped:5,success:5995 dropped_by=arrival_deadline_missed:3,worker_capacity_unavailable:2 p50/p95/p99/max=38.2/48.9/58.2/213.6 max_consecutive_dropped=3
+F2 ch-interference-asset_ref detail_2m preview 6000 status=dropped:4,success:5996 dropped_by=arrival_deadline_missed:3,worker_capacity_unavailable:1 p50/p95/p99/max=39.9/49.5/59.8/220.5 max_consecutive_dropped=3
+F2 ch-interference-asset_ref quiet list 6000 status=dropped:3,success:5997 dropped_by=arrival_deadline_missed:2,worker_capacity_unavailable:1 p50/p95/p99/max=37.7/47.1/54.2/205.8 max_consecutive_dropped=2
+F2 ch-interference-asset_ref quiet preview 6000 status=dropped:2,success:5998 dropped_by=arrival_deadline_missed:2 p50/p95/p99/max=39.3/47.5/55.7/198.1 max_consecutive_dropped=2
+F2 ch-interference-asset_ref trace_long list 6000 status=dropped:3,success:5997 dropped_by=arrival_deadline_missed:3 p50/p95/p99/max=38.8/48.8/57.3/246.9 max_consecutive_dropped=3
+F2 ch-interference-asset_ref trace_long preview 6000 status=dropped:3,success:5997 dropped_by=arrival_deadline_missed:3 p50/p95/p99/max=40.6/49.4/58.1/250.9 max_consecutive_dropped=3
+F2 ch-interference-asset_ref trace_long trace_long 60 status=success:60 dropped_by= p50/p95/p99/max=49.7/64.4/99.0/99.0 max_consecutive_dropped=0
+F3 client same_table list:first latency_median 28.917444869875908 query_complete_median 18.24685512110591
+F3 client same_table preview:first latency_median 28.38439028710127 query_complete_median 18.141284584999084
+F3 client same_table detail:text_64k latency_median 10.911354795098305 query_complete_median 4.194004461169243
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.080
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.144 top_node_ms 0.082
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.138 top_node_ms 0.081
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.139 top_node_ms 0.082
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.080
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.079
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.080
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.080
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.080
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.231 top_node_ms 0.146
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.080
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.140 top_node_ms 0.083
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.139 top_node_ms 0.081
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.080
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.080
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.080
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.138 top_node_ms 0.081
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.081
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.138 top_node_ms 0.081
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.080
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.081
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.138 top_node_ms 0.080
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.145 top_node_ms 0.084
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.139 top_node_ms 0.083
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.079
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.138 top_node_ms 0.082
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.080
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.158 top_node_ms 0.086
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.079
+F3 server same_table round-1 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.081
+F3 server same_table round-1 list:first total_runtime_ms 0.662 top_node_ms 0.569
+F3 server same_table round-1 list:first total_runtime_ms 0.641 top_node_ms 0.550
+F3 server same_table round-1 list:first total_runtime_ms 0.642 top_node_ms 0.550
+F3 server same_table round-1 list:first total_runtime_ms 0.658 top_node_ms 0.574
+F3 server same_table round-1 list:first total_runtime_ms 0.634 top_node_ms 0.548
+F3 server same_table round-1 list:first total_runtime_ms 0.885 top_node_ms 0.747
+F3 server same_table round-1 list:first total_runtime_ms 0.651 top_node_ms 0.556
+F3 server same_table round-1 list:first total_runtime_ms 0.651 top_node_ms 0.553
+F3 server same_table round-1 list:first total_runtime_ms 0.637 top_node_ms 0.537
+F3 server same_table round-1 list:first total_runtime_ms 0.636 top_node_ms 0.541
+F3 server same_table round-1 list:first total_runtime_ms 0.635 top_node_ms 0.545
+F3 server same_table round-1 list:first total_runtime_ms 0.640 top_node_ms 0.549
+F3 server same_table round-1 list:first total_runtime_ms 0.638 top_node_ms 0.535
+F3 server same_table round-1 list:first total_runtime_ms 0.659 top_node_ms 0.553
+F3 server same_table round-1 list:first total_runtime_ms 0.643 top_node_ms 0.553
+F3 server same_table round-1 list:first total_runtime_ms 0.637 top_node_ms 0.549
+F3 server same_table round-1 list:first total_runtime_ms 0.641 top_node_ms 0.542
+F3 server same_table round-1 list:first total_runtime_ms 0.646 top_node_ms 0.555
+F3 server same_table round-1 list:first total_runtime_ms 0.638 top_node_ms 0.542
+F3 server same_table round-1 list:first total_runtime_ms 0.642 top_node_ms 0.551
+F3 server same_table round-1 list:first total_runtime_ms 0.638 top_node_ms 0.542
+F3 server same_table round-1 list:first total_runtime_ms 0.639 top_node_ms 0.537
+F3 server same_table round-1 list:first total_runtime_ms 0.643 top_node_ms 0.551
+F3 server same_table round-1 list:first total_runtime_ms 0.661 top_node_ms 0.567
+F3 server same_table round-1 list:first total_runtime_ms 0.640 top_node_ms 0.544
+F3 server same_table round-1 list:first total_runtime_ms 0.640 top_node_ms 0.543
+F3 server same_table round-1 list:first total_runtime_ms 0.639 top_node_ms 0.557
+F3 server same_table round-1 list:first total_runtime_ms 0.637 top_node_ms 0.528
+F3 server same_table round-1 list:first total_runtime_ms 0.638 top_node_ms 0.546
+F3 server same_table round-1 list:first total_runtime_ms 0.643 top_node_ms 0.541
+F3 server same_table round-1 preview:first total_runtime_ms 0.633 top_node_ms 0.537
+F3 server same_table round-1 preview:first total_runtime_ms 0.629 top_node_ms 0.538
+F3 server same_table round-1 preview:first total_runtime_ms 0.656 top_node_ms 0.551
+F3 server same_table round-1 preview:first total_runtime_ms 0.631 top_node_ms 0.546
+F3 server same_table round-1 preview:first total_runtime_ms 0.638 top_node_ms 0.543
+F3 server same_table round-1 preview:first total_runtime_ms 0.654 top_node_ms 0.559
+F3 server same_table round-1 preview:first total_runtime_ms 0.634 top_node_ms 0.543
+F3 server same_table round-1 preview:first total_runtime_ms 0.634 top_node_ms 0.541
+F3 server same_table round-1 preview:first total_runtime_ms 0.631 top_node_ms 0.535
+F3 server same_table round-1 preview:first total_runtime_ms 0.639 top_node_ms 0.540
+F3 server same_table round-1 preview:first total_runtime_ms 0.634 top_node_ms 0.541
+F3 server same_table round-1 preview:first total_runtime_ms 0.631 top_node_ms 0.532
+F3 server same_table round-1 preview:first total_runtime_ms 0.637 top_node_ms 0.544
+F3 server same_table round-1 preview:first total_runtime_ms 0.637 top_node_ms 0.545
+F3 server same_table round-1 preview:first total_runtime_ms 0.664 top_node_ms 0.532
+F3 server same_table round-1 preview:first total_runtime_ms 0.630 top_node_ms 0.544
+F3 server same_table round-1 preview:first total_runtime_ms 0.632 top_node_ms 0.549
+F3 server same_table round-1 preview:first total_runtime_ms 0.639 top_node_ms 0.543
+F3 server same_table round-1 preview:first total_runtime_ms 0.659 top_node_ms 0.551
+F3 server same_table round-1 preview:first total_runtime_ms 0.873 top_node_ms 0.745
+F3 server same_table round-1 preview:first total_runtime_ms 0.639 top_node_ms 0.538
+F3 server same_table round-1 preview:first total_runtime_ms 0.635 top_node_ms 0.548
+F3 server same_table round-1 preview:first total_runtime_ms 0.638 top_node_ms 0.549
+F3 server same_table round-1 preview:first total_runtime_ms 0.647 top_node_ms 0.550
+F3 server same_table round-1 preview:first total_runtime_ms 0.635 top_node_ms 0.545
+F3 server same_table round-1 preview:first total_runtime_ms 0.631 top_node_ms 0.547
+F3 server same_table round-1 preview:first total_runtime_ms 0.630 top_node_ms 0.543
+F3 server same_table round-1 preview:first total_runtime_ms 0.638 top_node_ms 0.548
+F3 server same_table round-1 preview:first total_runtime_ms 0.637 top_node_ms 0.548
+F3 server same_table round-1 preview:first total_runtime_ms 0.625 top_node_ms 0.532
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.147 top_node_ms 0.085
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.080
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.080
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.078
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.078
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.231 top_node_ms 0.145
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.079
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.078
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.079
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.081
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.078
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.158 top_node_ms 0.080
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.078
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.078
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.078
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.156 top_node_ms 0.086
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.080
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.175 top_node_ms 0.079
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.154 top_node_ms 0.079
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.139 top_node_ms 0.082
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.078
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.079
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.079
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.080
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.079
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.080
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.079
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.078
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.079
+F3 server same_table round-2 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.081
+F3 server same_table round-2 list:first total_runtime_ms 0.653 top_node_ms 0.555
+F3 server same_table round-2 list:first total_runtime_ms 0.636 top_node_ms 0.543
+F3 server same_table round-2 list:first total_runtime_ms 0.638 top_node_ms 0.546
+F3 server same_table round-2 list:first total_runtime_ms 0.670 top_node_ms 0.573
+F3 server same_table round-2 list:first total_runtime_ms 0.640 top_node_ms 0.543
+F3 server same_table round-2 list:first total_runtime_ms 0.638 top_node_ms 0.545
+F3 server same_table round-2 list:first total_runtime_ms 0.635 top_node_ms 0.537
+F3 server same_table round-2 list:first total_runtime_ms 0.635 top_node_ms 0.539
+F3 server same_table round-2 list:first total_runtime_ms 0.636 top_node_ms 0.545
+F3 server same_table round-2 list:first total_runtime_ms 0.638 top_node_ms 0.543
+F3 server same_table round-2 list:first total_runtime_ms 0.635 top_node_ms 0.542
+F3 server same_table round-2 list:first total_runtime_ms 0.638 top_node_ms 0.541
+F3 server same_table round-2 list:first total_runtime_ms 0.636 top_node_ms 0.545
+F3 server same_table round-2 list:first total_runtime_ms 0.654 top_node_ms 0.558
+F3 server same_table round-2 list:first total_runtime_ms 0.636 top_node_ms 0.538
+F3 server same_table round-2 list:first total_runtime_ms 0.684 top_node_ms 0.587
+F3 server same_table round-2 list:first total_runtime_ms 0.639 top_node_ms 0.548
+F3 server same_table round-2 list:first total_runtime_ms 0.639 top_node_ms 0.548
+F3 server same_table round-2 list:first total_runtime_ms 0.636 top_node_ms 0.536
+F3 server same_table round-2 list:first total_runtime_ms 0.635 top_node_ms 0.537
+F3 server same_table round-2 list:first total_runtime_ms 0.633 top_node_ms 0.544
+F3 server same_table round-2 list:first total_runtime_ms 0.642 top_node_ms 0.548
+F3 server same_table round-2 list:first total_runtime_ms 0.682 top_node_ms 0.581
+F3 server same_table round-2 list:first total_runtime_ms 0.633 top_node_ms 0.550
+F3 server same_table round-2 list:first total_runtime_ms 0.908 top_node_ms 0.732
+F3 server same_table round-2 list:first total_runtime_ms 0.638 top_node_ms 0.545
+F3 server same_table round-2 list:first total_runtime_ms 0.635 top_node_ms 0.544
+F3 server same_table round-2 list:first total_runtime_ms 0.643 top_node_ms 0.551
+F3 server same_table round-2 list:first total_runtime_ms 0.657 top_node_ms 0.567
+F3 server same_table round-2 list:first total_runtime_ms 0.674 top_node_ms 0.575
+F3 server same_table round-2 preview:first total_runtime_ms 0.632 top_node_ms 0.545
+F3 server same_table round-2 preview:first total_runtime_ms 0.642 top_node_ms 0.546
+F3 server same_table round-2 preview:first total_runtime_ms 0.652 top_node_ms 0.558
+F3 server same_table round-2 preview:first total_runtime_ms 0.634 top_node_ms 0.540
+F3 server same_table round-2 preview:first total_runtime_ms 0.633 top_node_ms 0.538
+F3 server same_table round-2 preview:first total_runtime_ms 0.632 top_node_ms 0.542
+F3 server same_table round-2 preview:first total_runtime_ms 0.633 top_node_ms 0.535
+F3 server same_table round-2 preview:first total_runtime_ms 0.639 top_node_ms 0.541
+F3 server same_table round-2 preview:first total_runtime_ms 0.631 top_node_ms 0.541
+F3 server same_table round-2 preview:first total_runtime_ms 0.637 top_node_ms 0.545
+F3 server same_table round-2 preview:first total_runtime_ms 0.654 top_node_ms 0.559
+F3 server same_table round-2 preview:first total_runtime_ms 0.655 top_node_ms 0.545
+F3 server same_table round-2 preview:first total_runtime_ms 0.637 top_node_ms 0.543
+F3 server same_table round-2 preview:first total_runtime_ms 0.635 top_node_ms 0.545
+F3 server same_table round-2 preview:first total_runtime_ms 0.635 top_node_ms 0.530
+F3 server same_table round-2 preview:first total_runtime_ms 0.638 top_node_ms 0.542
+F3 server same_table round-2 preview:first total_runtime_ms 0.867 top_node_ms 0.749
+F3 server same_table round-2 preview:first total_runtime_ms 0.629 top_node_ms 0.533
+F3 server same_table round-2 preview:first total_runtime_ms 0.633 top_node_ms 0.534
+F3 server same_table round-2 preview:first total_runtime_ms 0.639 top_node_ms 0.546
+F3 server same_table round-2 preview:first total_runtime_ms 0.635 top_node_ms 0.544
+F3 server same_table round-2 preview:first total_runtime_ms 0.638 top_node_ms 0.545
+F3 server same_table round-2 preview:first total_runtime_ms 0.634 top_node_ms 0.539
+F3 server same_table round-2 preview:first total_runtime_ms 0.629 top_node_ms 0.529
+F3 server same_table round-2 preview:first total_runtime_ms 0.633 top_node_ms 0.535
+F3 server same_table round-2 preview:first total_runtime_ms 0.638 top_node_ms 0.538
+F3 server same_table round-2 preview:first total_runtime_ms 0.633 top_node_ms 0.545
+F3 server same_table round-2 preview:first total_runtime_ms 0.630 top_node_ms 0.528
+F3 server same_table round-2 preview:first total_runtime_ms 0.648 top_node_ms 0.555
+F3 server same_table round-2 preview:first total_runtime_ms 0.633 top_node_ms 0.542
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.078
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.079
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.080
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.081
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.081
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.079
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.078
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.079
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.079
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.138 top_node_ms 0.081
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.138 top_node_ms 0.081
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.078
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.081
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.154 top_node_ms 0.082
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.132 top_node_ms 0.079
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.132 top_node_ms 0.077
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.168 top_node_ms 0.080
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.142 top_node_ms 0.082
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.223 top_node_ms 0.139
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.138 top_node_ms 0.081
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.079
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.132 top_node_ms 0.079
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.138 top_node_ms 0.081
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.138 top_node_ms 0.082
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.079
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.078
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.078
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.080
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.079
+F3 server same_table round-3 detail:text_64k total_runtime_ms 0.140 top_node_ms 0.083
+F3 server same_table round-3 list:first total_runtime_ms 0.656 top_node_ms 0.567
+F3 server same_table round-3 list:first total_runtime_ms 0.644 top_node_ms 0.548
+F3 server same_table round-3 list:first total_runtime_ms 0.661 top_node_ms 0.565
+F3 server same_table round-3 list:first total_runtime_ms 0.652 top_node_ms 0.548
+F3 server same_table round-3 list:first total_runtime_ms 0.658 top_node_ms 0.564
+F3 server same_table round-3 list:first total_runtime_ms 0.640 top_node_ms 0.548
+F3 server same_table round-3 list:first total_runtime_ms 0.642 top_node_ms 0.544
+F3 server same_table round-3 list:first total_runtime_ms 0.671 top_node_ms 0.568
+F3 server same_table round-3 list:first total_runtime_ms 0.634 top_node_ms 0.542
+F3 server same_table round-3 list:first total_runtime_ms 0.640 top_node_ms 0.550
+F3 server same_table round-3 list:first total_runtime_ms 0.642 top_node_ms 0.549
+F3 server same_table round-3 list:first total_runtime_ms 0.634 top_node_ms 0.544
+F3 server same_table round-3 list:first total_runtime_ms 0.649 top_node_ms 0.555
+F3 server same_table round-3 list:first total_runtime_ms 0.638 top_node_ms 0.533
+F3 server same_table round-3 list:first total_runtime_ms 0.634 top_node_ms 0.543
+F3 server same_table round-3 list:first total_runtime_ms 0.627 top_node_ms 0.539
+F3 server same_table round-3 list:first total_runtime_ms 0.638 top_node_ms 0.548
+F3 server same_table round-3 list:first total_runtime_ms 0.634 top_node_ms 0.545
+F3 server same_table round-3 list:first total_runtime_ms 0.654 top_node_ms 0.561
+F3 server same_table round-3 list:first total_runtime_ms 0.636 top_node_ms 0.549
+F3 server same_table round-3 list:first total_runtime_ms 0.910 top_node_ms 0.757
+F3 server same_table round-3 list:first total_runtime_ms 0.646 top_node_ms 0.545
+F3 server same_table round-3 list:first total_runtime_ms 0.642 top_node_ms 0.544
+F3 server same_table round-3 list:first total_runtime_ms 0.639 top_node_ms 0.541
+F3 server same_table round-3 list:first total_runtime_ms 0.660 top_node_ms 0.559
+F3 server same_table round-3 list:first total_runtime_ms 0.636 top_node_ms 0.539
+F3 server same_table round-3 list:first total_runtime_ms 0.642 top_node_ms 0.541
+F3 server same_table round-3 list:first total_runtime_ms 0.651 top_node_ms 0.560
+F3 server same_table round-3 list:first total_runtime_ms 0.640 top_node_ms 0.548
+F3 server same_table round-3 list:first total_runtime_ms 0.646 top_node_ms 0.559
+F3 server same_table round-3 preview:first total_runtime_ms 0.630 top_node_ms 0.535
+F3 server same_table round-3 preview:first total_runtime_ms 0.631 top_node_ms 0.553
+F3 server same_table round-3 preview:first total_runtime_ms 0.641 top_node_ms 0.544
+F3 server same_table round-3 preview:first total_runtime_ms 0.635 top_node_ms 0.547
+F3 server same_table round-3 preview:first total_runtime_ms 0.661 top_node_ms 0.566
+F3 server same_table round-3 preview:first total_runtime_ms 0.629 top_node_ms 0.534
+F3 server same_table round-3 preview:first total_runtime_ms 0.641 top_node_ms 0.539
+F3 server same_table round-3 preview:first total_runtime_ms 0.640 top_node_ms 0.547
+F3 server same_table round-3 preview:first total_runtime_ms 0.632 top_node_ms 0.539
+F3 server same_table round-3 preview:first total_runtime_ms 0.635 top_node_ms 0.547
+F3 server same_table round-3 preview:first total_runtime_ms 0.640 top_node_ms 0.541
+F3 server same_table round-3 preview:first total_runtime_ms 0.632 top_node_ms 0.539
+F3 server same_table round-3 preview:first total_runtime_ms 0.657 top_node_ms 0.543
+F3 server same_table round-3 preview:first total_runtime_ms 0.844 top_node_ms 0.714
+F3 server same_table round-3 preview:first total_runtime_ms 0.634 top_node_ms 0.535
+F3 server same_table round-3 preview:first total_runtime_ms 0.634 top_node_ms 0.537
+F3 server same_table round-3 preview:first total_runtime_ms 0.630 top_node_ms 0.534
+F3 server same_table round-3 preview:first total_runtime_ms 0.631 top_node_ms 0.536
+F3 server same_table round-3 preview:first total_runtime_ms 0.633 top_node_ms 0.541
+F3 server same_table round-3 preview:first total_runtime_ms 0.632 top_node_ms 0.536
+F3 server same_table round-3 preview:first total_runtime_ms 0.634 top_node_ms 0.541
+F3 server same_table round-3 preview:first total_runtime_ms 0.653 top_node_ms 0.557
+F3 server same_table round-3 preview:first total_runtime_ms 0.633 top_node_ms 0.545
+F3 server same_table round-3 preview:first total_runtime_ms 0.633 top_node_ms 0.539
+F3 server same_table round-3 preview:first total_runtime_ms 0.628 top_node_ms 0.536
+F3 server same_table round-3 preview:first total_runtime_ms 0.636 top_node_ms 0.539
+F3 server same_table round-3 preview:first total_runtime_ms 0.637 top_node_ms 0.543
+F3 server same_table round-3 preview:first total_runtime_ms 0.635 top_node_ms 0.551
+F3 server same_table round-3 preview:first total_runtime_ms 0.647 top_node_ms 0.548
+F3 server same_table round-3 preview:first total_runtime_ms 0.631 top_node_ms 0.531
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.080
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.132 top_node_ms 0.079
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.132 top_node_ms 0.078
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.078
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.249 top_node_ms 0.156
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.079
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.230 top_node_ms 0.147
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.079
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.078
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.078
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.159 top_node_ms 0.087
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.078
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.081
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.079
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.080
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.079
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.079
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.078
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.079
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.144 top_node_ms 0.083
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.143 top_node_ms 0.082
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.080
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.080
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.078
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.079
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.079
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.082
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.080
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.079
+F3 server same_table round-4 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.079
+F3 server same_table round-4 list:first total_runtime_ms 0.646 top_node_ms 0.548
+F3 server same_table round-4 list:first total_runtime_ms 0.641 top_node_ms 0.549
+F3 server same_table round-4 list:first total_runtime_ms 0.638 top_node_ms 0.535
+F3 server same_table round-4 list:first total_runtime_ms 0.664 top_node_ms 0.568
+F3 server same_table round-4 list:first total_runtime_ms 0.637 top_node_ms 0.549
+F3 server same_table round-4 list:first total_runtime_ms 0.639 top_node_ms 0.545
+F3 server same_table round-4 list:first total_runtime_ms 0.637 top_node_ms 0.546
+F3 server same_table round-4 list:first total_runtime_ms 0.644 top_node_ms 0.552
+F3 server same_table round-4 list:first total_runtime_ms 0.638 top_node_ms 0.542
+F3 server same_table round-4 list:first total_runtime_ms 0.646 top_node_ms 0.555
+F3 server same_table round-4 list:first total_runtime_ms 0.637 top_node_ms 0.544
+F3 server same_table round-4 list:first total_runtime_ms 0.639 top_node_ms 0.539
+F3 server same_table round-4 list:first total_runtime_ms 0.642 top_node_ms 0.548
+F3 server same_table round-4 list:first total_runtime_ms 0.640 top_node_ms 0.544
+F3 server same_table round-4 list:first total_runtime_ms 0.645 top_node_ms 0.553
+F3 server same_table round-4 list:first total_runtime_ms 0.645 top_node_ms 0.550
+F3 server same_table round-4 list:first total_runtime_ms 0.641 top_node_ms 0.549
+F3 server same_table round-4 list:first total_runtime_ms 0.654 top_node_ms 0.559
+F3 server same_table round-4 list:first total_runtime_ms 0.656 top_node_ms 0.564
+F3 server same_table round-4 list:first total_runtime_ms 0.643 top_node_ms 0.548
+F3 server same_table round-4 list:first total_runtime_ms 0.880 top_node_ms 0.724
+F3 server same_table round-4 list:first total_runtime_ms 0.640 top_node_ms 0.546
+F3 server same_table round-4 list:first total_runtime_ms 0.644 top_node_ms 0.549
+F3 server same_table round-4 list:first total_runtime_ms 0.639 top_node_ms 0.547
+F3 server same_table round-4 list:first total_runtime_ms 0.650 top_node_ms 0.556
+F3 server same_table round-4 list:first total_runtime_ms 0.638 top_node_ms 0.553
+F3 server same_table round-4 list:first total_runtime_ms 0.640 top_node_ms 0.541
+F3 server same_table round-4 list:first total_runtime_ms 0.642 top_node_ms 0.546
+F3 server same_table round-4 list:first total_runtime_ms 0.654 top_node_ms 0.553
+F3 server same_table round-4 list:first total_runtime_ms 0.639 top_node_ms 0.545
+F3 server same_table round-4 preview:first total_runtime_ms 0.629 top_node_ms 0.544
+F3 server same_table round-4 preview:first total_runtime_ms 0.632 top_node_ms 0.541
+F3 server same_table round-4 preview:first total_runtime_ms 0.637 top_node_ms 0.544
+F3 server same_table round-4 preview:first total_runtime_ms 0.663 top_node_ms 0.562
+F3 server same_table round-4 preview:first total_runtime_ms 0.637 top_node_ms 0.541
+F3 server same_table round-4 preview:first total_runtime_ms 0.675 top_node_ms 0.578
+F3 server same_table round-4 preview:first total_runtime_ms 0.654 top_node_ms 0.558
+F3 server same_table round-4 preview:first total_runtime_ms 0.634 top_node_ms 0.542
+F3 server same_table round-4 preview:first total_runtime_ms 0.640 top_node_ms 0.548
+F3 server same_table round-4 preview:first total_runtime_ms 0.850 top_node_ms 0.732
+F3 server same_table round-4 preview:first total_runtime_ms 0.643 top_node_ms 0.554
+F3 server same_table round-4 preview:first total_runtime_ms 0.642 top_node_ms 0.550
+F3 server same_table round-4 preview:first total_runtime_ms 0.638 top_node_ms 0.546
+F3 server same_table round-4 preview:first total_runtime_ms 0.636 top_node_ms 0.541
+F3 server same_table round-4 preview:first total_runtime_ms 0.635 top_node_ms 0.544
+F3 server same_table round-4 preview:first total_runtime_ms 0.642 top_node_ms 0.549
+F3 server same_table round-4 preview:first total_runtime_ms 0.636 top_node_ms 0.544
+F3 server same_table round-4 preview:first total_runtime_ms 0.631 top_node_ms 0.534
+F3 server same_table round-4 preview:first total_runtime_ms 0.633 top_node_ms 0.540
+F3 server same_table round-4 preview:first total_runtime_ms 0.637 top_node_ms 0.543
+F3 server same_table round-4 preview:first total_runtime_ms 0.646 top_node_ms 0.550
+F3 server same_table round-4 preview:first total_runtime_ms 0.647 top_node_ms 0.544
+F3 server same_table round-4 preview:first total_runtime_ms 0.642 top_node_ms 0.547
+F3 server same_table round-4 preview:first total_runtime_ms 0.636 top_node_ms 0.544
+F3 server same_table round-4 preview:first total_runtime_ms 0.643 top_node_ms 0.548
+F3 server same_table round-4 preview:first total_runtime_ms 0.638 top_node_ms 0.542
+F3 server same_table round-4 preview:first total_runtime_ms 0.636 top_node_ms 0.543
+F3 server same_table round-4 preview:first total_runtime_ms 0.634 top_node_ms 0.540
+F3 server same_table round-4 preview:first total_runtime_ms 0.644 top_node_ms 0.547
+F3 server same_table round-4 preview:first total_runtime_ms 0.634 top_node_ms 0.537
+F3 client separate list:first latency_median 28.165250085294247 query_complete_median 17.977819312363863
+F3 client separate preview:first latency_median 28.299284633249044 query_complete_median 18.040029797703028
+F3 client separate detail:text_64k latency_median 12.953254859894514 query_complete_median 6.068849936127663
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.195 top_node_ms 0.099
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.199 top_node_ms 0.100
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.194 top_node_ms 0.099
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.197 top_node_ms 0.103
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.195 top_node_ms 0.099
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.223 top_node_ms 0.125
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.196 top_node_ms 0.101
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.390 top_node_ms 0.218
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.200 top_node_ms 0.101
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.198 top_node_ms 0.101
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.202 top_node_ms 0.101
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.222 top_node_ms 0.120
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.198 top_node_ms 0.102
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.193 top_node_ms 0.099
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.194 top_node_ms 0.100
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.196 top_node_ms 0.102
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.198 top_node_ms 0.100
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.199 top_node_ms 0.103
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.198 top_node_ms 0.102
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.193 top_node_ms 0.099
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.195 top_node_ms 0.100
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.196 top_node_ms 0.101
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.196 top_node_ms 0.101
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.214 top_node_ms 0.113
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.195 top_node_ms 0.099
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.195 top_node_ms 0.100
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.195 top_node_ms 0.100
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.195 top_node_ms 0.099
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.199 top_node_ms 0.101
+F3 server separate round-1 detail:text_64k total_runtime_ms 0.197 top_node_ms 0.100
+F3 server separate round-1 list:first total_runtime_ms 0.635 top_node_ms 0.543
+F3 server separate round-1 list:first total_runtime_ms 0.680 top_node_ms 0.593
+F3 server separate round-1 list:first total_runtime_ms 0.637 top_node_ms 0.544
+F3 server separate round-1 list:first total_runtime_ms 0.636 top_node_ms 0.530
+F3 server separate round-1 list:first total_runtime_ms 0.638 top_node_ms 0.550
+F3 server separate round-1 list:first total_runtime_ms 0.674 top_node_ms 0.575
+F3 server separate round-1 list:first total_runtime_ms 0.640 top_node_ms 0.550
+F3 server separate round-1 list:first total_runtime_ms 0.636 top_node_ms 0.541
+F3 server separate round-1 list:first total_runtime_ms 0.646 top_node_ms 0.547
+F3 server separate round-1 list:first total_runtime_ms 0.637 top_node_ms 0.537
+F3 server separate round-1 list:first total_runtime_ms 0.654 top_node_ms 0.548
+F3 server separate round-1 list:first total_runtime_ms 0.671 top_node_ms 0.574
+F3 server separate round-1 list:first total_runtime_ms 0.640 top_node_ms 0.549
+F3 server separate round-1 list:first total_runtime_ms 0.637 top_node_ms 0.544
+F3 server separate round-1 list:first total_runtime_ms 0.639 top_node_ms 0.547
+F3 server separate round-1 list:first total_runtime_ms 0.677 top_node_ms 0.577
+F3 server separate round-1 list:first total_runtime_ms 0.633 top_node_ms 0.542
+F3 server separate round-1 list:first total_runtime_ms 0.639 top_node_ms 0.541
+F3 server separate round-1 list:first total_runtime_ms 0.636 top_node_ms 0.544
+F3 server separate round-1 list:first total_runtime_ms 0.637 top_node_ms 0.545
+F3 server separate round-1 list:first total_runtime_ms 0.637 top_node_ms 0.542
+F3 server separate round-1 list:first total_runtime_ms 0.640 top_node_ms 0.546
+F3 server separate round-1 list:first total_runtime_ms 0.634 top_node_ms 0.541
+F3 server separate round-1 list:first total_runtime_ms 0.640 top_node_ms 0.549
+F3 server separate round-1 list:first total_runtime_ms 0.643 top_node_ms 0.544
+F3 server separate round-1 list:first total_runtime_ms 0.637 top_node_ms 0.542
+F3 server separate round-1 list:first total_runtime_ms 0.637 top_node_ms 0.542
+F3 server separate round-1 list:first total_runtime_ms 0.639 top_node_ms 0.545
+F3 server separate round-1 list:first total_runtime_ms 0.638 top_node_ms 0.548
+F3 server separate round-1 list:first total_runtime_ms 0.888 top_node_ms 0.731
+F3 server separate round-1 preview:first total_runtime_ms 0.633 top_node_ms 0.542
+F3 server separate round-1 preview:first total_runtime_ms 0.635 top_node_ms 0.540
+F3 server separate round-1 preview:first total_runtime_ms 0.691 top_node_ms 0.579
+F3 server separate round-1 preview:first total_runtime_ms 0.664 top_node_ms 0.566
+F3 server separate round-1 preview:first total_runtime_ms 0.628 top_node_ms 0.529
+F3 server separate round-1 preview:first total_runtime_ms 0.633 top_node_ms 0.537
+F3 server separate round-1 preview:first total_runtime_ms 0.633 top_node_ms 0.536
+F3 server separate round-1 preview:first total_runtime_ms 0.635 top_node_ms 0.534
+F3 server separate round-1 preview:first total_runtime_ms 0.632 top_node_ms 0.545
+F3 server separate round-1 preview:first total_runtime_ms 0.635 top_node_ms 0.540
+F3 server separate round-1 preview:first total_runtime_ms 0.647 top_node_ms 0.552
+F3 server separate round-1 preview:first total_runtime_ms 0.634 top_node_ms 0.526
+F3 server separate round-1 preview:first total_runtime_ms 0.633 top_node_ms 0.543
+F3 server separate round-1 preview:first total_runtime_ms 0.632 top_node_ms 0.535
+F3 server separate round-1 preview:first total_runtime_ms 0.632 top_node_ms 0.543
+F3 server separate round-1 preview:first total_runtime_ms 0.635 top_node_ms 0.543
+F3 server separate round-1 preview:first total_runtime_ms 0.651 top_node_ms 0.539
+F3 server separate round-1 preview:first total_runtime_ms 0.633 top_node_ms 0.541
+F3 server separate round-1 preview:first total_runtime_ms 0.634 top_node_ms 0.541
+F3 server separate round-1 preview:first total_runtime_ms 0.631 top_node_ms 0.547
+F3 server separate round-1 preview:first total_runtime_ms 0.634 top_node_ms 0.543
+F3 server separate round-1 preview:first total_runtime_ms 0.630 top_node_ms 0.536
+F3 server separate round-1 preview:first total_runtime_ms 0.638 top_node_ms 0.548
+F3 server separate round-1 preview:first total_runtime_ms 0.632 top_node_ms 0.532
+F3 server separate round-1 preview:first total_runtime_ms 0.635 top_node_ms 0.536
+F3 server separate round-1 preview:first total_runtime_ms 0.652 top_node_ms 0.559
+F3 server separate round-1 preview:first total_runtime_ms 0.657 top_node_ms 0.563
+F3 server separate round-1 preview:first total_runtime_ms 0.659 top_node_ms 0.569
+F3 server separate round-1 preview:first total_runtime_ms 0.635 top_node_ms 0.542
+F3 server separate round-1 preview:first total_runtime_ms 0.632 top_node_ms 0.543
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.194 top_node_ms 0.099
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.194 top_node_ms 0.097
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.198 top_node_ms 0.102
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.200 top_node_ms 0.103
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.193 top_node_ms 0.098
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.195 top_node_ms 0.101
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.196 top_node_ms 0.100
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.199 top_node_ms 0.101
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.199 top_node_ms 0.103
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.192 top_node_ms 0.098
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.216 top_node_ms 0.119
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.215 top_node_ms 0.100
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.196 top_node_ms 0.099
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.196 top_node_ms 0.101
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.194 top_node_ms 0.099
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.195 top_node_ms 0.100
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.364 top_node_ms 0.216
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.246 top_node_ms 0.121
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.197 top_node_ms 0.102
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.197 top_node_ms 0.100
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.196 top_node_ms 0.099
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.191 top_node_ms 0.097
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.193 top_node_ms 0.099
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.194 top_node_ms 0.098
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.195 top_node_ms 0.101
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.196 top_node_ms 0.101
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.193 top_node_ms 0.100
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.195 top_node_ms 0.100
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.200 top_node_ms 0.101
+F3 server separate round-2 detail:text_64k total_runtime_ms 0.195 top_node_ms 0.100
+F3 server separate round-2 list:first total_runtime_ms 0.620 top_node_ms 0.520
+F3 server separate round-2 list:first total_runtime_ms 0.629 top_node_ms 0.527
+F3 server separate round-2 list:first total_runtime_ms 0.616 top_node_ms 0.526
+F3 server separate round-2 list:first total_runtime_ms 0.619 top_node_ms 0.516
+F3 server separate round-2 list:first total_runtime_ms 0.624 top_node_ms 0.533
+F3 server separate round-2 list:first total_runtime_ms 0.621 top_node_ms 0.528
+F3 server separate round-2 list:first total_runtime_ms 0.638 top_node_ms 0.548
+F3 server separate round-2 list:first total_runtime_ms 0.657 top_node_ms 0.549
+F3 server separate round-2 list:first total_runtime_ms 0.643 top_node_ms 0.540
+F3 server separate round-2 list:first total_runtime_ms 0.620 top_node_ms 0.526
+F3 server separate round-2 list:first total_runtime_ms 0.626 top_node_ms 0.532
+F3 server separate round-2 list:first total_runtime_ms 0.638 top_node_ms 0.548
+F3 server separate round-2 list:first total_runtime_ms 0.617 top_node_ms 0.526
+F3 server separate round-2 list:first total_runtime_ms 0.858 top_node_ms 0.715
+F3 server separate round-2 list:first total_runtime_ms 0.615 top_node_ms 0.531
+F3 server separate round-2 list:first total_runtime_ms 0.652 top_node_ms 0.559
+F3 server separate round-2 list:first total_runtime_ms 0.619 top_node_ms 0.526
+F3 server separate round-2 list:first total_runtime_ms 0.621 top_node_ms 0.525
+F3 server separate round-2 list:first total_runtime_ms 0.616 top_node_ms 0.529
+F3 server separate round-2 list:first total_runtime_ms 0.635 top_node_ms 0.527
+F3 server separate round-2 list:first total_runtime_ms 0.623 top_node_ms 0.523
+F3 server separate round-2 list:first total_runtime_ms 0.619 top_node_ms 0.526
+F3 server separate round-2 list:first total_runtime_ms 0.629 top_node_ms 0.528
+F3 server separate round-2 list:first total_runtime_ms 0.622 top_node_ms 0.525
+F3 server separate round-2 list:first total_runtime_ms 0.623 top_node_ms 0.535
+F3 server separate round-2 list:first total_runtime_ms 0.624 top_node_ms 0.527
+F3 server separate round-2 list:first total_runtime_ms 0.647 top_node_ms 0.557
+F3 server separate round-2 list:first total_runtime_ms 0.646 top_node_ms 0.549
+F3 server separate round-2 list:first total_runtime_ms 0.620 top_node_ms 0.533
+F3 server separate round-2 list:first total_runtime_ms 0.643 top_node_ms 0.539
+F3 server separate round-2 preview:first total_runtime_ms 0.625 top_node_ms 0.527
+F3 server separate round-2 preview:first total_runtime_ms 0.618 top_node_ms 0.515
+F3 server separate round-2 preview:first total_runtime_ms 0.631 top_node_ms 0.544
+F3 server separate round-2 preview:first total_runtime_ms 0.617 top_node_ms 0.521
+F3 server separate round-2 preview:first total_runtime_ms 0.634 top_node_ms 0.538
+F3 server separate round-2 preview:first total_runtime_ms 0.616 top_node_ms 0.519
+F3 server separate round-2 preview:first total_runtime_ms 0.616 top_node_ms 0.520
+F3 server separate round-2 preview:first total_runtime_ms 0.615 top_node_ms 0.526
+F3 server separate round-2 preview:first total_runtime_ms 0.615 top_node_ms 0.519
+F3 server separate round-2 preview:first total_runtime_ms 0.634 top_node_ms 0.530
+F3 server separate round-2 preview:first total_runtime_ms 0.620 top_node_ms 0.530
+F3 server separate round-2 preview:first total_runtime_ms 0.616 top_node_ms 0.530
+F3 server separate round-2 preview:first total_runtime_ms 0.612 top_node_ms 0.510
+F3 server separate round-2 preview:first total_runtime_ms 0.618 top_node_ms 0.520
+F3 server separate round-2 preview:first total_runtime_ms 0.612 top_node_ms 0.522
+F3 server separate round-2 preview:first total_runtime_ms 0.624 top_node_ms 0.536
+F3 server separate round-2 preview:first total_runtime_ms 0.625 top_node_ms 0.523
+F3 server separate round-2 preview:first total_runtime_ms 0.693 top_node_ms 0.581
+F3 server separate round-2 preview:first total_runtime_ms 0.619 top_node_ms 0.527
+F3 server separate round-2 preview:first total_runtime_ms 0.641 top_node_ms 0.531
+F3 server separate round-2 preview:first total_runtime_ms 0.613 top_node_ms 0.512
+F3 server separate round-2 preview:first total_runtime_ms 0.609 top_node_ms 0.520
+F3 server separate round-2 preview:first total_runtime_ms 0.610 top_node_ms 0.524
+F3 server separate round-2 preview:first total_runtime_ms 0.616 top_node_ms 0.518
+F3 server separate round-2 preview:first total_runtime_ms 0.613 top_node_ms 0.520
+F3 server separate round-2 preview:first total_runtime_ms 0.621 top_node_ms 0.521
+F3 server separate round-2 preview:first total_runtime_ms 0.619 top_node_ms 0.528
+F3 server separate round-2 preview:first total_runtime_ms 0.618 top_node_ms 0.530
+F3 server separate round-2 preview:first total_runtime_ms 0.607 top_node_ms 0.513
+F3 server separate round-2 preview:first total_runtime_ms 0.638 top_node_ms 0.524
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.199 top_node_ms 0.102
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.195 top_node_ms 0.099
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.193 top_node_ms 0.098
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.194 top_node_ms 0.096
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.194 top_node_ms 0.097
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.191 top_node_ms 0.097
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.209 top_node_ms 0.110
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.199 top_node_ms 0.101
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.199 top_node_ms 0.101
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.212 top_node_ms 0.116
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.208 top_node_ms 0.107
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.197 top_node_ms 0.100
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.195 top_node_ms 0.100
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.217 top_node_ms 0.120
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.212 top_node_ms 0.114
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.195 top_node_ms 0.099
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.198 top_node_ms 0.099
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.197 top_node_ms 0.098
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.192 top_node_ms 0.096
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.192 top_node_ms 0.095
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.194 top_node_ms 0.098
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.197 top_node_ms 0.099
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.194 top_node_ms 0.097
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.195 top_node_ms 0.098
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.193 top_node_ms 0.097
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.391 top_node_ms 0.226
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.194 top_node_ms 0.097
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.194 top_node_ms 0.098
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.192 top_node_ms 0.097
+F3 server separate round-3 detail:text_64k total_runtime_ms 0.196 top_node_ms 0.099
+F3 server separate round-3 list:first total_runtime_ms 0.628 top_node_ms 0.538
+F3 server separate round-3 list:first total_runtime_ms 0.622 top_node_ms 0.519
+F3 server separate round-3 list:first total_runtime_ms 0.623 top_node_ms 0.531
+F3 server separate round-3 list:first total_runtime_ms 0.624 top_node_ms 0.527
+F3 server separate round-3 list:first total_runtime_ms 0.620 top_node_ms 0.526
+F3 server separate round-3 list:first total_runtime_ms 0.621 top_node_ms 0.526
+F3 server separate round-3 list:first total_runtime_ms 0.624 top_node_ms 0.529
+F3 server separate round-3 list:first total_runtime_ms 0.618 top_node_ms 0.526
+F3 server separate round-3 list:first total_runtime_ms 0.624 top_node_ms 0.528
+F3 server separate round-3 list:first total_runtime_ms 0.628 top_node_ms 0.532
+F3 server separate round-3 list:first total_runtime_ms 0.644 top_node_ms 0.548
+F3 server separate round-3 list:first total_runtime_ms 0.623 top_node_ms 0.542
+F3 server separate round-3 list:first total_runtime_ms 0.620 top_node_ms 0.524
+F3 server separate round-3 list:first total_runtime_ms 0.623 top_node_ms 0.521
+F3 server separate round-3 list:first total_runtime_ms 0.866 top_node_ms 0.714
+F3 server separate round-3 list:first total_runtime_ms 0.637 top_node_ms 0.542
+F3 server separate round-3 list:first total_runtime_ms 0.673 top_node_ms 0.581
+F3 server separate round-3 list:first total_runtime_ms 0.620 top_node_ms 0.528
+F3 server separate round-3 list:first total_runtime_ms 0.618 top_node_ms 0.535
+F3 server separate round-3 list:first total_runtime_ms 0.626 top_node_ms 0.520
+F3 server separate round-3 list:first total_runtime_ms 0.623 top_node_ms 0.539
+F3 server separate round-3 list:first total_runtime_ms 0.620 top_node_ms 0.526
+F3 server separate round-3 list:first total_runtime_ms 0.632 top_node_ms 0.520
+F3 server separate round-3 list:first total_runtime_ms 0.627 top_node_ms 0.531
+F3 server separate round-3 list:first total_runtime_ms 0.618 top_node_ms 0.533
+F3 server separate round-3 list:first total_runtime_ms 0.623 top_node_ms 0.522
+F3 server separate round-3 list:first total_runtime_ms 0.628 top_node_ms 0.541
+F3 server separate round-3 list:first total_runtime_ms 0.625 top_node_ms 0.536
+F3 server separate round-3 list:first total_runtime_ms 0.622 top_node_ms 0.522
+F3 server separate round-3 list:first total_runtime_ms 0.627 top_node_ms 0.527
+F3 server separate round-3 preview:first total_runtime_ms 0.652 top_node_ms 0.547
+F3 server separate round-3 preview:first total_runtime_ms 0.617 top_node_ms 0.517
+F3 server separate round-3 preview:first total_runtime_ms 0.613 top_node_ms 0.510
+F3 server separate round-3 preview:first total_runtime_ms 0.619 top_node_ms 0.521
+F3 server separate round-3 preview:first total_runtime_ms 0.618 top_node_ms 0.524
+F3 server separate round-3 preview:first total_runtime_ms 0.620 top_node_ms 0.527
+F3 server separate round-3 preview:first total_runtime_ms 0.617 top_node_ms 0.520
+F3 server separate round-3 preview:first total_runtime_ms 0.612 top_node_ms 0.519
+F3 server separate round-3 preview:first total_runtime_ms 0.616 top_node_ms 0.520
+F3 server separate round-3 preview:first total_runtime_ms 0.615 top_node_ms 0.524
+F3 server separate round-3 preview:first total_runtime_ms 0.645 top_node_ms 0.553
+F3 server separate round-3 preview:first total_runtime_ms 0.619 top_node_ms 0.524
+F3 server separate round-3 preview:first total_runtime_ms 0.616 top_node_ms 0.522
+F3 server separate round-3 preview:first total_runtime_ms 0.615 top_node_ms 0.519
+F3 server separate round-3 preview:first total_runtime_ms 0.614 top_node_ms 0.527
+F3 server separate round-3 preview:first total_runtime_ms 0.614 top_node_ms 0.517
+F3 server separate round-3 preview:first total_runtime_ms 0.638 top_node_ms 0.537
+F3 server separate round-3 preview:first total_runtime_ms 0.613 top_node_ms 0.522
+F3 server separate round-3 preview:first total_runtime_ms 0.616 top_node_ms 0.521
+F3 server separate round-3 preview:first total_runtime_ms 0.615 top_node_ms 0.525
+F3 server separate round-3 preview:first total_runtime_ms 0.618 top_node_ms 0.525
+F3 server separate round-3 preview:first total_runtime_ms 0.625 top_node_ms 0.520
+F3 server separate round-3 preview:first total_runtime_ms 0.615 top_node_ms 0.519
+F3 server separate round-3 preview:first total_runtime_ms 0.617 top_node_ms 0.524
+F3 server separate round-3 preview:first total_runtime_ms 0.616 top_node_ms 0.524
+F3 server separate round-3 preview:first total_runtime_ms 0.620 top_node_ms 0.518
+F3 server separate round-3 preview:first total_runtime_ms 0.613 top_node_ms 0.524
+F3 server separate round-3 preview:first total_runtime_ms 0.611 top_node_ms 0.512
+F3 server separate round-3 preview:first total_runtime_ms 0.698 top_node_ms 0.602
+F3 server separate round-3 preview:first total_runtime_ms 0.680 top_node_ms 0.576
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.200 top_node_ms 0.103
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.206 top_node_ms 0.106
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.211 top_node_ms 0.112
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.209 top_node_ms 0.109
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.367 top_node_ms 0.223
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.199 top_node_ms 0.104
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.196 top_node_ms 0.101
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.203 top_node_ms 0.108
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.236 top_node_ms 0.105
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.196 top_node_ms 0.102
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.196 top_node_ms 0.102
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.197 top_node_ms 0.104
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.200 top_node_ms 0.102
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.197 top_node_ms 0.102
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.198 top_node_ms 0.103
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.193 top_node_ms 0.099
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.197 top_node_ms 0.100
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.197 top_node_ms 0.103
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.224 top_node_ms 0.123
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.200 top_node_ms 0.103
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.196 top_node_ms 0.100
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.197 top_node_ms 0.101
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.200 top_node_ms 0.103
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.200 top_node_ms 0.103
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.212 top_node_ms 0.112
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.196 top_node_ms 0.101
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.195 top_node_ms 0.100
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.196 top_node_ms 0.101
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.204 top_node_ms 0.106
+F3 server separate round-4 detail:text_64k total_runtime_ms 0.196 top_node_ms 0.101
+F3 server separate round-4 list:first total_runtime_ms 0.636 top_node_ms 0.539
+F3 server separate round-4 list:first total_runtime_ms 0.640 top_node_ms 0.539
+F3 server separate round-4 list:first total_runtime_ms 0.635 top_node_ms 0.535
+F3 server separate round-4 list:first total_runtime_ms 0.638 top_node_ms 0.545
+F3 server separate round-4 list:first total_runtime_ms 0.633 top_node_ms 0.542
+F3 server separate round-4 list:first total_runtime_ms 0.637 top_node_ms 0.548
+F3 server separate round-4 list:first total_runtime_ms 0.639 top_node_ms 0.552
+F3 server separate round-4 list:first total_runtime_ms 0.875 top_node_ms 0.727
+F3 server separate round-4 list:first total_runtime_ms 0.640 top_node_ms 0.547
+F3 server separate round-4 list:first total_runtime_ms 0.635 top_node_ms 0.542
+F3 server separate round-4 list:first total_runtime_ms 0.634 top_node_ms 0.542
+F3 server separate round-4 list:first total_runtime_ms 0.636 top_node_ms 0.545
+F3 server separate round-4 list:first total_runtime_ms 0.636 top_node_ms 0.543
+F3 server separate round-4 list:first total_runtime_ms 0.635 top_node_ms 0.541
+F3 server separate round-4 list:first total_runtime_ms 0.639 top_node_ms 0.544
+F3 server separate round-4 list:first total_runtime_ms 0.635 top_node_ms 0.541
+F3 server separate round-4 list:first total_runtime_ms 0.642 top_node_ms 0.546
+F3 server separate round-4 list:first total_runtime_ms 0.638 top_node_ms 0.546
+F3 server separate round-4 list:first total_runtime_ms 0.647 top_node_ms 0.547
+F3 server separate round-4 list:first total_runtime_ms 0.639 top_node_ms 0.548
+F3 server separate round-4 list:first total_runtime_ms 0.678 top_node_ms 0.590
+F3 server separate round-4 list:first total_runtime_ms 0.639 top_node_ms 0.549
+F3 server separate round-4 list:first total_runtime_ms 0.634 top_node_ms 0.538
+F3 server separate round-4 list:first total_runtime_ms 0.640 top_node_ms 0.539
+F3 server separate round-4 list:first total_runtime_ms 0.643 top_node_ms 0.545
+F3 server separate round-4 list:first total_runtime_ms 0.654 top_node_ms 0.565
+F3 server separate round-4 list:first total_runtime_ms 0.637 top_node_ms 0.545
+F3 server separate round-4 list:first total_runtime_ms 0.671 top_node_ms 0.570
+F3 server separate round-4 list:first total_runtime_ms 0.660 top_node_ms 0.567
+F3 server separate round-4 list:first total_runtime_ms 0.638 top_node_ms 0.543
+F3 server separate round-4 preview:first total_runtime_ms 0.634 top_node_ms 0.537
+F3 server separate round-4 preview:first total_runtime_ms 0.623 top_node_ms 0.525
+F3 server separate round-4 preview:first total_runtime_ms 0.629 top_node_ms 0.536
+F3 server separate round-4 preview:first total_runtime_ms 0.630 top_node_ms 0.532
+F3 server separate round-4 preview:first total_runtime_ms 0.633 top_node_ms 0.533
+F3 server separate round-4 preview:first total_runtime_ms 0.635 top_node_ms 0.545
+F3 server separate round-4 preview:first total_runtime_ms 0.626 top_node_ms 0.533
+F3 server separate round-4 preview:first total_runtime_ms 0.654 top_node_ms 0.559
+F3 server separate round-4 preview:first total_runtime_ms 0.631 top_node_ms 0.531
+F3 server separate round-4 preview:first total_runtime_ms 0.632 top_node_ms 0.534
+F3 server separate round-4 preview:first total_runtime_ms 0.635 top_node_ms 0.549
+F3 server separate round-4 preview:first total_runtime_ms 0.626 top_node_ms 0.532
+F3 server separate round-4 preview:first total_runtime_ms 0.633 top_node_ms 0.543
+F3 server separate round-4 preview:first total_runtime_ms 0.626 top_node_ms 0.518
+F3 server separate round-4 preview:first total_runtime_ms 0.633 top_node_ms 0.539
+F3 server separate round-4 preview:first total_runtime_ms 0.628 top_node_ms 0.533
+F3 server separate round-4 preview:first total_runtime_ms 0.632 top_node_ms 0.536
+F3 server separate round-4 preview:first total_runtime_ms 0.632 top_node_ms 0.533
+F3 server separate round-4 preview:first total_runtime_ms 0.631 top_node_ms 0.529
+F3 server separate round-4 preview:first total_runtime_ms 0.630 top_node_ms 0.531
+F3 server separate round-4 preview:first total_runtime_ms 0.653 top_node_ms 0.564
+F3 server separate round-4 preview:first total_runtime_ms 0.627 top_node_ms 0.535
+F3 server separate round-4 preview:first total_runtime_ms 0.655 top_node_ms 0.561
+F3 server separate round-4 preview:first total_runtime_ms 0.636 top_node_ms 0.537
+F3 server separate round-4 preview:first total_runtime_ms 0.635 top_node_ms 0.540
+F3 server separate round-4 preview:first total_runtime_ms 0.634 top_node_ms 0.546
+F3 server separate round-4 preview:first total_runtime_ms 0.711 top_node_ms 0.599
+F3 server separate round-4 preview:first total_runtime_ms 0.630 top_node_ms 0.534
+F3 server separate round-4 preview:first total_runtime_ms 0.658 top_node_ms 0.564
+F3 server separate round-4 preview:first total_runtime_ms 0.629 top_node_ms 0.540
+F3 client full_core list:first latency_median 28.270285110920668 query_complete_median 18.036159686744213
+F3 client full_core preview:first latency_median 28.223675210028887 query_complete_median 17.949935514479876
+F3 client full_core detail:text_64k latency_median 10.62381500378251 query_complete_median 4.102635197341442
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.081
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.142 top_node_ms 0.085
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.139 top_node_ms 0.082
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.144 top_node_ms 0.084
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.080
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.277 top_node_ms 0.190
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.139 top_node_ms 0.082
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.140 top_node_ms 0.082
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.079
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.080
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.138 top_node_ms 0.081
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.159 top_node_ms 0.096
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.138 top_node_ms 0.080
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.080
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.079
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.139 top_node_ms 0.081
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.138 top_node_ms 0.080
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.080
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.081
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.143 top_node_ms 0.087
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.080
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.138 top_node_ms 0.081
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.138 top_node_ms 0.081
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.140 top_node_ms 0.083
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.165 top_node_ms 0.107
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.081
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.080
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.079
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.142 top_node_ms 0.084
+F3 server full_core round-1 detail:text_64k total_runtime_ms 0.127 top_node_ms 0.074
+F3 server full_core round-1 list:first total_runtime_ms 0.643 top_node_ms 0.547
+F3 server full_core round-1 list:first total_runtime_ms 0.902 top_node_ms 0.743
+F3 server full_core round-1 list:first total_runtime_ms 0.647 top_node_ms 0.549
+F3 server full_core round-1 list:first total_runtime_ms 0.649 top_node_ms 0.550
+F3 server full_core round-1 list:first total_runtime_ms 0.661 top_node_ms 0.563
+F3 server full_core round-1 list:first total_runtime_ms 0.643 top_node_ms 0.551
+F3 server full_core round-1 list:first total_runtime_ms 0.676 top_node_ms 0.577
+F3 server full_core round-1 list:first total_runtime_ms 0.644 top_node_ms 0.536
+F3 server full_core round-1 list:first total_runtime_ms 0.647 top_node_ms 0.546
+F3 server full_core round-1 list:first total_runtime_ms 0.647 top_node_ms 0.547
+F3 server full_core round-1 list:first total_runtime_ms 0.637 top_node_ms 0.545
+F3 server full_core round-1 list:first total_runtime_ms 0.638 top_node_ms 0.550
+F3 server full_core round-1 list:first total_runtime_ms 0.648 top_node_ms 0.552
+F3 server full_core round-1 list:first total_runtime_ms 0.641 top_node_ms 0.542
+F3 server full_core round-1 list:first total_runtime_ms 0.660 top_node_ms 0.569
+F3 server full_core round-1 list:first total_runtime_ms 0.647 top_node_ms 0.552
+F3 server full_core round-1 list:first total_runtime_ms 0.647 top_node_ms 0.552
+F3 server full_core round-1 list:first total_runtime_ms 0.654 top_node_ms 0.554
+F3 server full_core round-1 list:first total_runtime_ms 0.661 top_node_ms 0.565
+F3 server full_core round-1 list:first total_runtime_ms 0.645 top_node_ms 0.550
+F3 server full_core round-1 list:first total_runtime_ms 0.649 top_node_ms 0.548
+F3 server full_core round-1 list:first total_runtime_ms 0.648 top_node_ms 0.544
+F3 server full_core round-1 list:first total_runtime_ms 0.647 top_node_ms 0.545
+F3 server full_core round-1 list:first total_runtime_ms 0.643 top_node_ms 0.540
+F3 server full_core round-1 list:first total_runtime_ms 0.671 top_node_ms 0.577
+F3 server full_core round-1 list:first total_runtime_ms 0.643 top_node_ms 0.545
+F3 server full_core round-1 list:first total_runtime_ms 0.667 top_node_ms 0.564
+F3 server full_core round-1 list:first total_runtime_ms 0.645 top_node_ms 0.551
+F3 server full_core round-1 list:first total_runtime_ms 0.660 top_node_ms 0.556
+F3 server full_core round-1 list:first total_runtime_ms 0.644 top_node_ms 0.551
+F3 server full_core round-1 preview:first total_runtime_ms 0.640 top_node_ms 0.542
+F3 server full_core round-1 preview:first total_runtime_ms 0.640 top_node_ms 0.550
+F3 server full_core round-1 preview:first total_runtime_ms 0.639 top_node_ms 0.541
+F3 server full_core round-1 preview:first total_runtime_ms 0.642 top_node_ms 0.551
+F3 server full_core round-1 preview:first total_runtime_ms 0.642 top_node_ms 0.544
+F3 server full_core round-1 preview:first total_runtime_ms 0.634 top_node_ms 0.538
+F3 server full_core round-1 preview:first total_runtime_ms 0.644 top_node_ms 0.551
+F3 server full_core round-1 preview:first total_runtime_ms 0.643 top_node_ms 0.550
+F3 server full_core round-1 preview:first total_runtime_ms 0.678 top_node_ms 0.567
+F3 server full_core round-1 preview:first total_runtime_ms 0.636 top_node_ms 0.540
+F3 server full_core round-1 preview:first total_runtime_ms 0.650 top_node_ms 0.554
+F3 server full_core round-1 preview:first total_runtime_ms 0.639 top_node_ms 0.536
+F3 server full_core round-1 preview:first total_runtime_ms 0.635 top_node_ms 0.542
+F3 server full_core round-1 preview:first total_runtime_ms 0.637 top_node_ms 0.548
+F3 server full_core round-1 preview:first total_runtime_ms 0.654 top_node_ms 0.562
+F3 server full_core round-1 preview:first total_runtime_ms 0.643 top_node_ms 0.541
+F3 server full_core round-1 preview:first total_runtime_ms 0.643 top_node_ms 0.544
+F3 server full_core round-1 preview:first total_runtime_ms 0.633 top_node_ms 0.534
+F3 server full_core round-1 preview:first total_runtime_ms 0.653 top_node_ms 0.555
+F3 server full_core round-1 preview:first total_runtime_ms 0.640 top_node_ms 0.551
+F3 server full_core round-1 preview:first total_runtime_ms 0.637 top_node_ms 0.540
+F3 server full_core round-1 preview:first total_runtime_ms 0.672 top_node_ms 0.582
+F3 server full_core round-1 preview:first total_runtime_ms 0.642 top_node_ms 0.546
+F3 server full_core round-1 preview:first total_runtime_ms 0.650 top_node_ms 0.548
+F3 server full_core round-1 preview:first total_runtime_ms 0.641 top_node_ms 0.541
+F3 server full_core round-1 preview:first total_runtime_ms 0.645 top_node_ms 0.547
+F3 server full_core round-1 preview:first total_runtime_ms 0.677 top_node_ms 0.575
+F3 server full_core round-1 preview:first total_runtime_ms 0.662 top_node_ms 0.570
+F3 server full_core round-1 preview:first total_runtime_ms 0.642 top_node_ms 0.547
+F3 server full_core round-1 preview:first total_runtime_ms 0.640 top_node_ms 0.538
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.113 top_node_ms 0.067
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.113 top_node_ms 0.065
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.114 top_node_ms 0.067
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.114 top_node_ms 0.065
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.116 top_node_ms 0.067
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.115 top_node_ms 0.068
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.113 top_node_ms 0.066
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.113 top_node_ms 0.065
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.156 top_node_ms 0.106
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.118 top_node_ms 0.069
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.115 top_node_ms 0.066
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.115 top_node_ms 0.066
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.117 top_node_ms 0.067
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.114 top_node_ms 0.066
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.115 top_node_ms 0.066
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.114 top_node_ms 0.065
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.114 top_node_ms 0.067
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.114 top_node_ms 0.067
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.122 top_node_ms 0.069
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.115 top_node_ms 0.067
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.114 top_node_ms 0.067
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.112 top_node_ms 0.065
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.114 top_node_ms 0.067
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.116 top_node_ms 0.069
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.129 top_node_ms 0.079
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.114 top_node_ms 0.066
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.114 top_node_ms 0.067
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.113 top_node_ms 0.065
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.114 top_node_ms 0.067
+F3 server full_core round-2 detail:text_64k total_runtime_ms 0.283 top_node_ms 0.170
+F3 server full_core round-2 list:first total_runtime_ms 0.640 top_node_ms 0.553
+F3 server full_core round-2 list:first total_runtime_ms 0.635 top_node_ms 0.548
+F3 server full_core round-2 list:first total_runtime_ms 0.636 top_node_ms 0.540
+F3 server full_core round-2 list:first total_runtime_ms 0.638 top_node_ms 0.552
+F3 server full_core round-2 list:first total_runtime_ms 0.637 top_node_ms 0.545
+F3 server full_core round-2 list:first total_runtime_ms 0.643 top_node_ms 0.545
+F3 server full_core round-2 list:first total_runtime_ms 0.644 top_node_ms 0.542
+F3 server full_core round-2 list:first total_runtime_ms 0.641 top_node_ms 0.546
+F3 server full_core round-2 list:first total_runtime_ms 0.661 top_node_ms 0.576
+F3 server full_core round-2 list:first total_runtime_ms 0.638 top_node_ms 0.550
+F3 server full_core round-2 list:first total_runtime_ms 0.641 top_node_ms 0.547
+F3 server full_core round-2 list:first total_runtime_ms 0.671 top_node_ms 0.547
+F3 server full_core round-2 list:first total_runtime_ms 0.642 top_node_ms 0.552
+F3 server full_core round-2 list:first total_runtime_ms 0.638 top_node_ms 0.538
+F3 server full_core round-2 list:first total_runtime_ms 0.702 top_node_ms 0.558
+F3 server full_core round-2 list:first total_runtime_ms 0.637 top_node_ms 0.545
+F3 server full_core round-2 list:first total_runtime_ms 0.670 top_node_ms 0.578
+F3 server full_core round-2 list:first total_runtime_ms 0.648 top_node_ms 0.541
+F3 server full_core round-2 list:first total_runtime_ms 0.635 top_node_ms 0.541
+F3 server full_core round-2 list:first total_runtime_ms 0.644 top_node_ms 0.543
+F3 server full_core round-2 list:first total_runtime_ms 0.639 top_node_ms 0.552
+F3 server full_core round-2 list:first total_runtime_ms 0.639 top_node_ms 0.545
+F3 server full_core round-2 list:first total_runtime_ms 0.641 top_node_ms 0.544
+F3 server full_core round-2 list:first total_runtime_ms 0.636 top_node_ms 0.542
+F3 server full_core round-2 list:first total_runtime_ms 0.637 top_node_ms 0.538
+F3 server full_core round-2 list:first total_runtime_ms 0.667 top_node_ms 0.574
+F3 server full_core round-2 list:first total_runtime_ms 0.638 top_node_ms 0.551
+F3 server full_core round-2 list:first total_runtime_ms 0.890 top_node_ms 0.737
+F3 server full_core round-2 list:first total_runtime_ms 0.636 top_node_ms 0.544
+F3 server full_core round-2 list:first total_runtime_ms 0.641 top_node_ms 0.546
+F3 server full_core round-2 preview:first total_runtime_ms 0.631 top_node_ms 0.532
+F3 server full_core round-2 preview:first total_runtime_ms 0.638 top_node_ms 0.545
+F3 server full_core round-2 preview:first total_runtime_ms 0.630 top_node_ms 0.524
+F3 server full_core round-2 preview:first total_runtime_ms 0.642 top_node_ms 0.551
+F3 server full_core round-2 preview:first total_runtime_ms 0.642 top_node_ms 0.546
+F3 server full_core round-2 preview:first total_runtime_ms 0.633 top_node_ms 0.539
+F3 server full_core round-2 preview:first total_runtime_ms 0.730 top_node_ms 0.622
+F3 server full_core round-2 preview:first total_runtime_ms 0.643 top_node_ms 0.529
+F3 server full_core round-2 preview:first total_runtime_ms 0.633 top_node_ms 0.540
+F3 server full_core round-2 preview:first total_runtime_ms 0.640 top_node_ms 0.554
+F3 server full_core round-2 preview:first total_runtime_ms 0.646 top_node_ms 0.540
+F3 server full_core round-2 preview:first total_runtime_ms 0.634 top_node_ms 0.530
+F3 server full_core round-2 preview:first total_runtime_ms 0.638 top_node_ms 0.541
+F3 server full_core round-2 preview:first total_runtime_ms 0.633 top_node_ms 0.547
+F3 server full_core round-2 preview:first total_runtime_ms 0.653 top_node_ms 0.559
+F3 server full_core round-2 preview:first total_runtime_ms 0.636 top_node_ms 0.539
+F3 server full_core round-2 preview:first total_runtime_ms 0.633 top_node_ms 0.540
+F3 server full_core round-2 preview:first total_runtime_ms 0.634 top_node_ms 0.538
+F3 server full_core round-2 preview:first total_runtime_ms 0.670 top_node_ms 0.570
+F3 server full_core round-2 preview:first total_runtime_ms 0.662 top_node_ms 0.568
+F3 server full_core round-2 preview:first total_runtime_ms 0.632 top_node_ms 0.530
+F3 server full_core round-2 preview:first total_runtime_ms 0.650 top_node_ms 0.553
+F3 server full_core round-2 preview:first total_runtime_ms 0.629 top_node_ms 0.541
+F3 server full_core round-2 preview:first total_runtime_ms 0.632 top_node_ms 0.536
+F3 server full_core round-2 preview:first total_runtime_ms 0.633 top_node_ms 0.534
+F3 server full_core round-2 preview:first total_runtime_ms 0.631 top_node_ms 0.538
+F3 server full_core round-2 preview:first total_runtime_ms 0.658 top_node_ms 0.563
+F3 server full_core round-2 preview:first total_runtime_ms 0.636 top_node_ms 0.549
+F3 server full_core round-2 preview:first total_runtime_ms 0.634 top_node_ms 0.539
+F3 server full_core round-2 preview:first total_runtime_ms 0.637 top_node_ms 0.542
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.077
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.164 top_node_ms 0.108
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.077
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.078
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.080
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.078
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.079
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.079
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.079
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.077
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.138 top_node_ms 0.080
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.079
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.078
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.131 top_node_ms 0.076
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.079
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.078
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.143 top_node_ms 0.084
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.251 top_node_ms 0.169
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.078
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.079
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.079
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.132 top_node_ms 0.077
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.078
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.150 top_node_ms 0.095
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.078
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.077
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.132 top_node_ms 0.077
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.078
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.131 top_node_ms 0.077
+F3 server full_core round-3 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.082
+F3 server full_core round-3 list:first total_runtime_ms 0.648 top_node_ms 0.557
+F3 server full_core round-3 list:first total_runtime_ms 0.648 top_node_ms 0.550
+F3 server full_core round-3 list:first total_runtime_ms 0.637 top_node_ms 0.548
+F3 server full_core round-3 list:first total_runtime_ms 0.639 top_node_ms 0.539
+F3 server full_core round-3 list:first total_runtime_ms 0.645 top_node_ms 0.556
+F3 server full_core round-3 list:first total_runtime_ms 0.635 top_node_ms 0.541
+F3 server full_core round-3 list:first total_runtime_ms 0.634 top_node_ms 0.542
+F3 server full_core round-3 list:first total_runtime_ms 0.634 top_node_ms 0.541
+F3 server full_core round-3 list:first total_runtime_ms 0.636 top_node_ms 0.539
+F3 server full_core round-3 list:first total_runtime_ms 0.639 top_node_ms 0.538
+F3 server full_core round-3 list:first total_runtime_ms 0.666 top_node_ms 0.565
+F3 server full_core round-3 list:first total_runtime_ms 0.636 top_node_ms 0.541
+F3 server full_core round-3 list:first total_runtime_ms 0.635 top_node_ms 0.542
+F3 server full_core round-3 list:first total_runtime_ms 0.637 top_node_ms 0.526
+F3 server full_core round-3 list:first total_runtime_ms 0.666 top_node_ms 0.573
+F3 server full_core round-3 list:first total_runtime_ms 0.653 top_node_ms 0.558
+F3 server full_core round-3 list:first total_runtime_ms 0.636 top_node_ms 0.545
+F3 server full_core round-3 list:first total_runtime_ms 0.636 top_node_ms 0.549
+F3 server full_core round-3 list:first total_runtime_ms 0.638 top_node_ms 0.544
+F3 server full_core round-3 list:first total_runtime_ms 0.633 top_node_ms 0.539
+F3 server full_core round-3 list:first total_runtime_ms 0.905 top_node_ms 0.726
+F3 server full_core round-3 list:first total_runtime_ms 0.638 top_node_ms 0.542
+F3 server full_core round-3 list:first total_runtime_ms 0.640 top_node_ms 0.543
+F3 server full_core round-3 list:first total_runtime_ms 0.631 top_node_ms 0.538
+F3 server full_core round-3 list:first total_runtime_ms 0.634 top_node_ms 0.541
+F3 server full_core round-3 list:first total_runtime_ms 0.636 top_node_ms 0.547
+F3 server full_core round-3 list:first total_runtime_ms 0.634 top_node_ms 0.541
+F3 server full_core round-3 list:first total_runtime_ms 0.639 top_node_ms 0.542
+F3 server full_core round-3 list:first total_runtime_ms 0.636 top_node_ms 0.545
+F3 server full_core round-3 list:first total_runtime_ms 0.638 top_node_ms 0.540
+F3 server full_core round-3 preview:first total_runtime_ms 0.631 top_node_ms 0.543
+F3 server full_core round-3 preview:first total_runtime_ms 0.648 top_node_ms 0.538
+F3 server full_core round-3 preview:first total_runtime_ms 0.638 top_node_ms 0.546
+F3 server full_core round-3 preview:first total_runtime_ms 0.635 top_node_ms 0.544
+F3 server full_core round-3 preview:first total_runtime_ms 0.639 top_node_ms 0.543
+F3 server full_core round-3 preview:first total_runtime_ms 0.652 top_node_ms 0.548
+F3 server full_core round-3 preview:first total_runtime_ms 0.632 top_node_ms 0.536
+F3 server full_core round-3 preview:first total_runtime_ms 0.707 top_node_ms 0.583
+F3 server full_core round-3 preview:first total_runtime_ms 0.632 top_node_ms 0.545
+F3 server full_core round-3 preview:first total_runtime_ms 0.634 top_node_ms 0.532
+F3 server full_core round-3 preview:first total_runtime_ms 0.655 top_node_ms 0.559
+F3 server full_core round-3 preview:first total_runtime_ms 0.631 top_node_ms 0.541
+F3 server full_core round-3 preview:first total_runtime_ms 0.656 top_node_ms 0.558
+F3 server full_core round-3 preview:first total_runtime_ms 0.637 top_node_ms 0.543
+F3 server full_core round-3 preview:first total_runtime_ms 0.635 top_node_ms 0.545
+F3 server full_core round-3 preview:first total_runtime_ms 0.647 top_node_ms 0.553
+F3 server full_core round-3 preview:first total_runtime_ms 0.637 top_node_ms 0.545
+F3 server full_core round-3 preview:first total_runtime_ms 0.636 top_node_ms 0.542
+F3 server full_core round-3 preview:first total_runtime_ms 0.630 top_node_ms 0.539
+F3 server full_core round-3 preview:first total_runtime_ms 0.632 top_node_ms 0.550
+F3 server full_core round-3 preview:first total_runtime_ms 0.634 top_node_ms 0.545
+F3 server full_core round-3 preview:first total_runtime_ms 0.640 top_node_ms 0.542
+F3 server full_core round-3 preview:first total_runtime_ms 0.632 top_node_ms 0.532
+F3 server full_core round-3 preview:first total_runtime_ms 0.638 top_node_ms 0.533
+F3 server full_core round-3 preview:first total_runtime_ms 0.636 top_node_ms 0.540
+F3 server full_core round-3 preview:first total_runtime_ms 0.634 top_node_ms 0.529
+F3 server full_core round-3 preview:first total_runtime_ms 0.633 top_node_ms 0.540
+F3 server full_core round-3 preview:first total_runtime_ms 0.634 top_node_ms 0.543
+F3 server full_core round-3 preview:first total_runtime_ms 0.635 top_node_ms 0.551
+F3 server full_core round-3 preview:first total_runtime_ms 0.638 top_node_ms 0.541
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.167 top_node_ms 0.081
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.077
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.139 top_node_ms 0.082
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.079
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.079
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.080
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.079
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.138 top_node_ms 0.080
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.079
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.138 top_node_ms 0.081
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.163 top_node_ms 0.109
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.078
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.081
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.079
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.132 top_node_ms 0.078
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.131 top_node_ms 0.078
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.132 top_node_ms 0.077
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.079
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.080
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.079
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.137 top_node_ms 0.081
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.079
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.078
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.154 top_node_ms 0.097
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.229 top_node_ms 0.143
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.134 top_node_ms 0.079
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.078
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.135 top_node_ms 0.079
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.133 top_node_ms 0.078
+F3 server full_core round-4 detail:text_64k total_runtime_ms 0.136 top_node_ms 0.080
+F3 server full_core round-4 list:first total_runtime_ms 0.655 top_node_ms 0.565
+F3 server full_core round-4 list:first total_runtime_ms 0.639 top_node_ms 0.545
+F3 server full_core round-4 list:first total_runtime_ms 0.634 top_node_ms 0.538
+F3 server full_core round-4 list:first total_runtime_ms 0.639 top_node_ms 0.538
+F3 server full_core round-4 list:first total_runtime_ms 0.637 top_node_ms 0.538
+F3 server full_core round-4 list:first total_runtime_ms 0.639 top_node_ms 0.545
+F3 server full_core round-4 list:first total_runtime_ms 0.638 top_node_ms 0.542
+F3 server full_core round-4 list:first total_runtime_ms 0.641 top_node_ms 0.548
+F3 server full_core round-4 list:first total_runtime_ms 0.663 top_node_ms 0.570
+F3 server full_core round-4 list:first total_runtime_ms 0.641 top_node_ms 0.544
+F3 server full_core round-4 list:first total_runtime_ms 0.636 top_node_ms 0.536
+F3 server full_core round-4 list:first total_runtime_ms 0.636 top_node_ms 0.540
+F3 server full_core round-4 list:first total_runtime_ms 0.635 top_node_ms 0.544
+F3 server full_core round-4 list:first total_runtime_ms 0.672 top_node_ms 0.543
+F3 server full_core round-4 list:first total_runtime_ms 0.645 top_node_ms 0.553
+F3 server full_core round-4 list:first total_runtime_ms 0.674 top_node_ms 0.581
+F3 server full_core round-4 list:first total_runtime_ms 0.632 top_node_ms 0.538
+F3 server full_core round-4 list:first total_runtime_ms 0.644 top_node_ms 0.551
+F3 server full_core round-4 list:first total_runtime_ms 0.639 top_node_ms 0.544
+F3 server full_core round-4 list:first total_runtime_ms 0.883 top_node_ms 0.729
+F3 server full_core round-4 list:first total_runtime_ms 0.636 top_node_ms 0.544
+F3 server full_core round-4 list:first total_runtime_ms 0.630 top_node_ms 0.537
+F3 server full_core round-4 list:first total_runtime_ms 0.637 top_node_ms 0.546
+F3 server full_core round-4 list:first total_runtime_ms 0.636 top_node_ms 0.546
+F3 server full_core round-4 list:first total_runtime_ms 0.637 top_node_ms 0.542
+F3 server full_core round-4 list:first total_runtime_ms 0.637 top_node_ms 0.537
+F3 server full_core round-4 list:first total_runtime_ms 0.666 top_node_ms 0.569
+F3 server full_core round-4 list:first total_runtime_ms 0.643 top_node_ms 0.542
+F3 server full_core round-4 list:first total_runtime_ms 0.638 top_node_ms 0.545
+F3 server full_core round-4 list:first total_runtime_ms 0.637 top_node_ms 0.549
+F3 server full_core round-4 preview:first total_runtime_ms 0.634 top_node_ms 0.541
+F3 server full_core round-4 preview:first total_runtime_ms 0.637 top_node_ms 0.534
+F3 server full_core round-4 preview:first total_runtime_ms 0.637 top_node_ms 0.541
+F3 server full_core round-4 preview:first total_runtime_ms 0.635 top_node_ms 0.545
+F3 server full_core round-4 preview:first total_runtime_ms 0.637 top_node_ms 0.549
+F3 server full_core round-4 preview:first total_runtime_ms 0.634 top_node_ms 0.544
+F3 server full_core round-4 preview:first total_runtime_ms 0.638 top_node_ms 0.542
+F3 server full_core round-4 preview:first total_runtime_ms 0.639 top_node_ms 0.540
+F3 server full_core round-4 preview:first total_runtime_ms 0.635 top_node_ms 0.538
+F3 server full_core round-4 preview:first total_runtime_ms 0.637 top_node_ms 0.538
+F3 server full_core round-4 preview:first total_runtime_ms 0.653 top_node_ms 0.556
+F3 server full_core round-4 preview:first total_runtime_ms 0.630 top_node_ms 0.537
+F3 server full_core round-4 preview:first total_runtime_ms 0.635 top_node_ms 0.538
+F3 server full_core round-4 preview:first total_runtime_ms 0.691 top_node_ms 0.579
+F3 server full_core round-4 preview:first total_runtime_ms 0.636 top_node_ms 0.550
+F3 server full_core round-4 preview:first total_runtime_ms 0.636 top_node_ms 0.541
+F3 server full_core round-4 preview:first total_runtime_ms 0.648 top_node_ms 0.550
+F3 server full_core round-4 preview:first total_runtime_ms 0.640 top_node_ms 0.549
+F3 server full_core round-4 preview:first total_runtime_ms 0.671 top_node_ms 0.541
+F3 server full_core round-4 preview:first total_runtime_ms 0.638 top_node_ms 0.541
+F3 server full_core round-4 preview:first total_runtime_ms 0.665 top_node_ms 0.567
+F3 server full_core round-4 preview:first total_runtime_ms 0.636 top_node_ms 0.544
+F3 server full_core round-4 preview:first total_runtime_ms 0.651 top_node_ms 0.561
+F3 server full_core round-4 preview:first total_runtime_ms 0.635 top_node_ms 0.537
+F3 server full_core round-4 preview:first total_runtime_ms 0.634 top_node_ms 0.535
+F3 server full_core round-4 preview:first total_runtime_ms 0.649 top_node_ms 0.554
+F3 server full_core round-4 preview:first total_runtime_ms 0.633 top_node_ms 0.536
+F3 server full_core round-4 preview:first total_runtime_ms 0.638 top_node_ms 0.544
+F3 server full_core round-4 preview:first total_runtime_ms 0.649 top_node_ms 0.554
+F3 server full_core round-4 preview:first total_runtime_ms 0.636 top_node_ms 0.539
+F3 client asset_ref list:first latency_median 28.392980340868235 query_complete_median 18.008355051279068
+F3 client asset_ref preview:first latency_median 28.263505082577467 query_complete_median 18.0215397849679
+F3 client asset_ref detail:text_64k latency_median 20.60627518221736 query_complete_median 3.8485201075673103
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.041
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.094 top_node_ms 0.041
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.041
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.100 top_node_ms 0.042
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.098 top_node_ms 0.042
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.040
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.097 top_node_ms 0.040
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.040
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.101 top_node_ms 0.042
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.040
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.041
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.097 top_node_ms 0.041
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.106 top_node_ms 0.046
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.040
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.041
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.094 top_node_ms 0.040
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.098 top_node_ms 0.042
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.094 top_node_ms 0.040
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.041
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.094 top_node_ms 0.041
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.099 top_node_ms 0.041
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.100 top_node_ms 0.042
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.110 top_node_ms 0.047
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.040
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.099 top_node_ms 0.042
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.093 top_node_ms 0.040
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.098 top_node_ms 0.041
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.041
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.097 top_node_ms 0.040
+F3 server asset_ref round-1 detail:text_64k total_runtime_ms 0.094 top_node_ms 0.040
+F3 server asset_ref round-1 list:first total_runtime_ms 0.637 top_node_ms 0.542
+F3 server asset_ref round-1 list:first total_runtime_ms 0.635 top_node_ms 0.537
+F3 server asset_ref round-1 list:first total_runtime_ms 0.635 top_node_ms 0.532
+F3 server asset_ref round-1 list:first total_runtime_ms 0.633 top_node_ms 0.535
+F3 server asset_ref round-1 list:first total_runtime_ms 0.637 top_node_ms 0.539
+F3 server asset_ref round-1 list:first total_runtime_ms 0.634 top_node_ms 0.537
+F3 server asset_ref round-1 list:first total_runtime_ms 0.641 top_node_ms 0.547
+F3 server asset_ref round-1 list:first total_runtime_ms 0.634 top_node_ms 0.542
+F3 server asset_ref round-1 list:first total_runtime_ms 0.640 top_node_ms 0.545
+F3 server asset_ref round-1 list:first total_runtime_ms 0.635 top_node_ms 0.535
+F3 server asset_ref round-1 list:first total_runtime_ms 0.638 top_node_ms 0.537
+F3 server asset_ref round-1 list:first total_runtime_ms 0.636 top_node_ms 0.545
+F3 server asset_ref round-1 list:first total_runtime_ms 0.633 top_node_ms 0.531
+F3 server asset_ref round-1 list:first total_runtime_ms 0.673 top_node_ms 0.581
+F3 server asset_ref round-1 list:first total_runtime_ms 0.639 top_node_ms 0.538
+F3 server asset_ref round-1 list:first total_runtime_ms 0.653 top_node_ms 0.563
+F3 server asset_ref round-1 list:first total_runtime_ms 0.632 top_node_ms 0.535
+F3 server asset_ref round-1 list:first total_runtime_ms 0.633 top_node_ms 0.533
+F3 server asset_ref round-1 list:first total_runtime_ms 0.636 top_node_ms 0.538
+F3 server asset_ref round-1 list:first total_runtime_ms 0.637 top_node_ms 0.540
+F3 server asset_ref round-1 list:first total_runtime_ms 0.656 top_node_ms 0.561
+F3 server asset_ref round-1 list:first total_runtime_ms 0.876 top_node_ms 0.722
+F3 server asset_ref round-1 list:first total_runtime_ms 0.670 top_node_ms 0.537
+F3 server asset_ref round-1 list:first total_runtime_ms 0.662 top_node_ms 0.567
+F3 server asset_ref round-1 list:first total_runtime_ms 0.634 top_node_ms 0.555
+F3 server asset_ref round-1 list:first total_runtime_ms 0.656 top_node_ms 0.550
+F3 server asset_ref round-1 list:first total_runtime_ms 0.657 top_node_ms 0.567
+F3 server asset_ref round-1 list:first total_runtime_ms 0.634 top_node_ms 0.545
+F3 server asset_ref round-1 list:first total_runtime_ms 0.635 top_node_ms 0.542
+F3 server asset_ref round-1 list:first total_runtime_ms 0.668 top_node_ms 0.576
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.648 top_node_ms 0.553
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.628 top_node_ms 0.541
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.630 top_node_ms 0.538
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.631 top_node_ms 0.540
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.632 top_node_ms 0.547
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.660 top_node_ms 0.571
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.630 top_node_ms 0.538
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.626 top_node_ms 0.532
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.626 top_node_ms 0.532
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.632 top_node_ms 0.540
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.629 top_node_ms 0.534
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.644 top_node_ms 0.550
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.630 top_node_ms 0.534
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.643 top_node_ms 0.520
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.748 top_node_ms 0.623
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.650 top_node_ms 0.565
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.628 top_node_ms 0.528
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.629 top_node_ms 0.531
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.628 top_node_ms 0.533
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.629 top_node_ms 0.543
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.629 top_node_ms 0.531
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.631 top_node_ms 0.538
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.650 top_node_ms 0.535
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.632 top_node_ms 0.534
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.631 top_node_ms 0.532
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.649 top_node_ms 0.556
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.656 top_node_ms 0.555
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.633 top_node_ms 0.537
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.640 top_node_ms 0.534
+F3 server asset_ref round-1 preview:first total_runtime_ms 0.632 top_node_ms 0.540
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.098 top_node_ms 0.040
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.041
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.042
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.094 top_node_ms 0.040
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.040
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.039
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.040
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.098 top_node_ms 0.042
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.040
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.111 top_node_ms 0.047
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.039
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.040
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.041
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.040
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.097 top_node_ms 0.041
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.093 top_node_ms 0.040
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.093 top_node_ms 0.040
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.093 top_node_ms 0.039
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.094 top_node_ms 0.040
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.041
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.040
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.040
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.093 top_node_ms 0.039
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.041
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.041
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.040
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.040
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.039
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.041
+F3 server asset_ref round-2 detail:text_64k total_runtime_ms 0.097 top_node_ms 0.041
+F3 server asset_ref round-2 list:first total_runtime_ms 0.638 top_node_ms 0.540
+F3 server asset_ref round-2 list:first total_runtime_ms 0.638 top_node_ms 0.547
+F3 server asset_ref round-2 list:first total_runtime_ms 0.636 top_node_ms 0.542
+F3 server asset_ref round-2 list:first total_runtime_ms 0.637 top_node_ms 0.541
+F3 server asset_ref round-2 list:first total_runtime_ms 0.639 top_node_ms 0.535
+F3 server asset_ref round-2 list:first total_runtime_ms 0.636 top_node_ms 0.545
+F3 server asset_ref round-2 list:first total_runtime_ms 0.636 top_node_ms 0.542
+F3 server asset_ref round-2 list:first total_runtime_ms 0.634 top_node_ms 0.541
+F3 server asset_ref round-2 list:first total_runtime_ms 0.636 top_node_ms 0.546
+F3 server asset_ref round-2 list:first total_runtime_ms 0.635 top_node_ms 0.539
+F3 server asset_ref round-2 list:first total_runtime_ms 0.632 top_node_ms 0.537
+F3 server asset_ref round-2 list:first total_runtime_ms 0.625 top_node_ms 0.540
+F3 server asset_ref round-2 list:first total_runtime_ms 0.639 top_node_ms 0.545
+F3 server asset_ref round-2 list:first total_runtime_ms 0.660 top_node_ms 0.567
+F3 server asset_ref round-2 list:first total_runtime_ms 0.631 top_node_ms 0.539
+F3 server asset_ref round-2 list:first total_runtime_ms 0.640 top_node_ms 0.551
+F3 server asset_ref round-2 list:first total_runtime_ms 0.653 top_node_ms 0.548
+F3 server asset_ref round-2 list:first total_runtime_ms 0.641 top_node_ms 0.544
+F3 server asset_ref round-2 list:first total_runtime_ms 0.636 top_node_ms 0.542
+F3 server asset_ref round-2 list:first total_runtime_ms 0.886 top_node_ms 0.740
+F3 server asset_ref round-2 list:first total_runtime_ms 0.645 top_node_ms 0.548
+F3 server asset_ref round-2 list:first total_runtime_ms 0.654 top_node_ms 0.565
+F3 server asset_ref round-2 list:first total_runtime_ms 0.632 top_node_ms 0.540
+F3 server asset_ref round-2 list:first total_runtime_ms 0.641 top_node_ms 0.543
+F3 server asset_ref round-2 list:first total_runtime_ms 0.637 top_node_ms 0.550
+F3 server asset_ref round-2 list:first total_runtime_ms 0.640 top_node_ms 0.553
+F3 server asset_ref round-2 list:first total_runtime_ms 0.626 top_node_ms 0.544
+F3 server asset_ref round-2 list:first total_runtime_ms 0.632 top_node_ms 0.544
+F3 server asset_ref round-2 list:first total_runtime_ms 0.667 top_node_ms 0.567
+F3 server asset_ref round-2 list:first total_runtime_ms 0.649 top_node_ms 0.545
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.631 top_node_ms 0.550
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.639 top_node_ms 0.545
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.636 top_node_ms 0.535
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.653 top_node_ms 0.538
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.636 top_node_ms 0.540
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.651 top_node_ms 0.521
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.630 top_node_ms 0.530
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.658 top_node_ms 0.565
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.652 top_node_ms 0.568
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.629 top_node_ms 0.529
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.629 top_node_ms 0.529
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.630 top_node_ms 0.536
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.633 top_node_ms 0.543
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.629 top_node_ms 0.528
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.632 top_node_ms 0.541
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.635 top_node_ms 0.542
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.635 top_node_ms 0.535
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.635 top_node_ms 0.553
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.628 top_node_ms 0.534
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.628 top_node_ms 0.528
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.652 top_node_ms 0.560
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.627 top_node_ms 0.536
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.630 top_node_ms 0.545
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.628 top_node_ms 0.520
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.631 top_node_ms 0.547
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.635 top_node_ms 0.538
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.628 top_node_ms 0.531
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.653 top_node_ms 0.558
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.632 top_node_ms 0.542
+F3 server asset_ref round-2 preview:first total_runtime_ms 0.647 top_node_ms 0.555
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.099 top_node_ms 0.041
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.093 top_node_ms 0.040
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.093 top_node_ms 0.040
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.094 top_node_ms 0.039
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.093 top_node_ms 0.040
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.094 top_node_ms 0.040
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.094 top_node_ms 0.040
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.041
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.093 top_node_ms 0.039
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.111 top_node_ms 0.040
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.093 top_node_ms 0.039
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.040
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.040
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.123 top_node_ms 0.053
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.087 top_node_ms 0.034
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.094 top_node_ms 0.039
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.092 top_node_ms 0.040
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.087 top_node_ms 0.036
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.093 top_node_ms 0.039
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.093 top_node_ms 0.039
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.040
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.093 top_node_ms 0.040
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.040
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.093 top_node_ms 0.040
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.093 top_node_ms 0.039
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.093 top_node_ms 0.040
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.092 top_node_ms 0.041
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.092 top_node_ms 0.039
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.092 top_node_ms 0.039
+F3 server asset_ref round-3 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.040
+F3 server asset_ref round-3 list:first total_runtime_ms 0.632 top_node_ms 0.548
+F3 server asset_ref round-3 list:first total_runtime_ms 0.634 top_node_ms 0.546
+F3 server asset_ref round-3 list:first total_runtime_ms 0.634 top_node_ms 0.540
+F3 server asset_ref round-3 list:first total_runtime_ms 0.875 top_node_ms 0.722
+F3 server asset_ref round-3 list:first total_runtime_ms 0.634 top_node_ms 0.533
+F3 server asset_ref round-3 list:first total_runtime_ms 0.637 top_node_ms 0.534
+F3 server asset_ref round-3 list:first total_runtime_ms 0.637 top_node_ms 0.530
+F3 server asset_ref round-3 list:first total_runtime_ms 0.630 top_node_ms 0.533
+F3 server asset_ref round-3 list:first total_runtime_ms 0.652 top_node_ms 0.558
+F3 server asset_ref round-3 list:first total_runtime_ms 0.663 top_node_ms 0.564
+F3 server asset_ref round-3 list:first total_runtime_ms 0.642 top_node_ms 0.549
+F3 server asset_ref round-3 list:first total_runtime_ms 0.633 top_node_ms 0.528
+F3 server asset_ref round-3 list:first total_runtime_ms 0.660 top_node_ms 0.557
+F3 server asset_ref round-3 list:first total_runtime_ms 0.659 top_node_ms 0.565
+F3 server asset_ref round-3 list:first total_runtime_ms 0.637 top_node_ms 0.547
+F3 server asset_ref round-3 list:first total_runtime_ms 0.640 top_node_ms 0.553
+F3 server asset_ref round-3 list:first total_runtime_ms 0.656 top_node_ms 0.553
+F3 server asset_ref round-3 list:first total_runtime_ms 0.627 top_node_ms 0.537
+F3 server asset_ref round-3 list:first total_runtime_ms 0.640 top_node_ms 0.545
+F3 server asset_ref round-3 list:first total_runtime_ms 0.635 top_node_ms 0.536
+F3 server asset_ref round-3 list:first total_runtime_ms 0.655 top_node_ms 0.567
+F3 server asset_ref round-3 list:first total_runtime_ms 0.633 top_node_ms 0.533
+F3 server asset_ref round-3 list:first total_runtime_ms 0.643 top_node_ms 0.547
+F3 server asset_ref round-3 list:first total_runtime_ms 0.637 top_node_ms 0.541
+F3 server asset_ref round-3 list:first total_runtime_ms 0.658 top_node_ms 0.557
+F3 server asset_ref round-3 list:first total_runtime_ms 0.635 top_node_ms 0.533
+F3 server asset_ref round-3 list:first total_runtime_ms 0.642 top_node_ms 0.542
+F3 server asset_ref round-3 list:first total_runtime_ms 0.643 top_node_ms 0.549
+F3 server asset_ref round-3 list:first total_runtime_ms 0.640 top_node_ms 0.539
+F3 server asset_ref round-3 list:first total_runtime_ms 0.635 top_node_ms 0.539
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.618 top_node_ms 0.532
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.614 top_node_ms 0.530
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.616 top_node_ms 0.532
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.614 top_node_ms 0.529
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.614 top_node_ms 0.521
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.618 top_node_ms 0.528
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.612 top_node_ms 0.524
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.619 top_node_ms 0.532
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.611 top_node_ms 0.531
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.656 top_node_ms 0.567
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.613 top_node_ms 0.529
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.613 top_node_ms 0.527
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.615 top_node_ms 0.528
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.629 top_node_ms 0.532
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.640 top_node_ms 0.547
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.661 top_node_ms 0.546
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.618 top_node_ms 0.533
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.642 top_node_ms 0.545
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.617 top_node_ms 0.542
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.615 top_node_ms 0.516
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.637 top_node_ms 0.555
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.615 top_node_ms 0.519
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.614 top_node_ms 0.530
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.631 top_node_ms 0.545
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.612 top_node_ms 0.528
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.615 top_node_ms 0.530
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.614 top_node_ms 0.520
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.614 top_node_ms 0.526
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.617 top_node_ms 0.524
+F3 server asset_ref round-3 preview:first total_runtime_ms 0.617 top_node_ms 0.526
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.097 top_node_ms 0.043
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.116 top_node_ms 0.049
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.097 top_node_ms 0.041
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.041
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.043
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.041
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.041
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.040
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.094 top_node_ms 0.040
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.099 top_node_ms 0.042
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.097 top_node_ms 0.042
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.094 top_node_ms 0.041
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.040
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.041
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.041
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.117 top_node_ms 0.041
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.041
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.099 top_node_ms 0.042
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.097 top_node_ms 0.041
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.094 top_node_ms 0.040
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.041
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.098 top_node_ms 0.041
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.097 top_node_ms 0.040
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.041
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.098 top_node_ms 0.043
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.041
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.098 top_node_ms 0.041
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.040
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.096 top_node_ms 0.041
+F3 server asset_ref round-4 detail:text_64k total_runtime_ms 0.095 top_node_ms 0.040
+F3 server asset_ref round-4 list:first total_runtime_ms 0.649 top_node_ms 0.548
+F3 server asset_ref round-4 list:first total_runtime_ms 0.641 top_node_ms 0.556
+F3 server asset_ref round-4 list:first total_runtime_ms 0.908 top_node_ms 0.724
+F3 server asset_ref round-4 list:first total_runtime_ms 0.639 top_node_ms 0.549
+F3 server asset_ref round-4 list:first total_runtime_ms 0.675 top_node_ms 0.579
+F3 server asset_ref round-4 list:first total_runtime_ms 0.647 top_node_ms 0.562
+F3 server asset_ref round-4 list:first total_runtime_ms 0.642 top_node_ms 0.549
+F3 server asset_ref round-4 list:first total_runtime_ms 0.652 top_node_ms 0.558
+F3 server asset_ref round-4 list:first total_runtime_ms 0.649 top_node_ms 0.557
+F3 server asset_ref round-4 list:first total_runtime_ms 0.639 top_node_ms 0.544
+F3 server asset_ref round-4 list:first total_runtime_ms 0.640 top_node_ms 0.555
+F3 server asset_ref round-4 list:first total_runtime_ms 0.642 top_node_ms 0.547
+F3 server asset_ref round-4 list:first total_runtime_ms 0.650 top_node_ms 0.553
+F3 server asset_ref round-4 list:first total_runtime_ms 0.657 top_node_ms 0.559
+F3 server asset_ref round-4 list:first total_runtime_ms 0.647 top_node_ms 0.552
+F3 server asset_ref round-4 list:first total_runtime_ms 0.637 top_node_ms 0.544
+F3 server asset_ref round-4 list:first total_runtime_ms 0.639 top_node_ms 0.544
+F3 server asset_ref round-4 list:first total_runtime_ms 0.642 top_node_ms 0.545
+F3 server asset_ref round-4 list:first total_runtime_ms 0.659 top_node_ms 0.546
+F3 server asset_ref round-4 list:first total_runtime_ms 0.661 top_node_ms 0.571
+F3 server asset_ref round-4 list:first total_runtime_ms 0.639 top_node_ms 0.549
+F3 server asset_ref round-4 list:first total_runtime_ms 0.643 top_node_ms 0.545
+F3 server asset_ref round-4 list:first total_runtime_ms 0.631 top_node_ms 0.539
+F3 server asset_ref round-4 list:first total_runtime_ms 0.649 top_node_ms 0.555
+F3 server asset_ref round-4 list:first total_runtime_ms 0.640 top_node_ms 0.549
+F3 server asset_ref round-4 list:first total_runtime_ms 0.638 top_node_ms 0.543
+F3 server asset_ref round-4 list:first total_runtime_ms 0.643 top_node_ms 0.548
+F3 server asset_ref round-4 list:first total_runtime_ms 0.646 top_node_ms 0.543
+F3 server asset_ref round-4 list:first total_runtime_ms 0.673 top_node_ms 0.579
+F3 server asset_ref round-4 list:first total_runtime_ms 0.636 top_node_ms 0.547
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.633 top_node_ms 0.540
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.634 top_node_ms 0.531
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.630 top_node_ms 0.533
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.715 top_node_ms 0.598
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.633 top_node_ms 0.544
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.636 top_node_ms 0.551
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.629 top_node_ms 0.533
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.630 top_node_ms 0.535
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.637 top_node_ms 0.545
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.628 top_node_ms 0.526
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.630 top_node_ms 0.537
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.631 top_node_ms 0.547
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.627 top_node_ms 0.536
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.653 top_node_ms 0.561
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.630 top_node_ms 0.534
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.650 top_node_ms 0.555
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.663 top_node_ms 0.574
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.633 top_node_ms 0.544
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.630 top_node_ms 0.539
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.630 top_node_ms 0.544
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.649 top_node_ms 0.557
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.644 top_node_ms 0.546
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.628 top_node_ms 0.540
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.638 top_node_ms 0.546
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.633 top_node_ms 0.540
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.628 top_node_ms 0.531
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.629 top_node_ms 0.547
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.656 top_node_ms 0.564
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.631 top_node_ms 0.530
+F3 server asset_ref round-4 preview:first total_runtime_ms 0.632 top_node_ms 0.533
+F4 exec_select_1 p50 0.16 p95 0.25 max 0.52
+F4 params_select_int p50 0.29 p95 0.33 max 1.01
+F4 params_catalog p50 0.43 p95 0.44 max 0.47
+F5 59.7 60.9 121 116 row
+F5 59.5 57.7 96 97 row
+F5 59.5 60.3 159 158 row
+F5 79.5 76.6 2134 2110 row
+F5 61.5 60.5 405 396 row
+F5 58.6 58.9 51 50 row
+F5 57.9 60.0 82 87 row
+F5 58.6 58.2 106 110 row
+F5 68.1 67.7 1955 1944 row
+F5 60.0 59.8 353 344 row
+F5 58.9 56.8 56 58 row
+F5 58.1 59.0 131 133 row
+F5 58.1 57.0 96 92 row
+F5 65.7 64.5 1796 1803 row
+F5 59.4 59.9 388 412 row
+F5 59.8 60.1 159 164 row
+F5 63.1 62.6 797 773 row
+F5 61.7 59.6 639 638 row
+F5 149.4 150.6 2594 2631 row
+F5 61.1 61.7 656 676 row
+F5 26.3 21.3 3 1 part
+F5 26.6 21.7 2 2 part
+F5 26.0 21.0 3 3 part
+F5 28.3 26.2 1725 1724 part
+F5 22.5 22.9 3 3 part
+F5 37.6 39.0 2 2 part
+F5 36.3 37.4 2 2 part
+F5 36.2 37.7 4 4 part
+F5 36.9 37.8 1528 1531 part
+F5 24.1 25.6 1 1 part
+F5 38.4 40.1 2 2 part
+F5 36.4 37.6 2 2 part
+F5 35.9 37.2 3 3 part
+F5 38.5 39.7 1811 1811 part
+F5 37.1 38.5 5 6 part
+F5 37.6 39.2 3 2 part
+F5 38.2 39.9 5 4 part
+F5 38.7 40.6 3 3 part
+F5 38.4 39.9 4 4 part
+F5 38.4 40.0 4 4 part

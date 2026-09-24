@@ -1,0 +1,6 @@
+source_commit: ec1b24410e
+build_command: bash build.sh -pm cloudnative -m release -3rd $THIRD_BIN_PATH -pkg server
+product_path: /data3/tracecjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb
+$ sha256sum /data3/tracecjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb
+68e346e94e74e4f29cbc9aeda9bf9b770988b9f217823830b2a1de11ce529387  /data3/tracecjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb
+

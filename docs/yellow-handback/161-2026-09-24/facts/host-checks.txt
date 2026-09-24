@@ -1,0 +1,288 @@
+### before xstore phase 2026-09-24T03:07:14.530976+00:00
+$ uptime
+ 11:07:14 up 51 days, 12 min, 14 users,  load average: 59.39, 62.29, 59.94
+
+$ ps -eo pid,comm,pcpu,rss --sort=-pcpu
+    PID COMMAND         %CPU   RSS
+2744806 gaussdb:tenanta  239 10034248
+1002919 gaussdb          173 26518116
+ 980402 gaussdb          133 5547888
+2434041 gaussdb         39.7 16419100
+3341871 ps              30.4  5764
+3679718 gss_server      27.4 14656420
+3669439 gss_cmserver    23.1 446296
+ 655835 codeagentcli    20.8 982776
+1913496 cms             18.7 1121432
+3683944 backupagent      8.4 395988
+2533844 python3          8.1 192628
+3614639 codeagentcli     7.6 1063344
+1006001 crmm             4.7 296500
+1407671 codeagentcli     3.4 700748
+ 653741 node             2.2 129252
+ 653693 node             2.2 231332
+2536386 python3          1.0 30692
+3340974 python           0.9 17988
+      1 systemd          0.6 27796
+2148152 node             0.5 130672
+
+$ free -g
+               total        used        free      shared  buff/cache   available
+Mem:            1999          93         494          10        1411        1887
+Swap:              0           0           0
+
+$ df -h /data3/tracecjy/agent-trace-yellow/.stage3-yellow/runs-20260924
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/md127       15T  1.3T   14T   9% /data3
+
+$ vmstat 1 5
+procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st
+109  0      0 518135808 2300796 1478123136    0    0     2     9 1490 2522  1  1 98  0  0
+84  0      0 518148704 2300796 1478123264    0    0   348  1630 663730 1210351  2  2 96  0  0
+12  0      0 518155264 2300796 1478123392    0    0   384  2631 664505 1211283  2  2 96  0  0
+104  0      0 518162432 2300796 1478123648    0    0   360  1572 683538 1252801  2  2 96  0  0
+77  0      0 518196256 2300796 1478123776    0    0   360  4483 679995 1253422  2  2 96  0  0
+
+$ date -u
+Thu Sep 24 03:07:14 AM UTC 2026
+
+### before xstore phase 2026-09-24T03:08:10.584144+00:00
+$ uptime
+ 11:08:10 up 51 days, 13 min, 14 users,  load average: 50.57, 59.59, 59.18
+
+$ ps -eo pid,comm,pcpu,rss --sort=-pcpu
+    PID COMMAND         %CPU   RSS
+3355777 ps              1000  6460
+2744806 gaussdb:tenanta  239 10030736
+1002919 gaussdb          173 26530052
+ 980402 gaussdb          133 5558264
+3355767 ps               125  4872
+2434041 gaussdb         39.7 16414092
+3679718 gss_server      27.4 14656444
+3669439 gss_cmserver    23.1 446296
+ 655835 codeagentcli    20.8 973200
+1913496 cms             18.7 1121952
+3683944 backupagent      8.4 395988
+2533844 python3          8.1 193880
+3614639 codeagentcli     7.6 1063704
+1006001 crmm             4.7 297020
+1407671 codeagentcli     3.4 700776
+ 653741 node             2.2 130068
+ 653693 node             2.2 231764
+2536386 python3          1.0 30692
+3354779 python           0.9 18128
+      1 systemd          0.6 27796
+
+$ free -g
+               total        used        free      shared  buff/cache   available
+Mem:            1999          93         494          10        1411        1887
+Swap:              0           0           0
+
+$ df -h /data3/tracecjy/agent-trace-yellow/.stage3-yellow/runs-20260924
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/md127       15T  1.3T   14T   9% /data3
+
+$ vmstat 1 5
+procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st
+91  0      0 518136384 2300796 1478150272    0    0     2     9 1490 2522  1  1 98  0  0
+ 7  0      0 518181280 2300796 1478150400    0    0   384  1790 672012 1229286  2  2 96  0  0
+ 6  0      0 518166144 2300796 1478150528    0    0   384  1230 689834 1259456  2  2 96  0  0
+82  0      0 518175328 2300796 1478150656    0    0   384  1492 676353 1244433  2  2 96  0  0
+54  0      0 518180864 2300796 1478150912    0    0   360  1750 683639 1251596  2  2 96  0  0
+
+$ date -u
+Thu Sep 24 03:08:10 AM UTC 2026
+
+### before xstore phase 2026-09-24T04:13:17.652677+00:00
+$ uptime
+ 12:13:17 up 51 days,  1:18, 14 users,  load average: 71.07, 61.42, 58.63
+
+$ ps -eo pid,comm,pcpu,rss --sort=-pcpu
+    PID COMMAND         %CPU   RSS
+2744806 gaussdb:tenanta  239 10023220
+1002919 gaussdb          173 26525952
+ 980402 gaussdb          139 5649964
+2434041 gaussdb         39.7 16414916
+3679718 gss_server      27.5 14666316
+3669439 gss_cmserver    23.1 446296
+ 655835 codeagentcli    22.0 992180
+1913496 cms             18.6 1128316
+3683944 backupagent      8.4 395988
+2533844 python3          8.1 194192
+3614639 codeagentcli     7.5 1064480
+1006001 crmm             4.7 298016
+1407671 codeagentcli     3.4 701016
+ 653693 node             2.3 231824
+ 653741 node             2.2 127560
+2536386 python3          1.0 30692
+ 172151 python           0.9 18128
+ 172294 ps               0.8  4692
+      1 systemd          0.6 27796
+2148152 node             0.5 130156
+
+$ free -g
+               total        used        free      shared  buff/cache   available
+Mem:            1999          93         502          10        1403        1887
+Swap:              0           0           0
+
+$ df -h /data3/tracecjy/agent-trace-yellow/.stage3-yellow/runs-20260924
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/md127       15T  1.3T   14T   9% /data3
+
+$ vmstat 1 5
+procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st
+10  0      0 526492288 2300540 1469740544    0    0     2     9 1491 2524  1  1 98  0  0
+88  0      0 526499776 2300540 1469740672    0    0   360  1534 675701 1236100  2  2 96  0  0
+109  0      0 526498112 2300540 1469740800    0    0   360  1705 662509 1206611  2  2 96  0  0
+99  0      0 526496000 2300540 1469741056    0    0   360  1869 666967 1216314  2  2 96  0  0
+92  0      0 526495584 2300540 1469741312    0    0   360  3266 666025 1216002  2  2 96  0  0
+
+$ date -u
+Thu Sep 24 04:13:17 AM UTC 2026
+
+### before xstore phase 2026-09-24T05:39:06.427114+00:00
+$ uptime
+ 13:39:06 up 51 days,  2:43, 14 users,  load average: 57.52, 51.62, 54.44
+
+$ ps -eo pid,comm,pcpu,rss --sort=-pcpu
+    PID COMMAND         %CPU   RSS
+2744806 gaussdb:tenanta  239 10035832
+1002919 gaussdb          173 26524376
+ 980402 gaussdb          146 5833952
+1527491 python          93.9 1532960
+2434041 gaussdb         39.6 16418188
+3679718 gss_server      27.5 14671796
+ 655835 codeagentcli    23.6 973696
+3669439 gss_cmserver    23.1 446296
+1913496 cms             18.5 1137468
+3683944 backupagent      8.4 395988
+2533844 python3          8.1 193456
+3614639 codeagentcli     7.5 1059268
+1006001 crmm             4.7 299284
+1405235 python           4.4 546676
+1407671 codeagentcli     3.4 700852
+ 653693 node             2.4 231588
+ 653741 node             2.2 129148
+2536386 python3          1.1 30696
+1587197 python           0.9 18320
+      1 systemd          0.6 27796
+
+$ free -g
+               total        used        free      shared  buff/cache   available
+Mem:            1999          95         504          10        1399        1885
+Swap:              0           0           0
+
+$ df -h /data3/tracecjy/agent-trace-yellow/.stage3-yellow/runs-20260924
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/md127       15T  1.3T   14T   9% /data3
+
+$ vmstat 1 5
+procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st
+70  0      0 529479104 2300552 1464722432    0    0     2     9 1493 2527  1  1 98  0  0
+67  0      0 529455424 2300552 1464722688    0    0   384  2254 773950 1436370  3  2 95  0  0
+13  0      0 529460576 2300552 1464722816    0    0   384  1547 777432 1448440  3  2 95  0  0
+89  0      0 529453312 2300552 1464722944    0    0   336  1506 758594 1399226  3  2 95  0  0
+77  0      0 529440736 2300552 1464723072    0    0   360  2357 772601 1437055  3  2 95  0  0
+
+$ date -u
+Thu Sep 24 05:39:06 AM UTC 2026
+
+### before xstore phase 2026-09-24T05:40:28.698127+00:00
+$ uptime
+ 13:40:28 up 51 days,  2:45, 14 users,  load average: 50.09, 50.46, 53.77
+
+$ ps -eo pid,comm,pcpu,rss --sort=-pcpu
+    PID COMMAND         %CPU   RSS
+1613878 ps               800  5880
+2744806 gaussdb:tenanta  239 10025260
+1002919 gaussdb          173 26519872
+ 980402 gaussdb          146 5931064
+1527491 python           103 2053860
+2434041 gaussdb         39.6 16414920
+1591939 python          27.6 410932
+3679718 gss_server      27.5 14671824
+ 655835 codeagentcli    23.6 968152
+3669439 gss_cmserver    23.1 446296
+1913496 cms             18.5 1137596
+1588605 python          13.5 358708
+3683944 backupagent      8.4 395988
+2533844 python3          8.1 192840
+3614639 codeagentcli     7.5 1060336
+1006001 crmm             4.7 299304
+1405235 python           3.9 546676
+1407671 codeagentcli     3.4 700448
+ 653693 node             2.4 231776
+ 653741 node             2.2 129272
+
+$ free -g
+               total        used        free      shared  buff/cache   available
+Mem:            1999          96         503          10        1399        1884
+Swap:              0           0           0
+
+$ df -h /data3/tracecjy/agent-trace-yellow/.stage3-yellow/runs-20260924
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/md127       15T  1.3T   14T   9% /data3
+
+$ vmstat 1 5
+procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st
+21  0      0 528034272 2300552 1465033728    0    0     2     9 1493 2527  1  1 98  0  0
+80  0      0 528010336 2300552 1465033856    0    0   240  2575 844804 1582359  3  2 94  0  0
+16  0      0 528017600 2300552 1465033984    0    0   384  1375 828590 1560722  3  2 94  0  0
+96  0      0 527979680 2300552 1465034240    0    0   384  1441 808918 1506331  3  2 94  0  0
+46  0      0 527972064 2300552 1465034240    0    0   384  2164 833762 1557452  3  2 94  0  0
+
+$ date -u
+Thu Sep 24 05:40:28 AM UTC 2026
+
+### before clickhouse phase 2026-09-24T06:59:57.432233+00:00
+$ uptime
+ 14:59:57 up 51 days,  4:04, 14 users,  load average: 63.37, 63.36, 59.37
+
+$ ps -eo pid,comm,pcpu,rss --sort=-pcpu
+    PID COMMAND         %CPU   RSS
+2744806 gaussdb:tenanta  240 10025436
+1002919 gaussdb          173 26536812
+2434041 gaussdb         39.6 16415552
+3679718 gss_server      27.5 14680348
+ 655835 codeagentcli    23.5 1006672
+3669439 gss_cmserver    23.1 446296
+1913496 cms             18.4 1150656
+3683944 backupagent      8.4 395988
+2533844 python3          8.1 193856
+3614639 codeagentcli     7.5 1050440
+2880665 clickhouse       5.2 312072
+1006001 crmm             4.7 300468
+1407671 codeagentcli     3.4 701616
+ 653693 node             2.4 231704
+ 653741 node             2.2 129408
+2887797 python           1.1 17892
+2536386 python3          1.1 30696
+      1 systemd          0.6 27796
+2148152 node             0.5 131228
+2408157 containerd       0.5 26860
+
+$ free -g
+               total        used        free      shared  buff/cache   available
+Mem:            1999          90         513           7        1395        1892
+Swap:              0           0           0
+
+$ df -h /data3/tracecjy/agent-trace-yellow/.stage3-yellow/runs-20260924
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/md127       15T  1.3T   14T   9% /data3
+
+$ vmstat 1 5
+procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st
+59  0      0 538192192 2300496 1461007872    0    0     2    10 1495 2530  1  1 98  0  0
+ 9  0      0 538188800 2300496 1461008000    0    0   312  1360 618280 1129682  2  2 96  0  0
+10  0      0 538178176 2300496 1461008128    0    0   336  1774 617835 1123248  2  2 97  0  0
+70  0      0 538173440 2300496 1461008384    0    0   384  1453 614962 1122018  2  2 97  0  0
+12  0      0 538189696 2300496 1461009152    0    0   384  2281 613930 1116435  2  2 97  0  0
+
+$ date -u
+Thu Sep 24 06:59:57 AM UTC 2026
+

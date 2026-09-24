@@ -1,0 +1,94 @@
+exit 0
+..................sssss................................s.......................................................ssss.....................................................................................................................................usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --input x
+usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --layout x
+usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --case x
+usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --fixture x
+usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --namespace x
+usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --store x
+usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --writer x
+usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --endpoint x
+usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --factory x
+usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --fault-injector x
+............................usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --seed x
+usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --phase x
+usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --warmup x
+usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --measurement x
+usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --scope x
+usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --runner x
+usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --endpoint x
+usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --namespace x
+usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --process-policy x
+..................usage: python -m unittest part-states [-h] --input INPUT --output OUTPUT
+                                      --layout
+                                      {same_table,separate,full_core,asset_ref}
+python -m unittest part-states: error: the following arguments are required: --layout
+usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --seed 1
+usage: python -m unittest [-h]
+                          {generate-input,candidate,part-states,interference,asset-failures}
+                          ...
+python -m unittest: error: unrecognized arguments: --engine clickhouse
+...................................................................................................................................................................................................................................
+----------------------------------------------------------------------
+Ran 521 tests in 113.352s
+
+OK (skipped=10)

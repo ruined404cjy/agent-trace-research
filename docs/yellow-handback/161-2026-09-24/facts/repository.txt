@@ -1,0 +1,12 @@
+$ git -C /data3/tracecjy/agent-trace-research rev-parse HEAD
+6366686cdb62dd42143ba729365f32cdf3d2516a
+
+$ git -C /data3/tracecjy/agent-trace-research status --short
+
+$ git -C /data3/tracecjy/agent-trace-research log --oneline -5
+6366686 feat: derive a hand-typed core block from the packed feedback
+c3dc62b docs: run the yellow round by script and hand back by local commit
+5b9edda feat: drive a yellow round with fixed steps and resumable runs
+5b1f16c feat: pack a yellow round into a pushable feedback directory
+66b210d feat: probe row-store payload columns before cleanup
+
