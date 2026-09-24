@@ -1047,19 +1047,20 @@ def _native_package_evidence(prefix="CH_NATIVE"):
     return identity
 
 
-def _container_evidence(container_name):
-    """读取容器镜像名和不可变 image ID，不读取凭据。
+NATIVE_PACKAGE_PREFIXES = {"clickhouse": "CH_NATIVE", "xstore": "XSTORE_NATIVE"}
 
-    原生包引擎（无 Docker）通过 CH_NATIVE_ENGINE 或 XSTORE_NATIVE_ENGINE 环境变量指示，
-    此时返回原生包身份证据而非容器证据。
+
+def _container_evidence(container_name, engine):
+    """读取当前引擎的容器镜像名和不可变 image ID，不读取凭据。
+
+    入参 engine 决定原生包证据的环境变量前缀：clickhouse 读 CH_NATIVE_*，xstore 读
+    XSTORE_NATIVE_*。对应的 <前缀>_ENGINE 已设置时返回原生包身份，engine 字段记当前引擎名；
+    同机两个引擎的变量同时导出时互不串用。其余情况读取容器证据。
     """
-    if os.environ.get("CH_NATIVE_ENGINE"):
-        native = _native_package_evidence("CH_NATIVE")
-        native["container"] = None
-        native["mode"] = "native-package"
-        return native
-    if os.environ.get("XSTORE_NATIVE_ENGINE"):
-        native = _native_package_evidence("XSTORE_NATIVE")
+    prefix = NATIVE_PACKAGE_PREFIXES.get(engine)
+    if prefix and os.environ.get(f"{prefix}_ENGINE"):
+        native = _native_package_evidence(prefix)
+        native["engine"] = engine
         native["container"] = None
         native["mode"] = "native-package"
         return native
@@ -1424,7 +1425,9 @@ def run_layout(adapter: LayoutAdapter, truth: TruthCatalog, config: RunConfig) -
         manifest["ddl_sha256"] = canonical_digest(created)
         manifest["code"] = _code_evidence(adapter)
         manifest["engine_runtime"] = _engine_runtime(adapter, config.engine)
-        container = _container_evidence(getattr(adapter, "container_name", "test-double"))
+        container = _container_evidence(
+            getattr(adapter, "container_name", "test-double"), config.engine,
+        )
         if container.get("mode") == "native-package":
             for required in ("engine_version", "package_checksums", "binary_sha256"):
                 if not container.get(required):
@@ -1705,7 +1708,8 @@ def run_matrix(arguments):
                     arguments.opengauss_container if engine == "opengauss"
                     else getattr(arguments, "xstore_container", "")
                     if engine == "xstore"
-                    else arguments.clickhouse_container
+                    else arguments.clickhouse_container,
+                    engine,
                 ),
             }
             write_manifest_atomic(target_dir / "run-manifest.json", state)

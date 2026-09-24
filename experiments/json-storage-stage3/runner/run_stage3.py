@@ -1208,7 +1208,7 @@ def _database_runtime_evidence(adapter, engine, endpoints):
     else:
         raise ValueError(f"unsupported runtime engine: {engine}")
     runtime = run_layout_matrix._engine_runtime(adapter, engine)
-    container = run_layout_matrix._container_evidence(container_name)
+    container = run_layout_matrix._container_evidence(container_name, engine)
     host = run_layout_matrix._host_evidence()
     if (
         not isinstance(runtime, dict) or set(runtime) != {"version", "source"}

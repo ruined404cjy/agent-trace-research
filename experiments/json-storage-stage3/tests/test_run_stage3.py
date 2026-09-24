@@ -2071,8 +2071,9 @@ class AssetFailureCliTests(unittest.TestCase):
             else "agent-trace-clickhouse-25-12"
         )
 
-        def fake_container(container_name):
+        def fake_container(container_name, container_engine):
             self.assertEqual(container_name, expected_container)
+            self.assertEqual(container_engine, engine)
             return container or {
                 "container": expected_container,
                 "image": engine + "-image",

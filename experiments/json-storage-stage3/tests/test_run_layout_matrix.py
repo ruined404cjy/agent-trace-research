@@ -1,10 +1,13 @@
 import hashlib
 import json
+import os
+import shutil
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import patch
 
 
 STAGE_DIR = Path(__file__).resolve().parents[1]
@@ -287,6 +290,56 @@ class FailingWarmupAdapter(SmokeAdapter):
 
     def run_query(self, query):
         raise RuntimeError("injected warmup failure")
+
+
+class NativePackageEvidenceTest(unittest.TestCase):
+    """同机两个引擎都以原生包运行时，引擎身份不得串用另一引擎的包。"""
+
+    def setUp(self):
+        root = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, root)
+        self.binaries = {"clickhouse": root / "clickhouse", "xstore": root / "gaussdb"}
+        self.binaries["clickhouse"].write_bytes(b"clickhouse-binary")
+        self.binaries["xstore"].write_bytes(b"xstore-binary")
+        # 运维按指南导出两组变量后在同一 shell 内先后运行两个引擎，这是黄区的实际形态。
+        self.environment = {
+            "CH_NATIVE_ENGINE": "1",
+            "CH_NATIVE_ENGINE_VERSION": "23.3.10.5",
+            "CH_NATIVE_PRODUCT_PATH": str(self.binaries["clickhouse"]),
+            "CH_NATIVE_PACKAGE_CHECKSUMS": "clickhouse-checksums",
+            "XSTORE_NATIVE_ENGINE": "1",
+            "XSTORE_NATIVE_ENGINE_VERSION": "xstore release",
+            "XSTORE_NATIVE_PRODUCT_PATH": str(self.binaries["xstore"]),
+            "XSTORE_NATIVE_PACKAGE_CHECKSUMS": "xstore-checksums",
+        }
+
+    def test_each_engine_records_its_own_package_when_both_are_exported(self):
+        with patch.dict(os.environ, self.environment):
+            evidence = {
+                engine: runner._container_evidence("", engine)
+                for engine in ("xstore", "clickhouse")
+            }
+        for engine, binary in self.binaries.items():
+            self.assertEqual(evidence[engine]["mode"], "native-package")
+            self.assertEqual(evidence[engine]["engine"], engine)
+            self.assertEqual(evidence[engine]["product_path"], str(binary))
+            self.assertEqual(
+                evidence[engine]["binary_sha256"], hashlib.sha256(binary.read_bytes()).hexdigest(),
+            )
+            self.assertIsNone(evidence[engine]["container"])
+        self.assertEqual(evidence["xstore"]["package_checksums"], "xstore-checksums")
+
+    def test_engine_without_its_own_flag_inspects_its_container(self):
+        environment = {key: value for key, value in self.environment.items()
+                       if key.startswith("CH_NATIVE_")}
+        inspected = SimpleNamespace(returncode=0, stdout="image:tag|sha256:image-id\n")
+        with patch.dict(os.environ, environment, clear=True), \
+                patch.object(runner.subprocess, "run", return_value=inspected) as run:
+            evidence = runner._container_evidence("xstore-container", "xstore")
+        self.assertEqual(evidence, {
+            "container": "xstore-container", "image": "image:tag", "image_id": "sha256:image-id",
+        })
+        self.assertEqual(run.call_args.args[0][:3], ["docker", "inspect", "xstore-container"])
 
 
 class LayoutMatrixUnitTest(unittest.TestCase):
