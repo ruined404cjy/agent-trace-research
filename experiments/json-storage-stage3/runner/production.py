@@ -443,17 +443,23 @@ def interference_factories(
             targets[phase.name] = build_query_target(adapter, query, truth)
         elif phase.name == "continuous_ingest":
             position = 0
+            issued = 0
 
             def continuous_target(deadline, cancellation):
-                nonlocal position
+                nonlocal position, issued
                 if cancellation.is_set() or time.monotonic() >= deadline:
                     raise TimeoutError("continuous ingest deadline expired before execution")
                 _, block = eligible[position]
-                submitted = [_thaw(row) for row in block]
+                # 预载已写入这些 block；行存以 event_id 为主键，重放行按轮次改用新标识，
+                # 其余列与水位所用的 ingest_seq 保持原值，前台窗口外的行不影响前台 truth。
+                cycle = issued // len(eligible) + 1
+                submitted = [{**_thaw(row), "event_id": f"{row['event_id']}#replay-{cycle}"}
+                             for row in block]
                 watermark = int(block[-1]["ingest_seq"]) + 1
                 result = adapter.ingest_block(submitted)
                 _validate_block_result(result, layout, len(block), watermark)
                 position = (position + 1) % len(eligible)
+                issued += 1
                 return result
 
             targets[phase.name] = DeadlineTarget(continuous_target)

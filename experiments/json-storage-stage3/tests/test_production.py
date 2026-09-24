@@ -972,8 +972,23 @@ class ProductionFactoryTest(unittest.TestCase):
             self.assertTrue(all(
                 result is returned for result, returned in zip(results, adapter.returned_results)
             ))
-            self.assertEqual(adapter.received_first_event_ids[-1], "event-27648")
+            # 预载已写入全部 190 个 block；行存以 event_id 为主键，重放行必须换用新的标识，
+            # 否则每次写入都因唯一约束失败，持续写入阶段测不到真实的写入负载。
             self.assertEqual(formal.main_blocks[108][0]["event_id"], "event-27648")
+            self.assertEqual(adapter.received_first_event_ids[0], "event-27648#replay-1")
+            self.assertEqual(adapter.received_first_event_ids[-1], "event-27648#replay-2")
+            preloaded = {row["event_id"] for block in formal.main_blocks for row in block}
+            # 替身在收到块后改写首行，首行标识取替身记录的原始值。
+            replayed = adapter.received_first_event_ids + [
+                row["event_id"] for block in adapter.submitted for row in block[1:]
+            ]
+            self.assertEqual(len(replayed), len(set(replayed)))
+            self.assertFalse(preloaded & set(replayed))
+            original = {row["ingest_seq"]: row for row in formal.main_blocks[109]}
+            for row in adapter.submitted[1][1:]:
+                source = original[row["ingest_seq"]]
+                self.assertEqual({key: value for key, value in row.items() if key != "event_id"},
+                                 {key: value for key, value in source.items() if key != "event_id"})
 
             sentinel = BlockResult(256, 28_160, {"events": 28_160}, 7.0)
             adapter.continuous_result = sentinel
