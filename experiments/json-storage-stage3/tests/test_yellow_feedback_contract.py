@@ -65,6 +65,15 @@ class FeedbackContractTest(unittest.TestCase):
         self.assertIn("停止另一个引擎的服务", self.text)
         self.assertIn("每次切换引擎之前重做一遍", self.text)
 
+    def test_interference_rerun_states_the_per_stream_process_harness(self):
+        """同进程多线程的请求流会把客户端 GIL 争用计入前台时延，重跑范围必须写明每流独立进程。"""
+        row = next(
+            line for line in self.text.splitlines() if line.startswith("| 混合负载 |")
+        )
+        self.assertIn("每个请求流在独立进程内运行", row)
+        self.assertIn("`stream_execution`", row)
+        self.assertIn("`process_per_stream`", row)
+
     def test_retained_paths_cover_every_evidence_directory(self):
         """回传确认之前不得删除的路径必须覆盖四类证据目录。"""
         for path in ("access-gate", "handback", "ch-part-states", "asset-failures"):

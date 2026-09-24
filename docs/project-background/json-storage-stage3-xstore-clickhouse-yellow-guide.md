@@ -1117,7 +1117,7 @@ XStore 与 openGauss 同源，adapter 默认实现直接复用 openGauss adapter
 | 7 清理验证 | 清理后确认 namespace 与对象目录不存在 | 清理命令返回成功且对象清单为空 |
 | 8 正式矩阵 | ClickHouse 与 XStore 在同一主机串行执行四布局四 workload | 两个引擎各 16 个 target 全部 complete；任一引擎缺少四布局矩阵即判本次运行无效 |
 | 9 part-state | 对每个引擎与布局判定 part-state 控制是否适用；适用时执行 run_stage3.py part-states，记录 part 状态与合并证据；不适用时在运行记录中引用能力报告条目写明原因 | 每个 target 的结论为已执行通过，或记录不适用并附证据 |
-| 10 混合负载 | 执行 run_stage3.py interference，在单个 target 内部产生并发负载，并记录与串行基线的对比 | 混合负载证据与串行基线对比齐全，或记录不适用并附证据 |
+| 10 混合负载 | 执行 run_stage3.py interference，在单个 target 内部产生并发负载，每个请求流在独立进程内运行，并记录与串行基线的对比 | 混合负载证据与串行基线对比齐全，或记录不适用并附证据 |
 | 11 Asset 故障与恢复 | 执行 run_stage3.py asset-failures，记录失败注入、失败 block 证据、恢复动作与清理结果 | 失败与恢复证据齐全，或记录不适用并附证据 |
 | 12 实验报告 | 按 8.4 节写实验报告 | 七章齐备，场景编号与蓝区一致，不适用项写明原因与证据 |
 | 13 回传摘录 | 按 9.2 节生成回传摘录并校验 | 摘录存在、非空且覆盖每个 target；未通过前不执行 9.1 节的删除动作 |
