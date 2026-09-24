@@ -26,7 +26,7 @@ from run_interference import (
     run_owned_phase_process, summarize_load, validate_formal_phase_coverage,
     validate_resource_snapshot,
 )
-from run_layout_matrix import QueryTruth, write_manifest_atomic
+from run_layout_matrix import QuerySample, QueryTruth, ValidationResult, write_manifest_atomic
 
 
 PAYLOAD = b"abc"
@@ -1931,3 +1931,305 @@ class StorageSnapshotModelTest(unittest.TestCase):
         adapter = self._Adapter("same_table", {"events": broken})
         with self.assertRaises(RuntimeError):
             interference_runner.capture_storage_snapshot(adapter)
+
+
+FIXED_QUERY_SAMPLE = QuerySample(
+    "list:first", "list", "success", "query-fixed", 100, 100, 0, None, 0, 0.0, 1,
+    0.4, 0.1, 0.2, 0.7, ValidationResult(1, ("event-a",), 0),
+)
+
+
+def pid_target():
+    """返回执行进程 PID 的即时 target。"""
+    return deadline_target(lambda: SimpleNamespace(
+        status="success", application_ready_ms=1.0, pid=os.getpid(),
+    ))
+
+
+def short_schedules(names, duration=0.2):
+    return {
+        name: LoadSchedule(name, 20.0, duration, 2, timeout_seconds=1.0)
+        for name in names
+    }
+
+
+def process_alive(pid):
+    """按 /proc 状态判断进程仍在运行，僵尸进程视为已退出。"""
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+    except (FileNotFoundError, ProcessLookupError, IndexError):
+        return False
+    return state != "Z"
+
+
+class StreamProcessAdapter(FakeAdapter):
+    """以真实 adapter 的 _queries 登记查询，并在 query ID 中记录执行进程。"""
+
+    def __init__(self, namespace):
+        super().__init__(namespace)
+        self._queries = self.query_kinds
+
+    def run_query(self, query):
+        result = super().run_query(query)
+        query_id = f"query-{os.getpid()}-{self.query_count}"
+        self._queries[query_id] = self._queries.pop(result.query_id)
+        return replace(result, query_id=query_id)
+
+
+class StreamProcessTest(unittest.TestCase):
+    """每个请求流独占一个进程，前台延迟不混入同进程其他流的 GIL 与调度争用。"""
+
+    def test_formal_phase_runner_runs_each_stream_in_its_own_process(self):
+        """同一进程内的流共享 GIL 和调度线程，客户端争用会被计入数据库延迟。"""
+        streams = ("list", "preview", "batch_loop")
+
+        results = interference_runner.run_load_phase(
+            {name: pid_target() for name in streams}, short_schedules(streams),
+        )
+
+        pids = {}
+        for name, result in results.items():
+            observed = {
+                item.sample.pid for item in result.samples if item.status == "success"
+            }
+            self.assertEqual(len(observed), 1, name)
+            pids[name] = observed.pop()
+        self.assertNotIn(os.getpid(), pids.values())
+        self.assertEqual(len(set(pids.values())), len(streams))
+        normalized = interference_runner._normalize_phase_wall(results)
+        self.assertEqual(len({item.phase_origin for item in normalized.values()}), 1)
+
+    def test_stream_processes_share_one_parent_chosen_origin(self):
+        """各流以父进程选定的同一 origin 排定到达时刻，phase wall time 才可跨流比较。"""
+        clock = FakeClock(10.0)
+
+        results = interference_runner.run_load_phase(
+            {name: pid_target() for name in ("list", "preview")},
+            {name: LoadSchedule(name, 2.0, 1.0, 1, timeout_seconds=1.0)
+             for name in ("list", "preview")},
+            clock=clock, sleep=clock.sleep, executor_factory=InlineExecutor,
+        )
+
+        origin = 10.0 + interference_runner.PHASE_START_DELAY_SECONDS
+        self.assertEqual({result.phase_origin for result in results.values()}, {origin})
+        for result in results.values():
+            self.assertEqual(
+                [item.scheduled_offset_seconds for item in result.samples], [0.0, 0.5],
+            )
+            self.assertEqual(result.late_requests, 0)
+
+    def test_stream_results_round_trip_identically_to_in_process_execution(self):
+        """跨进程传回的 LoadResult 保留样本类型，查询证据门禁仍能识别 QuerySample。"""
+        schedule = LoadSchedule("list", 2.0, 1.0, 1, timeout_seconds=1.0)
+        target = deadline_target(lambda: FIXED_QUERY_SAMPLE)
+        local_clock = FakeClock(3.0)
+        origin = 3.0 + interference_runner.PHASE_START_DELAY_SECONDS
+        expected = run_offered_load(
+            target, schedule, clock=local_clock, sleep=local_clock.sleep,
+            executor_factory=InlineExecutor, phase_origin=origin,
+        )
+        clock = FakeClock(3.0)
+
+        results = interference_runner.run_load_phase(
+            {"list": target}, {"list": schedule},
+            clock=clock, sleep=clock.sleep, executor_factory=InlineExecutor,
+        )
+
+        self.assertEqual(results, {"list": expected})
+        self.assertIsInstance(results["list"].samples[0].sample, QuerySample)
+
+    def test_crashing_stream_process_raises_with_stream_name(self):
+        """流进程异常退出时父进程按流名报错，不能以缺失样本的形式静默通过。"""
+        clock = FakeClock()
+
+        def crash():
+            os._exit(3)
+
+        with self.assertRaises(UnresolvedExecution) as raised:
+            interference_runner.run_load_phase(
+                {"list": pid_target(), "preview": deadline_target(crash)},
+                {name: LoadSchedule(name, 1.0, 1.0, 1, timeout_seconds=1.0)
+                 for name in ("list", "preview")},
+                clock=clock, sleep=clock.sleep, executor_factory=InlineExecutor,
+            )
+
+        evidence = raised.exception.evidence
+        self.assertIn("preview", str(raised.exception))
+        self.assertEqual(evidence["status"], "unresolved_execution")
+        self.assertEqual(set(evidence["streams"]), {"preview"})
+        self.assertEqual(evidence["streams"]["preview"]["reason"], "exited_without_result")
+        self.assertEqual(
+            evidence["streams"]["preview"]["exit"], {"kind": "exited", "exit_code": 3},
+        )
+
+    def test_unresolved_requests_in_a_stream_process_keep_their_evidence(self):
+        """流内请求未收束时保留逐请求证据，且挂起的 worker 线程不拖住流进程退出。"""
+        release = threading.Event()
+
+        def blocked(_deadline, _cancellation):
+            release.wait()
+
+        started = time.monotonic()
+        try:
+            with self.assertRaises(UnresolvedExecution) as raised:
+                interference_runner.run_load_phase(
+                    {"list": DeadlineTarget(blocked)},
+                    {"list": LoadSchedule("list", 1.0, 0.02, 1, timeout_seconds=0.02)},
+                )
+        finally:
+            release.set()
+        elapsed = time.monotonic() - started
+
+        stream = raised.exception.evidence["streams"]["list"]
+        self.assertEqual(stream["reason"], "request_unresolved")
+        self.assertEqual(stream["evidence"]["stream"], "list")
+        self.assertEqual(len(stream["evidence"]["unresolved_requests"]), 1)
+        self.assertLess(elapsed, 3.0)
+        self.assertFalse(process_alive(stream["pid"]))
+
+    def test_resolved_stream_failure_raises_runtime_error_with_stream_name(self):
+        """请求均已收束的流内失败按普通错误报出，namespace 仍可清理。"""
+        def broken_executor(max_workers):
+            raise RuntimeError("executor unavailable")
+
+        with self.assertRaisesRegex(RuntimeError, "stream preview failed: executor unavailable"):
+            interference_runner.run_load_phase(
+                {"preview": pid_target()},
+                {"preview": LoadSchedule("preview", 1.0, 1.0, 1, timeout_seconds=1.0)},
+                executor_factory=broken_executor,
+            )
+
+    def test_silent_stream_process_is_killed_at_the_result_deadline(self):
+        """停止响应的流进程在结果上界处被终止并按流名报告。"""
+        clock = FakeClock()
+
+        def stop_self():
+            os.kill(os.getpid(), signal.SIGSTOP)
+
+        group = interference_runner.StreamProcessGroup(
+            {"list": deadline_target(stop_self)}, clock=clock, sleep=clock.sleep,
+            executor_factory=InlineExecutor, result_budget_seconds=0.1,
+        )
+        try:
+            with self.assertRaises(UnresolvedExecution) as raised:
+                group.run({"list": LoadSchedule("list", 1.0, 0.1, 1, timeout_seconds=0.1)})
+        finally:
+            group.close()
+
+        stream = raised.exception.evidence["streams"]["list"]
+        self.assertEqual(stream["reason"], "result_timeout")
+        self.assertFalse(process_alive(stream["pid"]))
+
+    def test_stream_process_exits_when_its_owner_dies(self):
+        """phase child 被 watchdog 杀死后，流进程不能作为孤儿继续向数据库施压。"""
+        context = multiprocessing.get_context("fork")
+        receive, send = context.Pipe(duplex=False)
+
+        def owner():
+            group = interference_runner.StreamProcessGroup({"list": pid_target()})
+            send.send(group.pids["list"])
+            time.sleep(60)
+
+        process = context.Process(target=owner)
+        process.start()
+        try:
+            self.assertTrue(receive.poll(5.0))
+            pid = receive.recv()
+            process.kill()
+            process.join(5.0)
+            deadline = time.monotonic() + 5.0
+            while process_alive(pid) and time.monotonic() < deadline:
+                time.sleep(0.01)
+            self.assertFalse(process_alive(pid))
+        finally:
+            if process.is_alive():
+                process.kill()
+                process.join(1.0)
+            receive.close()
+            send.close()
+
+    def test_phase_reuses_stream_processes_and_returns_their_query_registry(self):
+        """流进程跨 warmup/measurement 保留流内状态，并把查询登记交回 phase child 采集访问证据。"""
+        for policy in (PhaseProcessPolicy(watchdog_seconds=20.0), INLINE_PROCESS_POLICY):
+            with self.subTest(mode=policy.mode), tempfile.TemporaryDirectory() as directory:
+                output = Path(directory)
+
+                def targets_factory(adapter, phase, _seed):
+                    return {
+                        name: fixed_query_target(adapter, name)
+                        for name in fixed_phase_schedules(phase, measurement=True)
+                    }
+
+                result = run_interference(
+                    lambda namespace, _phase, _seed: StreamProcessAdapter(namespace),
+                    targets_factory, output, scope="diagnostic",
+                    phases=(interference_runner.InterferencePhase(
+                        "quiet", None, warmup_seconds=0.2, measurement_seconds=0.3,
+                    ),),
+                    resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
+                    process_policy=policy,
+                )
+                segments = {
+                    name: [
+                        json.loads(line) for line in
+                        (output / "quiet" / filename).read_text().splitlines()
+                    ]
+                    for name, filename in (
+                        ("warmup", "warmup-samples.jsonl"), ("measurement", "samples.jsonl"),
+                    )
+                }
+
+                manifest = result.phases[0]
+                self.assertEqual(manifest["status"], "complete")
+                identities = {}
+                for segment, records in segments.items():
+                    for record in records:
+                        if record["status"] != "success":
+                            continue
+                        _, pid, count = record["sample"]["query_id"].split("-")
+                        identities.setdefault(record["stream"], []).append(
+                            (segment, int(pid), int(count)),
+                        )
+                pids = {}
+                for stream, items in identities.items():
+                    self.assertEqual(len({pid for _, pid, _ in items}), 1, stream)
+                    pids[stream] = items[0][1]
+                    warmup = [count for segment, _, count in items if segment == "warmup"]
+                    measured = [count for segment, _, count in items if segment == "measurement"]
+                    self.assertTrue(warmup and measured, stream)
+                    self.assertGreater(min(measured), max(warmup), stream)
+                self.assertEqual(set(pids), {"list", "preview"})
+                self.assertEqual(len(set(pids.values())), 2)
+                self.assertNotIn(os.getpid(), pids.values())
+                self.assertNotIn(manifest.get("child_pid"), pids.values())
+                self.assertEqual(
+                    set(manifest["query_evidence"]["query_finish"]),
+                    {record["sample"]["query_id"]
+                     for records in segments.values() for record in records
+                     if record["status"] == "success"},
+                )
+
+    def test_stream_processes_are_not_forked_from_a_multithreaded_phase_child(self):
+        """fork 只复制调用线程，其他线程持有的锁会在流进程内永久保持加锁。"""
+        release = threading.Event()
+
+        def adapter_factory(namespace, _phase, _seed):
+            threading.Thread(target=release.wait, daemon=True).start()
+            return StreamProcessAdapter(namespace)
+
+        def targets_factory(adapter, phase, _seed):
+            return {
+                name: fixed_query_target(adapter, name)
+                for name in fixed_phase_schedules(phase, measurement=True)
+            }
+
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(RuntimeError, "single-threaded phase child"):
+                run_interference(
+                    adapter_factory, targets_factory, Path(directory), scope="diagnostic",
+                    phases=(interference_runner.InterferencePhase(
+                        "quiet", None, warmup_seconds=0.2, measurement_seconds=0.3,
+                    ),),
+                    resource_collector=lambda: {"cpu": {}, "memory": {}, "io": {}},
+                    process_policy=PhaseProcessPolicy(watchdog_seconds=5.0),
+                )

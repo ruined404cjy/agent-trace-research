@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 """执行固定 offered-load 前台查询与独立干扰阶段。"""
 
+import ctypes
 import json
 import inspect
 import math
 import multiprocessing
+import multiprocessing.connection
 import os
 import queue
 import signal
@@ -31,6 +33,8 @@ IPC_DRAIN_BATCH_SIZE = 256
 PHASE_START_DELAY_SECONDS = 0.05
 PHASE_CONTROL_BUDGET_SECONDS = 300.0
 TERMINATION_GRACE_SECONDS = 0.1
+STREAM_RESULT_BUDGET_SECONDS = 30.0
+PR_SET_PDEATHSIG = 1
 IPC_EVENT_TYPES = frozenset({
     "phase_initialized", "snapshot_captured", "segment_complete",
     "phase_terminal", "execution_unresolved",
@@ -1018,25 +1022,204 @@ def summarize_load(result: LoadResult):
     }
 
 
+def _exit_with_parent(parent_pid):
+    """令当前进程在父进程退出时收到 SIGKILL，避免孤儿流进程继续施压。"""
+    libc = ctypes.CDLL(None, use_errno=True)
+    if libc.prctl(PR_SET_PDEATHSIG, signal.SIGKILL, 0, 0, 0) != 0:
+        raise OSError(ctypes.get_errno(), "prctl(PR_SET_PDEATHSIG) failed")
+    if os.getppid() != parent_pid:
+        os._exit(1)
+
+
+def _stream_process_child(connection, target, query_registry, parent_pid,
+                          clock, sleep, executor_factory):
+    """在独立进程内按父进程命令逐段运行单个请求流。
+
+    每条命令为 (schedule, phase_origin)，回复为 complete（LoadResult 与新增查询登记）、
+    unresolved（run_offered_load 的证据）或 failed（错误文本）；None 或 EOF 结束循环。
+    """
+    _exit_with_parent(parent_pid)
+    known = set(query_registry or ())
+    while True:
+        try:
+            command = connection.recv()
+        except EOFError:
+            break
+        if command is None:
+            break
+        schedule, origin = command
+        try:
+            result = run_offered_load(
+                target, schedule, clock=clock, sleep=sleep,
+                executor_factory=executor_factory, phase_origin=origin,
+            )
+        except UnresolvedExecution as error:
+            connection.send(("unresolved", error.evidence))
+            break
+        except Exception as error:
+            connection.send(("failed", str(error) or type(error).__name__))
+            continue
+        added = {
+            key: value for key, value in (query_registry or {}).items() if key not in known
+        }
+        known.update(added)
+        connection.send(("complete", result, added))
+    connection.close()
+    # 未收束的 worker 线程已记入 evidence；直接退出，避免解释器退出时等待这些线程。
+    os._exit(0)
+
+
+class StreamProcessGroup:
+    """为 phase 内每个请求流保持一个 fork 进程，各流不共享 GIL 与调度线程。
+
+    targets 为 {stream: DeadlineTarget}，在构造时随 fork 进入各自进程，流内状态
+    跨多次 run 延续。query_registry 为 phase 进程 adapter 的查询登记 dict，流进程
+    新增的登记随结果并入，供 phase 进程采集访问证据。
+    """
+
+    def __init__(self, targets, *, query_registry=None, clock=time.monotonic,
+                 sleep=time.sleep, executor_factory=ThreadPoolExecutor,
+                 result_budget_seconds=STREAM_RESULT_BUDGET_SECONDS):
+        if not isinstance(targets, dict) or not targets or any(
+            not isinstance(target, DeadlineTarget) for target in targets.values()
+        ):
+            raise ValueError("stream processes require DeadlineTarget values")
+        if "fork" not in multiprocessing.get_all_start_methods():
+            raise RuntimeError("stream processes require Linux fork support")
+        self._clock = clock
+        self._query_registry = query_registry
+        self._result_budget_seconds = result_budget_seconds
+        self._policy = PhaseProcessPolicy()
+        self._streams = {}
+        context = multiprocessing.get_context("fork")
+        try:
+            for name, target in targets.items():
+                parent_connection, child_connection = context.Pipe()
+                process = context.Process(
+                    target=_stream_process_child,
+                    args=(child_connection, target, query_registry, os.getpid(),
+                          clock, sleep, executor_factory),
+                    name=f"stage3-interference-stream-{name}",
+                )
+                try:
+                    process.start()
+                except BaseException:
+                    parent_connection.close()
+                    raise
+                finally:
+                    # 父进程只保留自身端点，流进程退出时父端才能读到 EOF。
+                    child_connection.close()
+                self._streams[name] = (process, parent_connection)
+        except BaseException:
+            self.close()
+            raise
+
+    @property
+    def pids(self):
+        """返回 {stream: pid}。"""
+        return {name: process.pid for name, (process, _) in self._streams.items()}
+
+    def run(self, schedules):
+        """以同一 phase origin 在全部流进程内运行一段负载，返回 {stream: LoadResult}。
+
+        流进程崩溃、超出结果上界或报告未收束请求时抛出带流名证据的
+        UnresolvedExecution；仅有已收束的流内失败时抛出 RuntimeError。
+        """
+        if not isinstance(schedules, dict) or set(schedules) != set(self._streams):
+            raise ValueError("schedules must exactly match stream processes")
+        origin = self._clock() + PHASE_START_DELAY_SECONDS
+        deadline = time.monotonic() + PHASE_START_DELAY_SECONDS + max(
+            schedule.duration_seconds + schedule.timeout_seconds
+            for schedule in schedules.values()
+        ) + TERMINATION_GRACE_SECONDS + self._result_budget_seconds
+        failures = {}
+        pending = {}
+        for name, schedule in schedules.items():
+            connection = self._streams[name][1]
+            try:
+                connection.send((schedule, origin))
+            except OSError:
+                failures[name] = {"reason": "exited_without_result"}
+                continue
+            pending[connection] = name
+        results = {}
+        while pending:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                break
+            for connection in multiprocessing.connection.wait(list(pending), remaining):
+                name = pending.pop(connection)
+                try:
+                    reply = connection.recv()
+                except (EOFError, OSError):
+                    failures[name] = {"reason": "exited_without_result"}
+                    continue
+                if reply[0] == "complete":
+                    results[name] = reply[1]
+                    if self._query_registry is not None:
+                        self._query_registry.update(reply[2])
+                elif reply[0] == "unresolved":
+                    failures[name] = {"reason": "request_unresolved", "evidence": reply[1]}
+                else:
+                    failures[name] = {"reason": "failed", "error": reply[1]}
+        for name in pending.values():
+            failures[name] = {"reason": "result_timeout"}
+        if not failures:
+            return {name: results[name] for name in schedules}
+        for name, failure in failures.items():
+            process = self._streams[name][0]
+            failure["pid"] = process.pid
+            if failure["reason"] == "exited_without_result":
+                process.join(self._policy.kill_join_seconds)
+                failure["exit"] = _explain_process_exit(process.exitcode)
+        if all(failure["reason"] == "failed" for failure in failures.values()):
+            raise RuntimeError("; ".join(
+                f"stream {name} failed: {failure['error']}"
+                for name, failure in sorted(failures.items())
+            ))
+        raise UnresolvedExecution({
+            "status": "unresolved_execution",
+            "reason": "stream process failure: " + ", ".join(sorted(failures)),
+            "streams": failures,
+        })
+
+    def close(self):
+        """结束全部流进程并回收；仍无法回收的进程以 UnresolvedExecution 报出。"""
+        streams, self._streams = self._streams, {}
+        for process, connection in streams.values():
+            try:
+                connection.send(None)
+            except OSError:
+                pass
+        unreaped = {}
+        for name, (process, connection) in streams.items():
+            process.join(self._policy.terminate_join_seconds)
+            _stop_phase_process(process, self._policy)
+            if process.is_alive():
+                unreaped[name] = {"reason": "not_reaped", "pid": process.pid}
+            else:
+                process.close()
+            connection.close()
+        if unreaped:
+            raise UnresolvedExecution({
+                "status": "unresolved_execution",
+                "reason": "stream process not reaped: " + ", ".join(sorted(unreaped)),
+                "streams": unreaped,
+            })
+
+
 def run_load_phase(targets, schedules, *, clock=time.monotonic, sleep=time.sleep,
                    executor_factory=ThreadPoolExecutor):
-    """使用同一 phase origin 并发执行各自独立 worker pool 的请求流。"""
+    """每个请求流在独立进程内运行一段负载，各流共享父进程选定的 phase origin。"""
     if set(targets) != set(schedules):
         raise ValueError("targets must exactly match schedules")
-    origin = clock() + PHASE_START_DELAY_SECONDS
-    coordinator = ThreadPoolExecutor(max_workers=len(targets))
+    streams = StreamProcessGroup(
+        targets, clock=clock, sleep=sleep, executor_factory=executor_factory,
+    )
     try:
-        futures = {
-            name: coordinator.submit(
-                run_offered_load, targets[name], schedule,
-                clock=clock, sleep=sleep, executor_factory=executor_factory,
-                phase_origin=origin,
-            )
-            for name, schedule in schedules.items()
-        }
-        return {name: future.result() for name, future in futures.items()}
+        return streams.run(schedules)
     finally:
-        coordinator.shutdown(wait=True)
+        streams.close()
 
 
 def _normalize_phase_wall(results):
@@ -1451,6 +1634,27 @@ def _phase_manifest(run_id, namespace, phase, seed, scope):
     }
 
 
+def _open_stream_processes(phase_runner, adapter, targets, *, clock, sleep, executor_factory):
+    """正式 runner 在整个 phase 内复用每流进程；注入的 runner 返回 None 并在进程内执行。"""
+    if phase_runner is not run_load_phase:
+        return None
+    # adapter 的查询登记由流进程补全，phase 进程据此为流内查询采集访问证据。
+    return StreamProcessGroup(
+        targets, query_registry=getattr(adapter, "_queries", None),
+        clock=clock, sleep=sleep, executor_factory=executor_factory,
+    )
+
+
+def _run_segment(phase_runner, streams, targets, schedules, *, clock, sleep,
+                 executor_factory):
+    """运行一段负载：有流进程组时交给流进程，否则调用注入的 phase runner。"""
+    if streams is not None:
+        return streams.run(schedules)
+    return phase_runner(
+        targets, schedules, clock=clock, sleep=sleep, executor_factory=executor_factory,
+    )
+
+
 def _execute_phase_child(adapter_factory, targets_factory, phase, namespace, seed, *,
                          scope, phase_runner, resource_collector, clock, sleep,
                          executor_factory, event_sender):
@@ -1462,6 +1666,7 @@ def _execute_phase_child(adapter_factory, targets_factory, phase, namespace, see
                "status": "not_attempted_adapter_unavailable"}
     warmup = measured = {}
     terminal = {}
+    streams = None
     origin = clock()
     try:
         adapter = adapter_factory(namespace, phase, seed)
@@ -1472,6 +1677,12 @@ def _execute_phase_child(adapter_factory, targets_factory, phase, namespace, see
             not isinstance(target, DeadlineTarget) for target in targets.values()
         ):
             raise RuntimeError("phase targets do not match fixed schedules")
+        if phase_runner is run_load_phase and threading.active_count() != 1:
+            raise RuntimeError("stream processes require a single-threaded phase child")
+        streams = _open_stream_processes(
+            phase_runner, adapter, targets,
+            clock=clock, sleep=sleep, executor_factory=executor_factory,
+        )
         first_snapshot = _snapshot(
             adapter, "before_warmup", origin, clock, resource_collector,
             require_resources=scope == "formal",
@@ -1480,8 +1691,8 @@ def _execute_phase_child(adapter_factory, targets_factory, phase, namespace, see
             "name": "before_warmup", "snapshot": first_snapshot,
             "layout": adapter.layout, "layout_definition": layout_definition,
         })
-        warmup = _normalize_phase_wall(phase_runner(
-            targets, fixed_phase_schedules(phase, measurement=False),
+        warmup = _normalize_phase_wall(_run_segment(
+            phase_runner, streams, targets, fixed_phase_schedules(phase, measurement=False),
             clock=clock, sleep=sleep, executor_factory=executor_factory,
         ))
         event_sender("segment_complete", {
@@ -1494,10 +1705,12 @@ def _execute_phase_child(adapter_factory, targets_factory, phase, namespace, see
                 require_resources=scope == "formal",
             ),
         })
-        measured = _normalize_phase_wall(phase_runner(
-            targets, fixed_phase_schedules(phase, measurement=True),
+        measured = _normalize_phase_wall(_run_segment(
+            phase_runner, streams, targets, fixed_phase_schedules(phase, measurement=True),
             clock=clock, sleep=sleep, executor_factory=executor_factory,
         ))
+        if streams is not None:
+            streams.close()
         event_sender("segment_complete", {
             "name": "measurement", "results": _json_value(measured),
         })
@@ -1534,6 +1747,9 @@ def _execute_phase_child(adapter_factory, targets_factory, phase, namespace, see
         completion_unknown = True
         raise
     finally:
+        # 流进程先于 cleanup 结束；无法回收时异常直接外抛，namespace 保留。
+        if streams is not None:
+            streams.close()
         if adapter is not None and not completion_unknown:
             try:
                 cleanup = _coerce_cleanup(adapter)
@@ -1726,6 +1942,7 @@ def _run_phase(adapter_factory, targets_factory, output, phase, seed, *,
     completion_unknown = False
     cleanup = {"namespace": namespace, "removed": False}
     warmup = measured = {}
+    streams = None
     origin = clock()
 
     try:
@@ -1738,13 +1955,17 @@ def _run_phase(adapter_factory, targets_factory, output, phase, seed, *,
             not isinstance(target, DeadlineTarget) for target in targets.values()
         ):
             raise RuntimeError("phase targets do not match fixed schedules")
+        streams = _open_stream_processes(
+            phase_runner, adapter, targets,
+            clock=clock, sleep=sleep, executor_factory=executor_factory,
+        )
         first_snapshot = _snapshot(
             adapter, "before_warmup", origin, clock, resource_collector,
             require_resources=scope == "formal",
         )
         manifest["snapshots"] = [first_snapshot]
-        warmup = _normalize_phase_wall(phase_runner(
-            targets, fixed_phase_schedules(phase, measurement=False),
+        warmup = _normalize_phase_wall(_run_segment(
+            phase_runner, streams, targets, fixed_phase_schedules(phase, measurement=False),
             clock=clock, sleep=sleep, executor_factory=executor_factory,
         ))
         _write_jsonl_atomic(phase_output / "warmup-samples.jsonl", warmup)
@@ -1754,10 +1975,12 @@ def _run_phase(adapter_factory, targets_factory, output, phase, seed, *,
                 require_resources=scope == "formal",
             )
         )
-        measured = _normalize_phase_wall(phase_runner(
-            targets, fixed_phase_schedules(phase, measurement=True),
+        measured = _normalize_phase_wall(_run_segment(
+            phase_runner, streams, targets, fixed_phase_schedules(phase, measurement=True),
             clock=clock, sleep=sleep, executor_factory=executor_factory,
         ))
+        if streams is not None:
+            streams.close()
         _write_jsonl_atomic(phase_output / "samples.jsonl", measured)
         if scope == "formal":
             manifest["execution_coverage"] = validate_formal_phase_coverage(
@@ -1780,6 +2003,8 @@ def _run_phase(adapter_factory, targets_factory, output, phase, seed, *,
     except Exception as exception:
         error = exception
     finally:
+        if streams is not None:
+            streams.close()
         if adapter is not None and not completion_unknown:
             try:
                 cleanup = _coerce_cleanup(adapter)
