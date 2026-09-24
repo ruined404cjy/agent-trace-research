@@ -5,6 +5,15 @@
 same_table 中间页两种游标写法的 EXPLAIN (ANALYZE, BUFFERS)。每个布局按主矩阵相同的
 block 与水位载入 main workload，使用独立 namespace，无论成败都执行清理。
 结果写入一个 JSON 文件，不产生性能数据，不进入矩阵汇总。
+
+出错时怎么办：
+1. 输出 JSON 的 status 为 failed 时，error 字段给出首个失败原因；已完成布局的记录仍在 layouts 中。
+2. 某条统计 SQL 在 XStore 上不被支持时，可在本地改写 payload_profile_sql 或 RELATIONS_SQL，
+   保持返回列的含义与顺序不变（profile、行数、逻辑字节、存储字节；relname、relkind、
+   reltoastrelid、reloptions），并提交到本地分支。
+3. 游标探针报 expanded cursor 不匹配时，说明 adapter 的中间页语句形态已变化，按新语句
+   调整 EXPANDED_CURSOR 常量，两种写法的差别仍只是一条 start_time >= cursor_time 下界。
+4. 清理未确认删除时，手工删除输出中记录的 namespace 后删掉该 JSON 重跑。
 """
 
 import argparse
