@@ -22,6 +22,8 @@ ClickHouse 的 `list:middle` 出现与朴素预期相反的读取量：`same_tab
 
 混合负载给出双向结论。`batch_loop` 相中，`asset_ref` 的前台 list 与 preview 只有 2 次和 1 次 scheduler drop，`same_table`、`separate`、`full_core` 分别为 477/505、653/666、582/581 次；同一相中 `asset_ref` 自身的批量恢复 p50 为 2,361.76 ms，是四种布局中最慢的，`same_table` 为 1,906.53 ms。竞争被移出数据库查询路径，并未消除。`detail_2m` 与 `trace_long` 两相相对 quiet 相的前台 p50 变化在 −3.39% 至 +3.91% 之间（`same_table` 在 −0.95% 至 +1.01% 内），最大 scheduler drop 为 5 次。该幅度在本负载下属于运行间波动，不表示可观测的干扰效应；两相的干扰强度不足，不构成隔离性结论。
 
+长载荷只在与持续批量读取并发时显著影响列表与 preview：同表存放本身不拖慢列表，把 payload 移入同一引擎内的另一张表也不减轻批量读取的干扰，只有 `asset_ref` 把这部分竞争移出数据库。两条影响途径的逐项证据见第 5.2 节。
+
 part 状态的影响大于布局选择，且方向在四种布局中一致。ClickHouse 碎片态（190 part）的 `list:first` p50 为 38.29–44.99 ms，单 part 态为 12.34–13.75 ms，同一布局内比值 2.90–3.27；而同一控制内同一状态下四种布局的最大最小比只有 1.114–1.175。part 状态因此是与布局正交的因素。
 
 空间的两引擎结论不同。以 `same_table` 为基准，openGauss 的 `separate` 与 `full_core` 总占用为 1.530 倍和 1.586 倍，约为 1.5 倍，主因是索引重复：每张表的索引字节合计 21.92 MB。ClickHouse 的同两种布局只有 1.097 倍和 1.170 倍。`asset_ref` 把 payload 移出数据库后总占用最高：openGauss 为 2.884 倍（33.01 MB 库内加 128.45 MB 对象，合计 161.46 MB），ClickHouse 为 6.921 倍（131.73 MB 对 19.04 MB）。ClickHouse 的倍数依赖本实验语料的高可压缩性，按生产 Agent Trace 文本 3–6 倍压缩比折算后为 2.40–3.57 倍。
@@ -887,7 +889,27 @@ WHERE asset_id = :asset_id;
 | 批量恢复（中等对象） | `same_table` 与 `full_core` 未分辨；避免 `asset_ref` | `same_table` 与 `full_core` 未分辨；避免 `asset_ref` | 对象数量主导 |
 | 前台隔离（持续批量读取） | **`asset_ref`** | **`asset_ref`** | 前台 drop 2/1 对 477/653/582 |
 
-### 5.2 Asset 分层的成本转移边界
+### 5.2 长载荷对非载荷查询的影响
+
+列表与 preview 不读取 payload。长载荷通过两条途径影响它们：**存放途径**，即列表来源表是否含 payload；**并发途径**，即同时发生的 payload 读写占用共享资源。两条途径的机制见[阶段三原理与设计](json-storage-stage3-principles-design-2026-09-24.md)第 3.6 节。混合负载的结果来自 ClickHouse。
+
+| 途径 | 引擎 | 比较 | 结果 | 判断 |
+|---|---|---|---|---|
+| 存放 | openGauss | 主矩阵四布局的应用可用 p50 最大最小比 | 列表 1.069–1.087，preview 1.009–1.015；四布局均扫描 256 行 | 同表 payload 不进入列表读取路径，影响未分辨 |
+| 存放 | ClickHouse | 同上 | 列表 1.089–1.140，preview 1.108–1.128；`list:middle` 在 `same_table` 读取 23,947 行，其余三种布局 38,912 行 | payload 列使 granule 更窄，`same_table` 读取量更少，时延差异在 14% 以内 |
+| 存放 | ClickHouse | 混合负载 `quiet` 相的前台 list p50 | `same_table` 14.82 ms，其余三种布局 19.15–21.26 ms | 方向与主矩阵一致，`same_table` 最快 |
+| 存放 | ClickHouse | part 状态控制的 `list:first` | 同一状态下四布局之比 1.114–1.175，同一布局下四状态之比 2.90–3.27 | part 状态的影响约为布局的三倍 |
+| 并发 | ClickHouse | `detail_2m`、`trace_long` 相对 `quiet` 的前台 p50 | −3.39% 至 +3.91%，scheduler drop 不超过 5 次 | 干扰强度不足，未观测到影响 |
+| 并发 | ClickHouse | `batch_loop` 相的前台 list | 三种库内布局 p95 104.12–124.22 ms，drop 477、653、582 次；`asset_ref` p95 28.14 ms，drop 2 次 | 持续批量读取显著干扰前台 |
+| 并发 | ClickHouse | `continuous_ingest` 相的前台 list | p50 相对 `quiet` 为 −12.75% 至 +3.37%，drop 0 次 | 1 block/s 的写入未产生可观测干扰 |
+
+本工作负载上，长载荷对非载荷查询的显著影响只出现在持续批量读取与前台并发时。同表存放本身不拖慢列表：openGauss 未分辨，ClickHouse 的 `same_table` 反而读取更少。`batch_loop` 相中 `separate` 与 `full_core` 的前台 drop 高于 `same_table`（653、582 对 477），把 payload 移入同一引擎内的另一张表不提供前台隔离；`asset_ref` 把 payload 读取移出数据库后前台 list p95 为 28.14 ms，接近 quiet 相的 24.67 ms，代价是自身批量恢复变慢（第 5.3 节）。
+
+混合负载在前台与干扰流共用一个客户端进程时测得：库内布局的批量结果需要在该进程内解析约 128 MB 的 JSON，客户端工作量的差别与数据库负载的差别方向相同，并发途径的幅度以各请求流分进程运行的重测为准。
+
+以上结论成立于 0.33% 的 payload 密度、可完全驻留内存的数据集与每条前台流 2 个 worker。payload 密度升高或数据超出内存时，行存主 tuple 中残留的 payload 字节与缓冲池竞争会放大存放途径，该情形不在本实验覆盖范围内。
+
+### 5.3 Asset 分层的成本转移边界
 
 `asset_ref` 在所有场景中都表现为成本转移，而非成本消除。分项数据给出统一的解释。
 
@@ -905,7 +927,7 @@ WHERE asset_id = :asset_id;
 
 转移的方向固定：数据库查询时间与库内空间下降，客户端恢复时间、总物理占用和每对象固定成本上升。转移是否划算取决于对象数量与单对象大小，第 4.7 节给出了判据。
 
-### 5.3 part 状态与布局的正交性
+### 5.4 part 状态与布局的正交性
 
 | 因素 | 观测范围 | `list:first` 变化幅度 |
 |---|---|---:|
@@ -914,7 +936,7 @@ WHERE asset_id = :asset_id;
 
 两个因素的效应方向在四种布局中一致，量级相差约三倍。ClickHouse 的 part backlog 控制优先于布局选择。四个状态按固定顺序执行，较小差异仍可能包含执行顺序与缓存影响。
 
-### 5.4 跨引擎比较边界
+### 5.5 跨引擎比较边界
 
 固定输入、统一的普通列与查询参数、统一的逻辑结果和统一的应用可用边界（完整 bytes 到客户端并完成 SHA-256 校验）使方案级对照成立。
 
@@ -956,7 +978,7 @@ WHERE asset_id = :asset_id;
    | 5 倍 | 40,505,450 | 131,733,393 | 3.25 |
    | 6 倍 | 36,922,815 | 131,733,393 | 3.57 |
 
-   折算只改变数据库内 payload 列的压缩后字节，非 payload 部分（3,241,582 bytes）和 Asset 目录字节保持不变。第 4.1 节的 ClickHouse 空间倍数、第 5.2 节的空间行和第 7 节的空间建议均按该区间理解。openGauss 的 2.884 倍同样依赖该语料，未提供对应的折算表。
+   折算只改变数据库内 payload 列的压缩后字节，非 payload 部分（3,241,582 bytes）和 Asset 目录字节保持不变。第 4.1 节的 ClickHouse 空间倍数、第 5.3 节的空间行和第 7 节的空间建议均按该区间理解。openGauss 的 2.884 倍同样依赖该语料，未提供对应的折算表。
 
 2. `detail_2m` 与 `trace_long` 两相的干扰强度不足以扰动前台：前台 p50 相对 quiet 相的变化落在 −3.39% 至 +3.91% 之间，方向在布局之间不一致，scheduler drop 最多 5 次。该幅度按运行间波动处理，不作为干扰效应量；两相不支持隔离性结论，需要提高干扰字节速率后重测。
 
