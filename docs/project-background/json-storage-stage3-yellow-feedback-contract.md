@@ -173,25 +173,27 @@ WHERE active AND database = {database:String} AND column = 'payload';
 ### 5.1 分页游标形式的探针
 
 XStore 不支持行构造器比较，adapter 把 `(start_time,event_id) > (%s,%s)` 展开为
-`(start_time > %s OR (start_time = %s AND event_id > %s))`。展开式能否作为索引范围起点由
-优化器决定，本项由行存探针对两种写法各执行一次 EXPLAIN，结果决定是否需要调整，不要自行改写查询。
+`(start_time > %s OR (start_time = %s AND event_id > %s))`，并在其前增加被 OR 条件蕴含的
+下界 `start_time >= %s`（绑定游标时刻）。XStore 不把 OR 展开式用作索引范围起点，该下界进入
+Index Cond，使索引扫描从游标处开始，结果集不变。本项由行存探针对两种写法各执行一次 EXPLAIN，
+记录该下界对访问路径的作用。
 
 对 `same_table` 布局的中间页游标，分别对下列两条语句执行 `EXPLAIN (ANALYZE, BUFFERS)`，
 回传两份计划的访问节点类型与实际扫描行数：
 
 ```sql
--- 形式一：当前 adapter 使用的展开式
+-- 形式一：不带下界的展开式，由探针从 adapter 语句去掉下界得到
 ... AND (start_time > %s OR (start_time = %s AND event_id > %s))
 ORDER BY start_time,event_id LIMIT 256;
 
--- 形式二：补一条被 OR 条件蕴含的冗余下界，结果集不变
+-- 形式二：adapter 使用的形式，补一条被 OR 条件蕴含的下界，结果集不变
 ... AND start_time >= %s
     AND (start_time > %s OR (start_time = %s AND event_id > %s))
 ORDER BY start_time,event_id LIMIT 256;
 ```
 
-两者的实际扫描行数相同时保持形式一不变；形式二显著更少时回传该事实，由蓝区决定是否改包。
-该探针只做 EXPLAIN，不进入性能矩阵。
+形式二的 Index Cond 包含该下界；形式一的 Index Cond 只含窗口条件，由 Filter 逐行移除
+窗口起点到游标处的行。该探针只做 EXPLAIN，不进入性能矩阵。
 
 ### 5.2 XStore 混合负载修复与复测时间预算
 
