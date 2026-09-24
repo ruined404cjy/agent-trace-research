@@ -1,0 +1,3146 @@
+{
+ "rounds": [
+  {
+   "container": {
+    "binary_sha256": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_declared": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884  /data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb",
+    "product_path": "/data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {
+    "events_core_list_idx": 111,
+    "events_core_pkey": 0,
+    "events_core_trace_idx": 0,
+    "events_full_list_idx": 0,
+    "events_full_pkey": 31,
+    "events_full_trace_idx": 0
+   },
+   "maintenance": {
+    "analyze_ms": 1421.0199799854308,
+    "completed": true,
+    "load_to_query_ready_ms": 17753.03848995827,
+    "merge_wait_ms": null,
+    "natural_stable_parts": false,
+    "observations": [
+     {
+      "analyzed": true
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 1421.0199799854308,
+    "watermark_wait_ms": 6916.084609692916,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 0,
+   "scenarios": {
+    "batch:correctness_only": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sort > Seq Scan on events_full > Rows Removed by Filter: 48533": 5
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 5,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "detail:unicode_boundary": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core > Rows Removed by Filter: 13652": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "heap_bytes": 10977280,
+      "index_bytes": 33505280,
+      "toast_bytes": 0,
+      "total_bytes": 44482560
+     },
+     "events_full": {
+      "heap_bytes": 10977280,
+      "index_bytes": 33308672,
+      "toast_bytes": 0,
+      "total_bytes": 44285952
+     }
+    }
+   },
+   "workload": "correctness_only",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 7557.167599676177,
+    "block_wall_ms": {
+     "maximum": 49.92152005434036,
+     "median": 39.82181003084406,
+     "minimum": 28.55096000712365,
+     "p95": 41.027426527580246
+    },
+    "rows_per_second": 2971.7134121237455,
+    "wall_ms": 16331.992110004649
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_declared": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884  /data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb",
+    "product_path": "/data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {
+    "events_core_list_idx": 122,
+    "events_core_pkey": 0,
+    "events_core_trace_idx": 0,
+    "events_full_list_idx": 0,
+    "events_full_pkey": 61,
+    "events_full_trace_idx": 0
+   },
+   "maintenance": {
+    "analyze_ms": 1633.2548100035638,
+    "completed": true,
+    "load_to_query_ready_ms": 29511.481649940833,
+    "merge_wait_ms": null,
+    "natural_stable_parts": false,
+    "observations": [
+     {
+      "analyzed": true
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 1633.2548100035638,
+    "watermark_wait_ms": 16722.044049645774,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 0,
+   "scenarios": {
+    "batch:equal_total_few_large": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sort > Seq Scan on events_full > Rows Removed by Filter: 48494": 5
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 5,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 40,
+      "minimum": 40
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core > Rows Removed by Filter: 13652": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "heap_bytes": 10977280,
+      "index_bytes": 33505280,
+      "toast_bytes": 0,
+      "total_bytes": 44482560
+     },
+     "events_full": {
+      "heap_bytes": 140165120,
+      "index_bytes": 33505280,
+      "toast_bytes": 0,
+      "total_bytes": 173670400
+     }
+    }
+   },
+   "workload": "equal_total_few_large",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 9183.590310509317,
+    "block_wall_ms": {
+     "maximum": 125.4996299976483,
+     "median": 39.17174495290965,
+     "minimum": 35.93881009146571,
+     "p95": 85.86127451853827
+    },
+    "rows_per_second": 1740.93072748297,
+    "wall_ms": 27878.191379946657
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_declared": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884  /data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb",
+    "product_path": "/data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {
+    "events_core_list_idx": 122,
+    "events_core_pkey": 0,
+    "events_core_trace_idx": 0,
+    "events_full_list_idx": 0,
+    "events_full_pkey": 61,
+    "events_full_trace_idx": 0
+   },
+   "maintenance": {
+    "analyze_ms": 1631.8067699903622,
+    "completed": true,
+    "load_to_query_ready_ms": 29505.28746994678,
+    "merge_wait_ms": null,
+    "natural_stable_parts": false,
+    "observations": [
+     {
+      "analyzed": true
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 1631.8067699903622,
+    "watermark_wait_ms": 16611.428850563243,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 1,
+   "scenarios": {
+    "batch:equal_total_few_large": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sort > Seq Scan on events_full > Rows Removed by Filter: 48494": 5
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 5,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 40,
+      "minimum": 40
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core > Rows Removed by Filter: 13652": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "heap_bytes": 10977280,
+      "index_bytes": 33505280,
+      "toast_bytes": 0,
+      "total_bytes": 44482560
+     },
+     "events_full": {
+      "heap_bytes": 139968512,
+      "index_bytes": 33701888,
+      "toast_bytes": 0,
+      "total_bytes": 173670400
+     }
+    }
+   },
+   "workload": "equal_total_few_large",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 9314.252020674758,
+    "block_wall_ms": {
+     "maximum": 132.4615499470383,
+     "median": 39.3404450151138,
+     "minimum": 36.38718998990953,
+     "p95": 84.57772399997339
+    },
+    "rows_per_second": 1741.2272187530493,
+    "wall_ms": 27873.444359982386
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_declared": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884  /data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb",
+    "product_path": "/data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {
+    "events_core_list_idx": 122,
+    "events_core_pkey": 0,
+    "events_core_trace_idx": 0,
+    "events_full_list_idx": 0,
+    "events_full_pkey": 61,
+    "events_full_trace_idx": 0
+   },
+   "maintenance": {
+    "analyze_ms": 1626.7262600595132,
+    "completed": true,
+    "load_to_query_ready_ms": 29556.641380069777,
+    "merge_wait_ms": null,
+    "natural_stable_parts": false,
+    "observations": [
+     {
+      "analyzed": true
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 1626.7262600595132,
+    "watermark_wait_ms": 16692.98283965327,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 2,
+   "scenarios": {
+    "batch:equal_total_few_large": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sort > Seq Scan on events_full > Rows Removed by Filter: 48494": 5
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 5,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 40,
+      "minimum": 40
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core > Rows Removed by Filter: 13652": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "heap_bytes": 10977280,
+      "index_bytes": 33701888,
+      "toast_bytes": 0,
+      "total_bytes": 44679168
+     },
+     "events_full": {
+      "heap_bytes": 139771904,
+      "index_bytes": 33505280,
+      "toast_bytes": 0,
+      "total_bytes": 173277184
+     }
+    }
+   },
+   "workload": "equal_total_few_large",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 9267.200158792548,
+    "block_wall_ms": {
+     "maximum": 126.43981003202498,
+     "median": 39.54917995724827,
+     "minimum": 36.76692000590265,
+     "p95": 86.6814004490152
+    },
+    "rows_per_second": 1737.7089382389736,
+    "wall_ms": 27929.878780036233
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_declared": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884  /data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb",
+    "product_path": "/data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {
+    "events_core_list_idx": 122,
+    "events_core_pkey": 0,
+    "events_core_trace_idx": 0,
+    "events_full_list_idx": 0,
+    "events_full_pkey": 61,
+    "events_full_trace_idx": 0
+   },
+   "maintenance": {
+    "analyze_ms": 1631.9795700255781,
+    "completed": true,
+    "load_to_query_ready_ms": 29488.14430006314,
+    "merge_wait_ms": null,
+    "natural_stable_parts": false,
+    "observations": [
+     {
+      "analyzed": true
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 1631.9795700255781,
+    "watermark_wait_ms": 16622.020050883293,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 3,
+   "scenarios": {
+    "batch:equal_total_few_large": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sort > Seq Scan on events_full > Rows Removed by Filter: 48494": 5
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 5,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 40,
+      "minimum": 40
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core > Rows Removed by Filter: 13652": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "heap_bytes": 10977280,
+      "index_bytes": 33701888,
+      "toast_bytes": 0,
+      "total_bytes": 44679168
+     },
+     "events_full": {
+      "heap_bytes": 139968512,
+      "index_bytes": 33505280,
+      "toast_bytes": 0,
+      "total_bytes": 173473792
+     }
+    }
+   },
+   "workload": "equal_total_few_large",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 9259.400879847817,
+    "block_wall_ms": {
+     "maximum": 130.08163997437805,
+     "median": 39.45452003972605,
+     "minimum": 35.93699005432427,
+     "p95": 85.46947198919952
+    },
+    "rows_per_second": 1742.30942862298,
+    "wall_ms": 27856.131180073135
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_declared": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884  /data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb",
+    "product_path": "/data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {
+    "events_core_list_idx": 122,
+    "events_core_pkey": 0,
+    "events_core_trace_idx": 0,
+    "events_full_list_idx": 0,
+    "events_full_pkey": 61,
+    "events_full_trace_idx": 0
+   },
+   "maintenance": {
+    "analyze_ms": 1621.2138399714604,
+    "completed": true,
+    "load_to_query_ready_ms": 27466.06437000446,
+    "merge_wait_ms": null,
+    "natural_stable_parts": false,
+    "observations": [
+     {
+      "analyzed": true
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 1621.2138399714604,
+    "watermark_wait_ms": 14041.271429741755,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 0,
+   "scenarios": {
+    "batch:equal_total_many_medium": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sort > Seq Scan on events_full > Rows Removed by Filter: 47254": 5
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 5,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1280,
+      "minimum": 1280
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core > Rows Removed by Filter: 13652": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "heap_bytes": 11173888,
+      "index_bytes": 33505280,
+      "toast_bytes": 0,
+      "total_bytes": 44679168
+     },
+     "events_full": {
+      "heap_bytes": 143687680,
+      "index_bytes": 33308672,
+      "toast_bytes": 0,
+      "total_bytes": 176996352
+     }
+    }
+   },
+   "workload": "equal_total_many_medium",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 9693.710069986992,
+    "block_wall_ms": {
+     "maximum": 96.3249399792403,
+     "median": 47.304784995503724,
+     "minimum": 30.099140014499426,
+     "p95": 69.37396745779552
+    },
+    "rows_per_second": 1877.900636368266,
+    "wall_ms": 25844.817909994163
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_declared": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884  /data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb",
+    "product_path": "/data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {
+    "events_core_list_idx": 122,
+    "events_core_pkey": 0,
+    "events_core_trace_idx": 0,
+    "events_full_list_idx": 0,
+    "events_full_pkey": 61,
+    "events_full_trace_idx": 0
+   },
+   "maintenance": {
+    "analyze_ms": 1615.5285600107163,
+    "completed": true,
+    "load_to_query_ready_ms": 27668.304570019245,
+    "merge_wait_ms": null,
+    "natural_stable_parts": false,
+    "observations": [
+     {
+      "analyzed": true
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 1615.5285600107163,
+    "watermark_wait_ms": 14042.054879944772,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 1,
+   "scenarios": {
+    "batch:equal_total_many_medium": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sort > Seq Scan on events_full > Rows Removed by Filter: 47254": 5
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 5,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1280,
+      "minimum": 1280
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core > Rows Removed by Filter: 13652": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "heap_bytes": 11173888,
+      "index_bytes": 33505280,
+      "toast_bytes": 0,
+      "total_bytes": 44679168
+     },
+     "events_full": {
+      "heap_bytes": 143491072,
+      "index_bytes": 33505280,
+      "toast_bytes": 0,
+      "total_bytes": 176996352
+     }
+    }
+   },
+   "workload": "equal_total_many_medium",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 9871.153980260715,
+    "block_wall_ms": {
+     "maximum": 95.38012999109924,
+     "median": 47.90643003070727,
+     "minimum": 30.19474004395306,
+     "p95": 72.9155244771391
+    },
+    "rows_per_second": 1862.913304935656,
+    "wall_ms": 26052.742160041817
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_declared": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884  /data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb",
+    "product_path": "/data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {
+    "events_core_list_idx": 122,
+    "events_core_pkey": 0,
+    "events_core_trace_idx": 0,
+    "events_full_list_idx": 0,
+    "events_full_pkey": 61,
+    "events_full_trace_idx": 0
+   },
+   "maintenance": {
+    "analyze_ms": 1620.0531200738624,
+    "completed": true,
+    "load_to_query_ready_ms": 27515.54162998218,
+    "merge_wait_ms": null,
+    "natural_stable_parts": false,
+    "observations": [
+     {
+      "analyzed": true
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 1620.0531200738624,
+    "watermark_wait_ms": 14083.539620158263,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 2,
+   "scenarios": {
+    "batch:equal_total_many_medium": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sort > Seq Scan on events_full > Rows Removed by Filter: 47254": 5
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 5,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1280,
+      "minimum": 1280
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core > Rows Removed by Filter: 13652": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "heap_bytes": 11173888,
+      "index_bytes": 33701888,
+      "toast_bytes": 0,
+      "total_bytes": 44875776
+     },
+     "events_full": {
+      "heap_bytes": 143294464,
+      "index_bytes": 33505280,
+      "toast_bytes": 0,
+      "total_bytes": 176799744
+     }
+    }
+   },
+   "workload": "equal_total_many_medium",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 9715.266262181103,
+    "block_wall_ms": {
+     "maximum": 100.03215994220227,
+     "median": 47.29233996476978,
+     "minimum": 29.263989999890327,
+     "p95": 71.23764751595444
+    },
+    "rows_per_second": 1874.2285236397709,
+    "wall_ms": 25895.45478997752
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_declared": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884  /data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb",
+    "product_path": "/data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {
+    "events_core_list_idx": 122,
+    "events_core_pkey": 0,
+    "events_core_trace_idx": 0,
+    "events_full_list_idx": 0,
+    "events_full_pkey": 61,
+    "events_full_trace_idx": 0
+   },
+   "maintenance": {
+    "analyze_ms": 1830.6240399833769,
+    "completed": true,
+    "load_to_query_ready_ms": 32499.19341993518,
+    "merge_wait_ms": null,
+    "natural_stable_parts": false,
+    "observations": [
+     {
+      "analyzed": true
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 1830.6240399833769,
+    "watermark_wait_ms": 15836.304860305972,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 3,
+   "scenarios": {
+    "batch:equal_total_many_medium": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sort > Seq Scan on events_full > Rows Removed by Filter: 47254": 5
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 5,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1280,
+      "minimum": 1280
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core > Rows Removed by Filter: 13652": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "heap_bytes": 11173888,
+      "index_bytes": 33505280,
+      "toast_bytes": 0,
+      "total_bytes": 44679168
+     },
+     "events_full": {
+      "heap_bytes": 143687680,
+      "index_bytes": 33505280,
+      "toast_bytes": 0,
+      "total_bytes": 177192960
+     }
+    }
+   },
+   "workload": "equal_total_many_medium",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 12571.343571180478,
+    "block_wall_ms": {
+     "maximum": 148.4912900486961,
+     "median": 63.815714966040105,
+     "minimum": 33.593980013392866,
+     "p95": 91.20587800862268
+    },
+    "rows_per_second": 1582.5342935863337,
+    "wall_ms": 30668.52971003391
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_declared": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884  /data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb",
+    "product_path": "/data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 335,
+    "response_bytes_validated": true,
+    "successful_samples": 335,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {
+    "events_core_list_idx": 244,
+    "events_core_pkey": 0,
+    "events_core_trace_idx": 0,
+    "events_full_list_idx": 0,
+    "events_full_pkey": 244,
+    "events_full_trace_idx": 183
+   },
+   "maintenance": {
+    "analyze_ms": 1780.0528799416497,
+    "completed": true,
+    "load_to_query_ready_ms": 38408.89846999198,
+    "merge_wait_ms": null,
+    "natural_stable_parts": false,
+    "observations": [
+     {
+      "analyzed": true
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 1780.0528799416497,
+    "watermark_wait_ms": 23647.05209969543,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 0,
+   "scenarios": {
+    "batch:main": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sort > Seq Scan on events_full > Rows Removed by Filter: 48374": 5
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 5,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 160,
+      "minimum": 160
+     }
+    },
+    "detail:entropy_512k": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "detail:text_512k": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core > Rows Removed by Filter: 13652": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "preview:first": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "preview:middle": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core > Rows Removed by Filter: 13652": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "trace:p25": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "[Bypass] > Index Scan using events_full_trace_idx on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 5,
+      "minimum": 5
+     }
+    },
+    "trace:p50": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "[Bypass] > Index Scan using events_full_trace_idx on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 6,
+      "minimum": 6
+     }
+    },
+    "trace:p95": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "[Bypass] > Index Scan using events_full_trace_idx on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 31,
+      "minimum": 31
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "heap_bytes": 10977280,
+      "index_bytes": 33701888,
+      "toast_bytes": 0,
+      "total_bytes": 44679168
+     },
+     "events_full": {
+      "heap_bytes": 186613760,
+      "index_bytes": 33701888,
+      "toast_bytes": 0,
+      "total_bytes": 220315648
+     }
+    }
+   },
+   "workload": "main",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 10941.659210016951,
+    "block_wall_ms": {
+     "maximum": 255.85207995027304,
+     "median": 41.74667503684759,
+     "minimum": 29.929690062999725,
+     "p95": 131.6689374856644
+    },
+    "rows_per_second": 1325.0229175819202,
+    "wall_ms": 36628.80041997414
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_declared": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884  /data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb",
+    "product_path": "/data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 335,
+    "response_bytes_validated": true,
+    "successful_samples": 335,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {
+    "events_core_list_idx": 244,
+    "events_core_pkey": 0,
+    "events_core_trace_idx": 0,
+    "events_full_list_idx": 0,
+    "events_full_pkey": 244,
+    "events_full_trace_idx": 183
+   },
+   "maintenance": {
+    "analyze_ms": 1787.107600015588,
+    "completed": true,
+    "load_to_query_ready_ms": 38087.49268995598,
+    "merge_wait_ms": null,
+    "natural_stable_parts": false,
+    "observations": [
+     {
+      "analyzed": true
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 1787.107600015588,
+    "watermark_wait_ms": 23313.098870334215,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 1,
+   "scenarios": {
+    "batch:main": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sort > Seq Scan on events_full > Rows Removed by Filter: 48374": 5
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 5,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 160,
+      "minimum": 160
+     }
+    },
+    "detail:entropy_512k": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "detail:text_512k": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core > Rows Removed by Filter: 13652": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "preview:first": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "preview:middle": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core > Rows Removed by Filter: 13652": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "trace:p25": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "[Bypass] > Index Scan using events_full_trace_idx on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 5,
+      "minimum": 5
+     }
+    },
+    "trace:p50": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "[Bypass] > Index Scan using events_full_trace_idx on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 6,
+      "minimum": 6
+     }
+    },
+    "trace:p95": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "[Bypass] > Index Scan using events_full_trace_idx on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 31,
+      "minimum": 31
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "heap_bytes": 10977280,
+      "index_bytes": 33308672,
+      "toast_bytes": 0,
+      "total_bytes": 44285952
+     },
+     "events_full": {
+      "heap_bytes": 186515456,
+      "index_bytes": 33308672,
+      "toast_bytes": 0,
+      "total_bytes": 219824128
+     }
+    }
+   },
+   "workload": "main",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 10986.994829960167,
+    "block_wall_ms": {
+     "maximum": 262.16608996037394,
+     "median": 42.68251999747008,
+     "minimum": 28.71574996970594,
+     "p95": 131.19882946484654
+    },
+    "rows_per_second": 1337.0118792553037,
+    "wall_ms": 36300.350619945675
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_declared": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884  /data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb",
+    "product_path": "/data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 335,
+    "response_bytes_validated": true,
+    "successful_samples": 335,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {
+    "events_core_list_idx": 244,
+    "events_core_pkey": 0,
+    "events_core_trace_idx": 0,
+    "events_full_list_idx": 0,
+    "events_full_pkey": 244,
+    "events_full_trace_idx": 183
+   },
+   "maintenance": {
+    "analyze_ms": 1750.0213499879465,
+    "completed": true,
+    "load_to_query_ready_ms": 38111.060299910605,
+    "merge_wait_ms": null,
+    "natural_stable_parts": false,
+    "observations": [
+     {
+      "analyzed": true
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 1750.0213499879465,
+    "watermark_wait_ms": 23473.285760264844,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 2,
+   "scenarios": {
+    "batch:main": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sort > Seq Scan on events_full > Rows Removed by Filter: 48374": 5
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 5,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 160,
+      "minimum": 160
+     }
+    },
+    "detail:entropy_512k": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "detail:text_512k": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core > Rows Removed by Filter: 13652": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "preview:first": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "preview:middle": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core > Rows Removed by Filter: 13652": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "trace:p25": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "[Bypass] > Index Scan using events_full_trace_idx on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 5,
+      "minimum": 5
+     }
+    },
+    "trace:p50": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "[Bypass] > Index Scan using events_full_trace_idx on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 6,
+      "minimum": 6
+     }
+    },
+    "trace:p95": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "[Bypass] > Index Scan using events_full_trace_idx on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 31,
+      "minimum": 31
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "heap_bytes": 10977280,
+      "index_bytes": 33308672,
+      "toast_bytes": 0,
+      "total_bytes": 44285952
+     },
+     "events_full": {
+      "heap_bytes": 186515456,
+      "index_bytes": 33505280,
+      "toast_bytes": 0,
+      "total_bytes": 220020736
+     }
+    }
+   },
+   "workload": "main",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 10841.955210198648,
+    "block_wall_ms": {
+     "maximum": 255.74570999015123,
+     "median": 40.60825001215562,
+     "minimum": 28.650669963099062,
+     "p95": 132.2083210572594
+    },
+    "rows_per_second": 1334.78154885651,
+    "wall_ms": 36361.00606992841
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_declared": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884  /data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb",
+    "product_path": "/data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 335,
+    "response_bytes_validated": true,
+    "successful_samples": 335,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {
+    "events_core_list_idx": 244,
+    "events_core_pkey": 0,
+    "events_core_trace_idx": 0,
+    "events_full_list_idx": 0,
+    "events_full_pkey": 244,
+    "events_full_trace_idx": 183
+   },
+   "maintenance": {
+    "analyze_ms": 1762.384120025672,
+    "completed": true,
+    "load_to_query_ready_ms": 38075.96632000059,
+    "merge_wait_ms": null,
+    "natural_stable_parts": false,
+    "observations": [
+     {
+      "analyzed": true
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 1762.384120025672,
+    "watermark_wait_ms": 23356.810080469586,
+    "watermarks": {
+     "events_core": 48534,
+     "events_full": 48534
+    }
+   },
+   "round_index": 3,
+   "scenarios": {
+    "batch:main": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sort > Seq Scan on events_full > Rows Removed by Filter: 48374": 5
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 5,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 160,
+      "minimum": 160
+     }
+    },
+    "detail:entropy_512k": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "detail:text_512k": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Index Scan using events_full_pkey on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 1,
+      "minimum": 1
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core > Rows Removed by Filter: 13652": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "preview:first": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "preview:middle": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_core"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit > Index Scan using events_core_list_idx on events_core > Rows Removed by Filter: 13652": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 256,
+      "minimum": 256
+     }
+    },
+    "trace:p25": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "[Bypass] > Index Scan using events_full_trace_idx on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 5,
+      "minimum": 5
+     }
+    },
+    "trace:p50": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "[Bypass] > Index Scan using events_full_trace_idx on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 6,
+      "minimum": 6
+     }
+    },
+    "trace:p95": {
+     "access_structure": [
+      "query-plan-index-without-buffer-evidence"
+     ],
+     "expected_sources": [
+      "events_full"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "[Bypass] > Index Scan using events_full_trace_idx on events_full": 30
+     },
+     "read_bytes": null,
+     "read_rows": null,
+     "samples": 30,
+     "scanned_bytes": null,
+     "scanned_rows": {
+      "maximum": 31,
+      "minimum": 31
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": null,
+    "merges": [],
+    "tables": {
+     "events_core": {
+      "heap_bytes": 10977280,
+      "index_bytes": 33308672,
+      "toast_bytes": 0,
+      "total_bytes": 44285952
+     },
+     "events_full": {
+      "heap_bytes": 186515456,
+      "index_bytes": 33505280,
+      "toast_bytes": 0,
+      "total_bytes": 220020736
+     }
+    }
+   },
+   "workload": "main",
+   "write": {
+    "asset_publish_ms": 0.0,
+    "block_ingest_wall_ms_sum": 10891.78020937834,
+    "block_wall_ms": {
+     "maximum": 257.54491006955504,
+     "median": 41.007164982147515,
+     "minimum": 28.85081002023071,
+     "p95": 131.07754098018563
+    },
+    "rows_per_second": 1336.5258646028417,
+    "wall_ms": 36313.550889957696
+   }
+  }
+ ],
+ "target": "/data1/cjy/.stage3-yellow/runs/xstore-main/xstore/full_core"
+}

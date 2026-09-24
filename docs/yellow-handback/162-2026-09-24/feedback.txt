@@ -1,0 +1,171 @@
+A1
+28.3 89.8 28.3 89.6
+28.3 52.9 28.4 52.9
+28.2 52.7 28.3 52.9
+28.5 52.8 28.5 52.8
+22.9 26.7 21.1 26.1
+29.5 27.4 28.8 29.6
+30.6 29.9 29.7 28.4
+27.0 27.4 28.6 28.7
+A2
+10.2 12.8 23.3 12.8
+11.5 14.3 24.7 14.2
+10.2 12.9 23.5 12.9
+19.4 21.3 27.6 21.3
+10.0 19.1 77.3 32.6
+134.4 148.2 167.9 141.5
+14.1 23.3 76.9 35.8
+14.4 16.5 34.0 20.7
+A3
+12.8 15.5 28.8 1312.1
+14.4 17.2 31.0 1268.9
+12.9 15.6 29.1 1334.6
+22.1 24.1 33.6 799.7
+24.9 22.1 68.5 2297.9
+133.6 151.9 171.7 2928.2
+26.5 21.6 72.2 2476.9
+17.1 19.3 41.6 1782.9
+A4
+904.7 893.7
+868.3 886.4
+908.1 1004.5
+477.7 1814.2
+1815.6 1641.9
+1730.4 1823.8
+1774.2 1668.5
+698.6 9893.5
+A5
+8062.7 26.0
+10458.3 40.2
+10916.7 41.4
+8449.6 46.1
+5031.6 14.9
+6538.0 23.4
+7067.0 29.0
+7824.6 40.2
+A6
+events:186515456,33701888,0,220217344
+event_payloads:183484416,33505280,0,216989696;events_analytics:10977280,33701888,0,44679168
+events_core:10977280,33308672,0,44285952;events_full:186515456,33505280,0,220020736
+assets:98304,180224,0,278528;events_analytics:10977280,33701888,0,44679168;asset_store:128450560,160
+events:6,48534,21,19032758,138345760
+event_payloads:5,48534,18,17650307,135147278;events_analytics:6,48534,17,3235614,9846306
+events_core:6,48534,17,3235614,9846306;events_full:5,48534,19,19027321,138345760
+assets:2,160,4,33309,53440;events_analytics:6,48534,17,3248511,9953614;asset_store:128450560,160
+A7
+642712800 0 642712800
+642712800 0 642712800
+642712800 0 642712800
+460000 642252800 642712800
+642712800 0 642712800
+642712800 0 642712800
+642712800 0 642712800
+460000 642252800 642712800
+A8
+256 256 1 1 5 31
+256 256 1 1 5 31
+256 256 1 1 5 31
+256 256 1 1 5 31
+10541 18899 2688 8192 3245 8192
+32768 32768 56726 56726 56726 56726
+32768 32768 2688 8192 3245 8192
+32768 32768 8192 8192 8192 8192
+B1
+entropy_512k 40 20971520 20971680
+text_2m 40 83886080 83886240
+text_512k 40 20971520 20971680
+text_64k 40 2621440 2621600
+entropy_512k 40 20971520 20971680
+text_2m 40 83886080 83886240
+text_512k 40 20971520 20971680
+text_64k 40 2621440 2621600
+entropy_512k 40 20971520 20971680
+text_2m 40 83886080 83886240
+text_512k 40 20971520 20971680
+text_64k 40 2621440 2621600
+NA 载荷在库外
+15792873 127317856
+15787283 127318112
+15790227 128498792
+NA 载荷在库外
+B2
+85.6 190 0
+22.6 190 7
+25.5 6 0
+16.0 1 0
+83.3 190 0
+29.5 190 5
+37.4 3 0
+27.0 1 0
+90.0 190 0
+29.6 190 8
+29.7 3 0
+27.0 1 0
+115.7 190 0
+29.7 190 2
+29.4 3 0
+29.8 1 0
+B3
+64.8 65.0 410 428 row
+89.4 90.3 1527 1519 row
+112.4 114.1 1843 1906 row
+107.4 107.3 2597 2575 row
+66.3 66.3 575 605 row
+65.0 65.4 281 282 row
+118.9 124.8 2045 2236 row
+136.7 152.6 2330 2805 row
+150.2 156.1 3359 3408 row
+100.8 102.3 1687 1767 row
+73.5 74.9 718 755 row
+119.0 121.7 2165 2289 row
+86.1 88.3 1290 1349 row
+114.9 113.5 2668 2682 row
+77.7 77.6 1000 1020 row
+66.1 66.5 516 510 row
+67.4 66.6 517 503 row
+66.6 66.6 540 528 row
+196.2 186.8 3521 3232 row
+68.0 67.1 652 641 row
+27.1 21.2 5 5 part
+27.5 21.5 2 2 part
+27.0 20.9 3 3 part
+28.3 23.0 1692 1679 part
+23.4 24.3 4 4 part
+31.8 35.4 2 2 part
+32.1 35.5 3 3 part
+30.4 34.7 2 2 part
+33.6 37.1 1497 1505 part
+20.3 24.8 3 3 part
+30.6 33.2 3 3 part
+31.7 34.5 6 6 part
+29.0 33.2 4 3 part
+36.0 37.7 1729 1724 part
+33.0 35.4 2 2 part
+28.5 32.8 2 2 part
+32.7 34.8 2 2 part
+31.5 35.4 2 2 part
+32.9 35.9 3 3 part
+30.8 34.2 2 2 part
+B4
+remove_published_object missing available True 0 restore_missing_object
+modify_published_bytes corrupt available True 0 replace_corrupt_object
+replace_catalog_metadata metadata_mismatch available True 0 restore_catalog_metadata
+fail_after_object_upload missing absent False 1 remove_orphan_object
+fail_pending_publication failed failed True 0 confirm_failed_publication
+fail_deleting_object_removal deleting deleting True 0 confirm_delete_failure_state
+remove_published_object missing available True 0 restore_missing_object
+modify_published_bytes corrupt available True 0 replace_corrupt_object
+replace_catalog_metadata metadata_mismatch available True 0 restore_catalog_metadata
+fail_after_object_upload missing absent False 1 remove_orphan_object
+fail_pending_publication failed failed True 0 confirm_failed_publication
+fail_deleting_object_removal deleting deleting True 0 confirm_delete_failure_state
+C4
+events:0:None pass
+event_payloads:0:None;events_analytics:0:None pass
+events_core:0:None;events_full:0:None pass
+NA 探针缺失 pass
+C5
+Index Scan using events_list_idx on events 256
+Index Scan using events_list_idx on events 256
+C6
+d851e02 116 of 127 runs use code other than HEAD

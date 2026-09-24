@@ -1,0 +1,144 @@
+### before xstore phase 2026-09-24T02:54:16.883819+00:00
+$ uptime
+ 10:54:16 up 7 days, 18:59, 18 users,  load average: 2.48, 2.42, 2.11
+
+$ ps -eo pid,comm,pcpu,rss --sort=-pcpu
+    PID COMMAND         %CPU   RSS
+2628935 ps               900  6164
+4068334 gaussdb         32.1 5667748
+1486431 codeagentcli    12.2 929632
+3297927 codeagentcli     9.8 813072
+2341045 java             7.1 1905040
+   3548 codeagentcli     6.5 1603040
+2533065 codeagentcli     5.5 513120
+ 151091 codeagentcli     4.2 616692
+1990180 codeagentcli     3.3 576196
+4107995 AgentKernel_Vsc  3.2 552668
+ 414698 codeagentcli     2.9 655120
+2172278 node             2.6 409500
+3114453 node             2.5 208712
+1747390 node             2.3 145160
+4107482 node             2.2 149184
+1485941 node             2.1 134364
+2278967 node             2.1 135500
+2445340 java             1.7 782744
+2628852 python           1.2 12696
+2421951 java             1.0 638012
+
+$ free -g
+               total        used        free      shared  buff/cache   available
+Mem:             432          35         152          11         244         382
+Swap:              3           0           3
+
+$ df -h /data1/cjy/.stage3-yellow/runs
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/md126      7.3T  2.4T  5.0T  32% /data1
+
+$ vmstat 1 5
+procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st
+ 2  0 281600 159374224 1295960 255426112    0    0     1    19  599  709  2  1 97  0  0
+ 2  0 281600 159389584 1295960 255426128    0    0     0     0 139670 152948  0  0 99  0  0
+ 0  0 281600 159398080 1295960 255426144    0    0     0    39 138879 150996  0  0 99  0  0
+ 2  0 281600 159408336 1295968 255426144    0    0     0    24 137216 147872  0  0 99  0  0
+ 0  0 281600 159410592 1295976 255426144    0    0     0  5504 138651 151207  0  0 99  0  0
+
+$ date -u
+Thu Sep 24 02:54:16 AM UTC 2026
+
+### before xstore phase 2026-09-24T03:49:24.203338+00:00
+$ uptime
+ 11:49:24 up 7 days, 19:54, 18 users,  load average: 1.33, 2.80, 3.39
+
+$ ps -eo pid,comm,pcpu,rss --sort=-pcpu
+    PID COMMAND         %CPU   RSS
+4068334 gaussdb         34.8 5697480
+1486431 codeagentcli    13.2 903592
+3297927 codeagentcli    10.3 821704
+   3548 codeagentcli     6.4 710216
+2341045 java             4.7 2280756
+ 151091 codeagentcli     4.2 619048
+2533065 codeagentcli     4.2 517152
+1990180 codeagentcli     3.3 576608
+4107995 AgentKernel_Vsc  3.2 555828
+ 414698 codeagentcli     2.9 655552
+2172278 node             2.6 410936
+3114453 node             2.5 209088
+1747390 node             2.3 144136
+4107482 node             2.2 148712
+1485941 node             2.1 134508
+2278967 node             2.1 135612
+2809246 python           0.9 12484
+2445340 java             0.9 866832
+      1 systemd          0.7 31924
+2421951 java             0.6 1009508
+
+$ free -g
+               total        used        free      shared  buff/cache   available
+Mem:             432          35         150          11         246         382
+Swap:              3           0           3
+
+$ df -h /data1/cjy/.stage3-yellow/runs
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/md126      7.3T  2.4T  5.0T  32% /data1
+
+$ vmstat 1 5
+procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st
+ 0  0 281600 158191280 1300504 256808128    0    0     1    19  600  711  2  1 97  0  0
+ 0  0 281600 158195792 1300504 256808128    0    0     0     0 133828 141770  0  0 99  0  0
+ 1  0 281600 158193152 1300504 256808128    0    0     0    44 132934 139442  0  0 100  0  0
+ 0  0 281600 158197440 1300504 256808144    0    0     0    20 133537 140523  0  0 99  0  0
+ 0  0 281600 158196016 1300504 256808160    0    0     0    24 133753 141494  0  0 99  0  0
+
+$ date -u
+Thu Sep 24 03:49:24 AM UTC 2026
+
+### before clickhouse phase 2026-09-24T06:15:34.980152+00:00
+$ uptime
+ 14:15:34 up 7 days, 22:20, 18 users,  load average: 2.08, 3.12, 3.52
+
+$ ps -eo pid,comm,pcpu,rss --sort=-pcpu
+    PID COMMAND         %CPU   RSS
+1486431 codeagentcli    14.7 918204
+3242298 clickhouse      11.9 519616
+3297927 codeagentcli     9.7 819252
+   3548 codeagentcli     6.1 1694576
+ 151091 codeagentcli     4.2 616008
+2533065 codeagentcli     3.6 520148
+1990180 codeagentcli     3.3 576492
+4107995 AgentKernel_Vsc  3.2 557048
+ 414698 codeagentcli     2.9 655708
+2172278 node             2.6 413732
+3114453 node             2.5 209864
+1747390 node             2.3 146556
+4107482 node             2.2 148724
+1485941 node             2.1 134168
+2278967 node             2.1 135648
+2992055 java             1.4 715860
+3243604 python           0.9 12500
+2941157 java             0.8 692192
+3240191 MainThread       0.8 80324
+      1 systemd          0.7 31924
+
+$ free -g
+               total        used        free      shared  buff/cache   available
+Mem:             432          30         150           8         251         389
+Swap:              3           0           3
+
+$ df -h /data1/cjy/.stage3-yellow/runs
+Filesystem      Size  Used Avail Use% Mounted on
+/dev/md126      7.3T  2.4T  5.0T  32% /data1
+
+$ vmstat 1 5
+procs -----------memory---------- ---swap-- -----io---- -system-- ------cpu-----
+ r  b   swpd   free   buff  cache   si   so    bi    bo   in   cs us sy id wa st
+ 1  0 281600 157877568 1311896 262437840    0    0     1    20  603  717  2  1 97  0  0
+ 2  0 281600 157870080 1311896 262437872    0    0     0     0 73665 19397  0  0 99  0  0
+ 0  0 281600 157754848 1311896 262443200    0    0     0  1280 73704 18561  0  0 99  0  0
+ 1  0 281600 157751664 1311896 262443200    0    0     0     0 74904 22000  0  0 99  0  0
+ 1  0 281600 157750896 1311896 262443184    0    0     0     0 72982 17968  0  0 99  0  0
+
+$ date -u
+Thu Sep 24 06:15:34 AM UTC 2026
+
