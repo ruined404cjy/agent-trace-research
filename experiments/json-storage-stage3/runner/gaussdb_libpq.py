@@ -8,6 +8,8 @@ to provide a minimal connection/cursor API compatible with the OpenGauss adapter
 import ctypes
 import json
 import os
+import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 # GaussDB 的 libpq 位置随部署而变，由环境提供；导入本模块不加载动态库，
@@ -123,13 +125,31 @@ def _from_bytes(value):
     return value.decode("utf-8")
 
 
+# PostgreSQL 的规范时间戳文本：日期、空格、时刻、至多 6 位小数与可选的 ±HH[:MM[:SS]] 偏移。
+_CANONICAL_TIMESTAMP = re.compile(r"\d{4}-\d\d-\d\d \d\d:\d\d:\d\d(?:\.\d{1,6})?(?:[+-]\d\d(?::\d\d){0,2})?")
+
+
 def _parse_timestamp(value):
     """Parse a PostgreSQL text timestamp into a UTC timezone-aware datetime.
 
     GaussDB returns timestamps in the server's local timezone (e.g. +08:00).
     We convert to UTC so the adapter's _timestamp() produces the expected 'Z' suffix.
+    规范文本直接用 datetime.fromisoformat 解析，其值与通用路径相同；当前 Python 的
+    fromisoformat 不接受的文本与其余文本交给 _parse_timestamp_general。
     """
-    from datetime import datetime, timezone
+    if _CANONICAL_TIMESTAMP.fullmatch(value):
+        try:
+            dt = datetime.fromisoformat(value)
+        except ValueError:
+            return _parse_timestamp_general(value)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    return _parse_timestamp_general(value)
+
+
+def _parse_timestamp_general(value):
+    """按 strptime 格式序列再 fromisoformat 的顺序解析时间戳文本；都失败时原样返回。"""
     s = value.strip()
     # Try to parse with timezone
     for fmt in (
@@ -162,11 +182,20 @@ def _parse_timestamp(value):
 
 def _parse_date(value):
     """Parse a PostgreSQL text date into a date object."""
-    from datetime import datetime
     try:
         return datetime.strptime(value.strip(), "%Y-%m-%d").date()
     except ValueError:
         return value
+
+
+# 类型 OID 到文本转换函数；未列出的类型保留为 str。
+_CONVERTERS = {
+    16: lambda text: text == "t",  # BOOLOID
+    20: int, 21: int, 23: int,  # INT8OID, INT2OID, INT4OID
+    700: float, 701: float,  # FLOAT4OID, FLOAT8OID
+    1082: _parse_date,  # DATEOID
+    1114: _parse_timestamp, 1184: _parse_timestamp,  # TIMESTAMPOID, TIMESTAMPTZOID
+}
 
 
 def _format_param(value):
@@ -281,53 +310,31 @@ class GaussDBCursor:
             self.execute(statement, params)
 
     def fetchall(self):
-        """Return all rows as tuples, converting typed columns to Python types."""
+        """Return all rows as tuples, converting typed columns to Python types.
+
+        每列预先选定转换函数。libpq 对 NULL 单元返回空串，只在取到空值时调用
+        PQgetisnull 区分 NULL 与空串。
+        """
         self._check_open()
-        if self._result is None:
+        result = self._result
+        if result is None:
             return []
-        n_tuples = _libpq.PQntuples(self._result)
-        n_fields = _libpq.PQnfields(self._result)
-        # Determine column types
-        bool_fields = set()
-        ts_fields = set()
-        date_fields = set()
-        int_fields = set()
-        float_fields = set()
-        for j in range(n_fields):
-            ftype = _libpq.PQftype(self._result, j)
-            if ftype == 16:  # BOOLOID
-                bool_fields.add(j)
-            elif ftype in (1184, 1114):  # TIMESTAMPTZOID, TIMESTAMPOID
-                ts_fields.add(j)
-            elif ftype == 1082:  # DATEOID
-                date_fields.add(j)
-            elif ftype in (20, 21, 23):  # INT8OID, INT2OID, INT4OID
-                int_fields.add(j)
-            elif ftype in (700, 701):  # FLOAT4OID, FLOAT8OID
-                float_fields.add(j)
+        libpq = _libpq
+        getvalue, getisnull = libpq.PQgetvalue, libpq.PQgetisnull
+        columns = tuple((j, _CONVERTERS.get(libpq.PQftype(result, j)))
+                        for j in range(libpq.PQnfields(result)))
         rows = []
-        for i in range(n_tuples):
+        for i in range(libpq.PQntuples(result)):
             row = []
-            for j in range(n_fields):
-                if _libpq.PQgetisnull(self._result, i, j):
-                    row.append(None)
-                elif j in bool_fields:
-                    val = _from_bytes(_libpq.PQgetvalue(self._result, i, j))
-                    row.append(val == "t")
-                elif j in ts_fields:
-                    val = _from_bytes(_libpq.PQgetvalue(self._result, i, j))
-                    row.append(_parse_timestamp(val))
-                elif j in date_fields:
-                    val = _from_bytes(_libpq.PQgetvalue(self._result, i, j))
-                    row.append(_parse_date(val))
-                elif j in int_fields:
-                    val = _from_bytes(_libpq.PQgetvalue(self._result, i, j))
-                    row.append(int(val))
-                elif j in float_fields:
-                    val = _from_bytes(_libpq.PQgetvalue(self._result, i, j))
-                    row.append(float(val))
+            append = row.append
+            for j, convert in columns:
+                raw = getvalue(result, i, j)
+                if not raw and getisnull(result, i, j):
+                    append(None)
+                elif convert is None:
+                    append(raw.decode("utf-8"))
                 else:
-                    row.append(_from_bytes(_libpq.PQgetvalue(self._result, i, j)))
+                    append(convert(raw.decode("utf-8")))
             rows.append(tuple(row))
         return rows
 
