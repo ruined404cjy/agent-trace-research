@@ -7,6 +7,7 @@
     python experiments/json-storage-stage3/tools/yellow_round.py clickhouse   # 先停止 XStore 服务
     python experiments/json-storage-stage3/tools/yellow_round.py pack --host <IP 末段>
     python experiments/json-storage-stage3/tools/yellow_round.py core --host <IP 末段>   # 打印手敲精简版
+    python experiments/json-storage-stage3/tools/yellow_round.py check --host <IP 末段>  # 补充核对，见 check_handback.py
 
 意图：
 - 每个实验步骤有固定输出名（见 plan_steps），打包脚本只按这些名字取数，不扫描其他目录。
@@ -316,7 +317,7 @@ def write_clickhouse_facts(facts, port, environment):
 
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("phase", choices=("preflight", "xstore", "clickhouse", "pack", "core"))
+    parser.add_argument("phase", choices=("preflight", "xstore", "clickhouse", "pack", "core", "check"))
     parser.add_argument("--output-root", type=Path, default=os.environ.get("YELLOW_OUTPUT"))
     parser.add_argument("--input", type=Path, default=(
         Path(os.environ["YELLOW_INPUT"]) / "json-storage-stage3-formal-input" if os.environ.get("YELLOW_INPUT")
@@ -344,17 +345,29 @@ def main(argv=None):
         code = write_preflight_facts(facts, os.environ)
         print(f"[preflight] unit tests exit {code}; output in {facts / 'unit-tests.txt'}")
         return 1 if problems or code else 0
-    if arguments.phase in {"pack", "core"}:
+    if arguments.phase in {"pack", "core", "check"}:
         if not arguments.host:
             print(f"{arguments.phase} requires --host <last octet of the host IP>")
             return 2
         sys.path.insert(0, str(STAGE_DIR / "report"))
         import pack_handback
 
+        feedback = REPO_DIR / "docs" / "yellow-handback" / f"{arguments.host}-{arguments.date}"
         if arguments.phase == "core":
             # 手敲精简版只读 pack 已生成的结果目录，可在 pack 之后任意次重新打印。
-            feedback = REPO_DIR / "docs" / "yellow-handback" / f"{arguments.host}-{arguments.date}"
             return pack_handback.core_main([str(feedback)])
+        if arguments.phase == "check":
+            import check_handback
+
+            if not feedback.is_dir():
+                print(f"[check] {feedback} does not exist; run pack first or pass --date <pack date>")
+                return 2
+
+            lines = check_handback.check(feedback, root)
+            print("\n".join(lines))
+            print(f"[check] written to {feedback / 'followup' / 'checks.txt'}")
+            # 任一项写成 "<编号> NA" 时以非零退出，提示执行方查看原因。
+            return 1 if any(line.split(" ")[1:2] == ["NA"] for line in lines) else 0
         return pack_handback.main(["--output-root", str(root), "--repo", str(REPO_DIR),
                                    "--host", arguments.host, "--date", arguments.date])
     running = other_engine_running(arguments.phase, arguments.clickhouse_port)
