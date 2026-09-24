@@ -1064,7 +1064,7 @@ class InterferenceRunnerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             manifest = interference_runner._phase_manifest(
                 "run-reducer", "jsons3_reducer", FIXED_PHASES[0], 20260907,
-                "diagnostic",
+                "diagnostic", short_phase_runner,
             )
             reducer = interference_runner._ParentPhaseReducer(
                 manifest, Path(directory), lambda: None,
@@ -1094,6 +1094,7 @@ class InterferenceRunnerTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             manifest = interference_runner._phase_manifest(
                 "run-pid", "jsons3_pid", FIXED_PHASES[0], 20260907, "diagnostic",
+                short_phase_runner,
             )
             reducer = interference_runner._ParentPhaseReducer(
                 manifest, Path(directory), lambda: None,
@@ -1302,6 +1303,8 @@ class InterferenceRunnerTest(unittest.TestCase):
         self.assertEqual(len(phase_manifest["snapshots"]), 3)
         self.assertEqual(len(phase_manifest["query_evidence"]["query_finish"]), 4)
         self.assertEqual(set(phase_manifest["statistics"]), {"list", "preview"})
+        # 注入的 runner 不经过每流进程，manifest 如实标明执行模型。
+        self.assertEqual(phase_manifest["stream_execution"], "injected_phase_runner")
 
     def test_process_failure_preserves_segment_and_suppresses_later_phase_factory(self):
         """捕获 segment 后失败丢样本或继续建立下一 phase adapter。"""
@@ -2181,6 +2184,7 @@ class StreamProcessTest(unittest.TestCase):
 
                 manifest = result.phases[0]
                 self.assertEqual(manifest["status"], "complete")
+                self.assertEqual(manifest["stream_execution"], "process_per_stream")
                 identities = {}
                 for segment, records in segments.items():
                     for record in records:

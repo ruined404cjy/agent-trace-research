@@ -1614,7 +1614,12 @@ def _coerce_cleanup(adapter):
     return _json_value(cleanup)
 
 
-def _phase_manifest(run_id, namespace, phase, seed, scope):
+def _stream_execution(phase_runner):
+    """返回 manifest 记录的请求流执行模型。"""
+    return "process_per_stream" if phase_runner is run_load_phase else "injected_phase_runner"
+
+
+def _phase_manifest(run_id, namespace, phase, seed, scope, phase_runner):
     """构造由父进程发布的 phase 初始 manifest。"""
     return {
         "format": "agent-trace-json-storage-stage3-interference-phase",
@@ -1624,6 +1629,7 @@ def _phase_manifest(run_id, namespace, phase, seed, scope):
         "execution_scope": scope, "classification": scope + "_running",
         "namespace": namespace,
         "cache_state": "warm-fixed-offered-load-no-os-cache-drop",
+        "stream_execution": _stream_execution(phase_runner),
         "warmup_seconds": phase.warmup_seconds,
         "measurement_seconds": phase.measurement_seconds,
         "schedules": {
@@ -1929,6 +1935,7 @@ def _run_phase(adapter_factory, targets_factory, output, phase, seed, *,
         "execution_scope": scope, "classification": scope + "_running",
         "namespace": namespace,
         "cache_state": "warm-fixed-offered-load-no-os-cache-drop",
+        "stream_execution": _stream_execution(phase_runner),
         "warmup_seconds": phase.warmup_seconds,
         "measurement_seconds": phase.measurement_seconds,
         "schedules": {
@@ -2139,7 +2146,7 @@ def run_interference(adapter_factory, targets_factory, output: Path, *, scope, s
             phase_output.mkdir(parents=True, exist_ok=True)
             phase_run_id = manifest["run_id"] + "-" + phase.name
             phase_manifest = _phase_manifest(
-                phase_run_id, namespace, phase, seed, scope,
+                phase_run_id, namespace, phase, seed, scope, phase_runner,
             )
             phase_manifests.append(phase_manifest)
 
@@ -2178,6 +2185,7 @@ def run_interference(adapter_factory, targets_factory, output: Path, *, scope, s
             error = RuntimeError("interference phases require fresh namespaces")
             phase_manifest = _phase_manifest(
                 manifest["run_id"] + "-" + phase.name, namespace, phase, seed, scope,
+                phase_runner,
             )
             phase_manifest.update({
                 "status": "failed", "classification": scope + "_failed",
