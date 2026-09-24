@@ -481,6 +481,116 @@ def archive_manifests(sources, root, destination, part_bytes=PART_BYTES):
     }
 
 
+# ---------- 手敲精简版 ----------
+
+CORE_STATES = ("fragmented", "merging", "stable", "single_part")
+CORE_CASES = ("missing", "corrupt", "metadata_mismatch", "upload_then_db_failure", "publish_failure",
+              "delete_failure")
+
+
+def _optional_json(path):
+    return _read_json(path) if Path(path).is_file() else None
+
+
+def core_lines(feedback_dir, meta):
+    """由结果目录生成手敲精简版：固定项目与字段顺序，只保留核心数值。
+
+    入参 feedback_dir 为 pack 的输出目录，meta 为 feedback-manifest.json 的内容。
+    每项先单起一行写编号，其后每行一个数据单元；缺值写 NA，不写原因，原因见 feedback.txt。
+    """
+    directory = Path(feedback_dir)
+    order = [(engine, layout) for engine in ENGINES for layout in LAYOUTS]
+    matrix = {}
+    for engine in ENGINES:
+        for entry in (_optional_json(directory / "summary" / f"matrix-{engine}.json") or {}).get("matrix", []):
+            matrix[(entry["engine"], entry["layout"])] = entry
+    evidence = {key: _optional_json(directory / "evidence" / f"matrix-{key[0]}-{key[1]}.json") for key in order}
+
+    def value(item, digits=1):
+        return "NA" if item is None else (f"{item:.{digits}f}" if isinstance(item, float) else str(item))
+
+    def p50(key, workload, scenario):
+        try:
+            return matrix[key]["workloads"][workload]["scenarios"][scenario]["round_statistic_median"][
+                "application_ready_ms"]["p50"]
+        except KeyError:
+            return None
+
+    def main_rounds(key):
+        return [item for item in (evidence[key] or {}).get("rounds", []) if item["workload"] == "main"]
+
+    host = next((item["host"] for key in order for item in main_rounds(key) if item.get("host")), {}) or {}
+    xstore = " ".join(meta.get("engine_versions", {}).get("xstore", []))
+    build = re.search(r"build (\w+)", xstore)
+    build_type = "release" if "release" in xstore else "debug" if "debug" in xstore else None
+    clickhouse = ",".join(meta.get("engine_versions", {}).get("clickhouse", [])) or None
+    memory = host.get("memory_total_kib")
+    lines = ["H", " ".join(value(item) for item in (
+        host.get("cpu_count"), memory // 1024 // 1024 if isinstance(memory, int) else None,
+        build.group(1) if build else None, build_type, clickhouse,
+        meta.get("repository", {}).get("head", "")[:7] or None,
+        sum(not run["all_head"] for run in meta.get("code_runs", [])),
+        sum(not present for present in meta.get("presence", {}).values()),
+        len(meta.get("summary_errors", [])),
+    ))]
+    for code, scenarios in (
+        ("K1", (("main", "list:first"), ("main", "list:middle"), ("main", "trace:p95"), ("main", "batch:main"))),
+        ("K2", (("main", "detail:text_64k"), ("main", "detail:text_2m"), ("main", "detail:entropy_512k"))),
+        ("K3", (("equal_total_few_large", "batch:equal_total_few_large"),
+                ("equal_total_many_medium", "batch:equal_total_many_medium"))),
+    ):
+        lines.append(code)
+        lines += [" ".join(value(p50(key, w, q)) for w, q in scenarios) for key in order]
+    lines.append("K4")
+    for key in order:
+        rounds = main_rounds(key)
+        totals = [item["write"]["block_ingest_wall_ms_sum"] for item in rounds]
+        write = statistics.median(totals) if rounds and None not in totals else None
+        storage = rounds[-1]["storage"] if rounds else None
+        database = None
+        asset = None
+        if storage:
+            database = sum(table.get("total_bytes", table.get("compressed_bytes", 0)) or 0
+                           for table in storage["tables"].values())
+            asset = (storage.get("asset_store") or {}).get("available_bytes", 0)
+        lines.append(" ".join((value(write), value(database), value(asset))))
+    lines.append("K5")
+    part_states = {item["layout"]: item for item in
+                   (_optional_json(directory / "summary" / "part-states.json") or {}).get("part_states", [])}
+    for layout in LAYOUTS:
+        states = {state["name"]: state for state in (part_states.get(layout) or {}).get("states", [])}
+        lines.append(" ".join(value(((states.get(name) or {}).get("scenarios") or {}).get("list:first", {})
+                                    .get("application_ready_ms", {}).get("p50")) for name in CORE_STATES))
+    lines.append("K6")
+    for engine, layout in order:
+        summary = _optional_json(directory / "summary" / f"interference-{engine}.json") or {}
+        item = next((entry for entry in summary.get("layouts", []) if entry["layout"] == layout), {})
+        phases = {phase["phase"]: phase.get("streams", {}).get("list", {}) for phase in item.get("phases", [])}
+        lines.append(" ".join((
+            value(phases.get("quiet", {}).get("latency_ms", {}).get("p50")),
+            value(phases.get("batch_loop", {}).get("latency_ms", {}).get("p50")),
+            value(phases.get("batch_loop", {}).get("counts", {}).get("dropped_requests")),
+        )))
+    lines.append("K7")
+    engines = {item["engine"]: item for item in
+               (_optional_json(directory / "summary" / "asset-failures.json") or {}).get("engines", [])}
+    for engine in ENGINES:
+        cases = {case["case"]: case for case in (engines.get(engine) or {}).get("cases", [])}
+        lines.append(" ".join(value((cases.get(name) or {}).get("final_status")) for name in CORE_CASES))
+    return lines
+
+
+def core_main(argv=None):
+    """对已有结果目录重新生成并打印手敲精简版，同时写入该目录的 feedback-core.txt。"""
+    parser = argparse.ArgumentParser(description=core_lines.__doc__)
+    parser.add_argument("feedback_dir", type=Path)
+    arguments = parser.parse_args(argv)
+    lines = core_lines(arguments.feedback_dir, _read_json(arguments.feedback_dir / "feedback-manifest.json"))
+    (arguments.feedback_dir / "feedback-core.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    print("\n".join(lines))
+    return 0
+
+
 # ---------- 主流程 ----------
 
 def _summaries(paths, errors):
@@ -610,11 +720,18 @@ def pack(output_root, repo, host, date, destination, part_bytes=PART_BYTES):
                 asset_failures["engines"].append(
                     {"engine": engine, "cases": _read_json(envelope)["asset_failures"]["results"]}
                 )
+        asset_failures["source"] = "run envelopes; the summarizer requires both engines"
+        _write_json(destination / "summary" / "asset-failures.json", asset_failures)
     matrix_present = {engine: all(presence[f"matrix/{engine}/{layout}"] for layout in LAYOUTS)
                       for engine in ENGINES}
     lines = feedback_lines(matrix, extracts, part_states, interference, asset_failures, probe, identity,
                            matrix_present)
     (destination / "feedback.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    meta = {"presence": presence, "summary_errors": errors, "engine_versions": engine_versions,
+            "code_runs": runs, "repository": {"head": index.head}}
+    (destination / "feedback-core.txt").write_text("\n".join(core_lines(destination, meta)) + "\n",
+                                                   encoding="utf-8")
 
     listing = [{"path": str(path.relative_to(destination)), "bytes": path.stat().st_size,
                 "sha256": _sha256_file(path)}
@@ -664,4 +781,7 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
+    # 第一个参数为 core 时只重新生成手敲精简版，其余情况执行完整打包。
+    if sys.argv[1:2] == ["core"]:
+        raise SystemExit(core_main(sys.argv[2:]))
     raise SystemExit(main())

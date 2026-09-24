@@ -274,6 +274,26 @@ XStore 的引擎接口、计划格式和执行成本由本机实测确认。当�
 | C5 | 两行 | 第 5.1 节两条语句各一行：访问节点类型 实际扫描行数 |
 | C6 | 三行 | 第一行 本地保留提交号 对齐后的 HEAD 短号；第二行 第 1.2 节六个运行文件的 SHA-256，按命令中的文件顺序；第三行 第 1.3 节五项重建事实，按该表的行序 |
 
+### 7.3 手敲精简版
+
+结果目录无法离开本机、只能人工转述时，转述 `feedback-core.txt`。它由打包脚本从同一结果目录生成，
+也可用 `yellow_round.py core --host <主机 IP 末段>` 重新生成并打印。精简版只保留判读布局差异所需的核心数值，
+项目与字段顺序固定，按行照抄，不增删、不换算；缺值写 `NA`，原因见 `feedback.txt`。
+
+| 编号 | 分行方式 | 行内字段顺序 |
+|---|---|---|
+| H | 一行 | CPU 核数 内存 GiB XStore 构建标识 构建类型 ClickHouse 版本 工具包 HEAD 短号 非 HEAD 代码的运行数 缺失运行数 汇总失败数 |
+| K1 | 按引擎与布局 | `list:first` `list:middle` `trace:p95` `batch:main` 的应用可用 p50 |
+| K2 | 按引擎与布局 | `detail:text_64k` `detail:text_2m` `detail:entropy_512k` 的应用可用 p50 |
+| K3 | 按引擎与布局 | `batch:equal_total_few_large` `batch:equal_total_many_medium` 的应用可用 p50 |
+| K4 | 按引擎与布局 | 写入合计 末轮库内空间合计字节 末轮对象存储字节 |
+| K5 | 按布局 | 碎片态、合并中、自然稳定态、单 part 态的 `list:first` p50 |
+| K6 | 按引擎与布局 | quiet 阶段 list p50 batch_loop 阶段 list p50 batch_loop 阶段 list 丢弃数 |
+| K7 | 两行，XStore 在前 | missing、corrupt、metadata_mismatch、upload_then_db_failure、publish_failure、delete_failure 六个用例的终态 |
+
+「按引擎与布局」与第 7.1 节的顺序相同。库内空间合计对 XStore 取各写目标的 `total_bytes` 之和，
+对 ClickHouse 取各写目标 active part 的压缩字节之和。
+
 ## 8. 停止条件
 
 出现以下情况时停止并回传已产生的部分，不继续后续阶段：

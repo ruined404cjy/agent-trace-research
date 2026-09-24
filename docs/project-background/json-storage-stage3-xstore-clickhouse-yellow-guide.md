@@ -1181,6 +1181,7 @@ S=experiments/json-storage-stage3/tools/yellow_round.py
 "$PYTHON" $S xstore                    # 先停止 ClickHouse；XStore 主矩阵、混合负载、Asset 故障、行存探针
 "$PYTHON" $S clickhouse                # 先停止 XStore；ClickHouse 主矩阵、part 状态、混合负载、Asset 故障
 "$PYTHON" $S pack --host "$HOST_OCTET"  # HOST_OCTET 为本机 IP 末段；生成 docs/yellow-handback/<IP 末段>-<日期>/
+"$PYTHON" $S core --host "$HOST_OCTET"  # 打印手敲精简版，格式见反馈契约第 7.3 节
 ```
 
 | 运行 | 输出（相对 `$YELLOW_OUTPUT`） |
@@ -1484,6 +1485,7 @@ printf 'cleanup complete: %s\n' "$YELLOW_STATE"
 |---|---|
 | `feedback-manifest.json` | 各运行是否存在、汇总器拒绝原因、身份异常、引擎版本、每个运行的代码身份、文件清单与摘要 |
 | `feedback.txt` | 按反馈契约第 7 节从数据生成的数据段，缺值写 `NA` 与原因 |
+| `feedback-core.txt` | 手敲精简版，只含核心数值，格式见反馈契约第 7.3 节 |
 | `summary/` | 汇总器按族、按引擎分别输出的结果 |
 | `results/` | 八个主矩阵 target 的 `result.json` |
 | `evidence/` | 各主矩阵 target 逐轮的写入、空间、计划签名、扫描量与索引计数 |
@@ -1496,6 +1498,7 @@ printf 'cleanup complete: %s\n' "$YELLOW_STATE"
 
 提交后的回复给出分支名、提交短号、相对工具包 HEAD 的 `git diff --stat`、`pack` 打印的摘要
 （输出目录、总字节、缺失运行、汇总失败与异常）以及 `feedback.txt` 全文，不誊写其他数值。
+回复只能人工转述时，转述 `feedback-core.txt` 与 `pack` 的摘要，按原行照抄。
 
 #### 回传摘录的落盘要求
 

@@ -159,6 +159,25 @@ class PackHandbackTest(unittest.TestCase):
         self.assertTrue((self.destination / "facts" / "host-checks.txt").is_file())
         self.assertTrue((self.destination / "results" / "clickhouse-same_table.json").is_file())
 
+    def test_hand_typed_core_keeps_fixed_items_and_can_be_regenerated(self):
+        self.run_pack()
+        core = (self.destination / "feedback-core.txt").read_text(encoding="utf-8")
+        lines = core.splitlines()
+        codes = [line for line in lines if line in {"H", "K1", "K2", "K3", "K4", "K5", "K6", "K7"}]
+        self.assertEqual(codes, ["H", "K1", "K2", "K3", "K4", "K5", "K6", "K7"])
+        k1 = lines[lines.index("K1") + 1:lines.index("K2")]
+        self.assertEqual(len(k1), 8)
+        self.assertEqual(k1[4], "21.3 NA NA NA")
+        k4 = lines[lines.index("K4") + 1:lines.index("K5")]
+        # 写入合计取三轮中位数 10.0；库内空间取末轮各表字节之和；ClickHouse same_table 无对象存储。
+        self.assertEqual(k4[4], "10.0 10 0")
+        k7 = lines[lines.index("K7") + 1:]
+        self.assertEqual(k7, ["NA NA NA NA NA NA", "available NA NA NA NA NA"])
+        (self.destination / "feedback-core.txt").unlink()
+        with patch("sys.stdout"):
+            self.assertEqual(pack.core_main([str(self.destination)]), 0)
+        self.assertEqual((self.destination / "feedback-core.txt").read_text(encoding="utf-8"), core)
+
     def test_matrix_evidence_keeps_access_and_last_round_storage(self):
         self.run_pack()
         evidence = json.loads((self.destination / "evidence" / "matrix-clickhouse-same_table.json").read_text())
