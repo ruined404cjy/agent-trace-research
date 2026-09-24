@@ -60,7 +60,8 @@ class FeedbackContractTest(unittest.TestCase):
 
     def test_engine_order_and_isolation_are_fixed(self):
         """两台使用同一执行顺序，且运行一侧时停止另一侧，消除内存与缓存干扰。"""
-        self.assertIn("XStore 主矩阵 → ClickHouse 主矩阵", self.text)
+        self.assertIn("XStore 阶段为主矩阵 → 四布局混合负载 → Asset 故障 → 行存探针", self.text)
+        self.assertIn("ClickHouse 阶段为\n主矩阵 → 四布局 part 状态 → 四布局混合负载 → Asset 故障", self.text)
         self.assertIn("停止另一个引擎的服务", self.text)
         self.assertIn("每次切换引擎之前重做一遍", self.text)
 

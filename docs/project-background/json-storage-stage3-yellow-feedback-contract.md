@@ -49,17 +49,22 @@ sha256sum experiments/json-storage-stage3/runner/{xstore.py,gaussdb_libpq.py,ope
 |---|---|
 | 源码提交 | 构建所用的 XStore 源码提交号 |
 | 构建选项 | 完整的构建命令或选项，含证明 release 的那一项 |
-| 产物路径 | 服务端可执行文件路径，供 `XSTORE_PRODUCT_PATH` 使用 |
+| 产物路径 | 服务端可执行文件路径，导出为 `XSTORE_NATIVE_PRODUCT_PATH` |
 | 二进制摘要 | 该文件的 SHA-256 |
 | 服务版本 | 拉起后 `SELECT version()` 的返回值 |
+
+源码提交与构建命令分别导出为 `XSTORE_SOURCE_COMMIT` 与 `XSTORE_BUILD_COMMAND`，第 7.5 节脚本的
+`preflight` 把五项事实写入 `facts/xstore-build.txt`，版本查询结果由各运行清单记录。
 
 重建后的实例与本轮之前的实例不视为同一个被测对象，两者的数值不放在同一张表里比较。
 
 ### 1.4 引擎执行顺序
 
-两台使用同一顺序：XStore 主矩阵 → ClickHouse 主矩阵 → ClickHouse part 状态 →
-两个引擎的混合负载 → 两个引擎的 Asset 故障。两个引擎串行，运行一个引擎的目标时停止另一个引擎的服务，使内存与
-页缓存不被另一侧占用。每次切换引擎之前重做一遍第 3 节的六项检查，不沿用上一次的结果。
+两台按[黄区执行指南](json-storage-stage3-xstore-clickhouse-yellow-guide.md)第 7.5 节的脚本分两个引擎阶段执行，
+顺序相同：XStore 阶段为主矩阵 → 四布局混合负载 → Asset 故障 → 行存探针；ClickHouse 阶段为
+主矩阵 → 四布局 part 状态 → 四布局混合负载 → Asset 故障。两个引擎串行，运行一个引擎的目标时停止另一个引擎的服务，
+使内存与页缓存不被另一侧占用。每次切换引擎之前重做一遍第 3 节的六项检查，不沿用上一次的结果；
+脚本在每个引擎阶段开始时自动执行这六项检查，并在另一引擎仍在运行时停止。
 
 ## 2. 运行环境变量
 
@@ -73,6 +78,10 @@ export GAUSSDB_SERVER_LIB_DIR=<GaussDB 服务端库目录>   # 可选，缺失�
 
 未导出 `XSTORE_USER` 时 adapter 拒绝构造；未导出 `GAUSSDB_LIB_DIR` 时首次连接报出缺失原因。
 两项都不影响 ClickHouse 侧。
+
+两个引擎都以原生包运行，身份变量按指南第 6.4 节导出 `CH_NATIVE_*` 与 `XSTORE_NATIVE_*` 两组，
+重建事实按第 1.3 节导出。`CH_HTTP_PORT` 取 18123，`run_stage3.py` 的控制项使用该固定端点。
+脚本的 `preflight` 逐项核对以上变量，缺项时停止。
 
 ## 3. 运行前检查
 
@@ -143,7 +152,10 @@ FROM system.parts_columns
 WHERE active AND database = {database:String} AND column = 'payload';
 ```
 
-两条查询在清理之前、`main` workload 的库上执行。
+主矩阵在每轮结束时清理 namespace，XStore 侧由[行存探针](../../experiments/json-storage-stage3/tools/probe_row_storage.py)
+执行：按主矩阵相同的 block 载入 `main` workload，在清理前运行上面的查询，并记录 schema 内全部关系的
+`reltoastrelid` 与 `reloptions`，结果写入 `$YELLOW_OUTPUT/xstore-row-probe.json`。ClickHouse 侧的载荷列字节
+已随主矩阵每轮的存储证据按列记录，打包脚本从末轮证据中读取。
 
 ## 5. 本轮重跑范围
 
@@ -162,7 +174,7 @@ WHERE active AND database = {database:String} AND column = 'payload';
 
 XStore 不支持行构造器比较，adapter 把 `(start_time,event_id) > (%s,%s)` 展开为
 `(start_time > %s OR (start_time = %s AND event_id > %s))`。展开式能否作为索引范围起点由
-优化器决定，本项在正式矩阵之前探一次，结果决定是否需要调整，不要自行改写查询。
+优化器决定，本项由行存探针对两种写法各执行一次 EXPLAIN，结果决定是否需要调整，不要自行改写查询。
 
 对 `same_table` 布局的中间页游标，分别对下列两条语句执行 `EXPLAIN (ANALYZE, BUFFERS)`，
 回传两份计划的访问节点类型与实际扫描行数：
@@ -193,7 +205,7 @@ XStore 的引擎接口、计划格式和执行成本由本机实测确认。当�
 
 | 步骤 | 建议上限 | 到达上限后的动作 |
 |---|---:|---|
-| 161 的单轮修复与定向测试 | 90 分钟，或同一阻塞连续两轮修改仍未解决 | 停止继续试错，推送具名 WIP 分支；附失败测试名称、原始日志、运行命令与工具包提交号 |
+| 161 的单轮修复与定向测试 | 90 分钟，或同一阻塞连续两轮修改仍未解决 | 停止继续试错，提交到本地具名 WIP 分支；附失败测试名称、原始日志、运行命令与工具包提交号 |
 | 单布局完整五阶段试跑 | 90 分钟墙钟时间 | 完成当前受控清理后暂停其余布局；保留 manifest、样本、阶段时间与访问证据采集耗时 |
 | 单布局访问证据采集 | 161 用本机诊断计时，最多 15 分钟或 200 个成功查询，以先到者为准；按已完成数量估算全布局，预测超过 60 分钟 | 暂停四布局正式运行，回传实测批次耗时、查询类型与数量，评估证据契约的执行成本 |
 
@@ -213,15 +225,17 @@ XStore 的引擎接口、计划格式和执行成本由本机实测确认。当�
 - `$YELLOW_OUTPUT/clickhouse-main/`、`$YELLOW_OUTPUT/xstore-main/`：主矩阵每个 target 的 `run-manifest.json` 与 `result.json`
 - `$YELLOW_OUTPUT/access-gate/`：三类查询的计划原文与索引使用计数
 - `$YELLOW_OUTPUT/handback/`：回传摘录与证据归档
-- `$YELLOW_OUTPUT/ch-part-states-*/`、`$YELLOW_OUTPUT/ch-interference-*/`、`$YELLOW_OUTPUT/*-asset-failures/`
+- `$YELLOW_OUTPUT/ch-part-states-*/`、`$YELLOW_OUTPUT/*-interference-*/`、`$YELLOW_OUTPUT/*-asset-failures/`，包括其中的 `child/` 与 `samples.jsonl`
+- `$YELLOW_OUTPUT/xstore-row-probe.json`、`$YELLOW_OUTPUT/facts/`、`$YELLOW_OUTPUT/logs/`
 - `$YELLOW_STATE` 下的冻结输入与 Release 资产
 
-数据库的 schema 与 database 在第 4.4 节的查询完成之前不要删除。
+行存探针自行建立并清理独立 namespace，不依赖主矩阵的库。
 
 ## 7. 回传格式
 
-本节定义[黄区执行指南](json-storage-stage3-xstore-clickhouse-yellow-guide.md)第 9.2 节通道二的极简回传数据段，
-用于本机无法向仓库推送的场合。可推送时按通道一提交结果文件，本节的数据段改为可选的标题数值速览。
+本节定义回传数据段的格式。[打包脚本](../../experiments/json-storage-stage3/report/pack_handback.py)按本节从数据生成
+`feedback.txt`，执行方不手工誊写；它随结果目录提交到本地分支，全文同时写入回复，见指南第 9.2 节。
+脚本生成的 A7 取 `main` workload `batch:main` 的四轮轮级中位数；C1、C2、C3 与 C6 的原文在结果目录的 `facts/` 中。
 
 回传不限制总行数，也不要为了凑行数拆分或合并任何一项。约束只有两条：**一个数据单元占一行**，
 **行内字段按本节给定的顺序排列**。顺序固定之后不需要写表头、引擎名和布局名，回传方按顺序

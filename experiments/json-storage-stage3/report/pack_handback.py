@@ -1,4 +1,4 @@
-"""把一台黄区主机一轮运行的产物打包为可推送的 feedback 目录。
+"""把一台黄区主机一轮运行的产物打包为可提交的 feedback 目录。
 
 输入是固定命名的输出根（见黄区指南第 7 节）。打包结果包含五部分：
 汇总器按族、按引擎分别产出的 summary、各主矩阵 target 的 result.json、从轮次清单抽取的紧凑证据、
@@ -7,12 +7,12 @@
 不阻断打包；只有目标目录已存在或输出根不可读时失败。
 
 出错时怎么办：
-1. 目标目录已存在：确认旧包已推送或不再需要后删除该目录，重跑即可，本脚本不修改输出根。
+1. 目标目录已存在：确认旧包已提交或不再需要后删除该目录，重跑即可，本脚本不修改输出根。
 2. 打印的 summary error 是汇总器拒绝某一族的原因，照原文回传，不要为通过汇总而改动运行产物。
 3. 抽取或数据段生成因字段缺失抛出异常时，可在本地修正对应的 extract_round 或
    feedback_lines 分支，保持输出字段名不变，并提交到本地分支；修改后的本脚本会作为
    local 代码随包回传。
-4. 所有输出文件都低于 PART_BYTES；推送被拒绝时先核对 feedback-manifest.json 的 files 列表。
+4. 所有输出文件都低于 PART_BYTES；提交或传输受文件大小限制时先核对 feedback-manifest.json 的 files 列表。
 """
 
 import argparse
@@ -40,7 +40,7 @@ ENGINES = ("xstore", "clickhouse")
 ENGINE_PREFIX = {"xstore": "xstore", "clickhouse": "ch"}
 LAYOUTS = ("same_table", "separate", "full_core", "asset_ref")
 STAGE_PREFIX = "experiments/json-storage-stage3/"
-# 归档分片上限低于 GitHub 单文件 50 MiB 的警告线；任何输出文件都不超过该值。
+# 归档分片上限低于 Git 托管服务常见的单文件 50 MiB 警告线；任何输出文件都不超过该值。
 PART_BYTES = 40 * 1024 * 1024
 FACT_FILE_LIMIT = 1024 * 1024
 RAW_SAMPLE_SUFFIX = ".jsonl"

@@ -1042,6 +1042,18 @@ XStore adapter 实现 [common.py](../../experiments/json-storage-stage3/runner/c
 
 改动范围与验收：runner 的 container 证据路径按 engine 分流，容器引擎保持原行为，原生包引擎写入上表字段；缺少 engine_version、package_checksums 或 binary_sha256 时同样拒绝发布 complete manifest。该改动需要单元测试覆盖两类引擎的分流与缺字段拒绝，并在正式矩阵前完成一次单 target candidate 验证。
 
+原生包身份由环境变量提供，runner 按当前运行的引擎读取对应前缀，两组变量同时导出时互不串用：
+
+| 变量 | ClickHouse | XStore |
+|---|---|---|
+| 启用原生包身份 | `CH_NATIVE_ENGINE=1` | `XSTORE_NATIVE_ENGINE=1` |
+| 服务端版本 | `CH_NATIVE_ENGINE_VERSION` | `XSTORE_NATIVE_ENGINE_VERSION` |
+| 服务端可执行文件 | `CH_NATIVE_PRODUCT_PATH`，即 `$CH_BIN` | `XSTORE_NATIVE_PRODUCT_PATH`，即重建产物中的 gaussdb |
+| 包校验结果 | `CH_NATIVE_PACKAGE_CHECKSUMS` | `XSTORE_NATIVE_PACKAGE_CHECKSUMS` |
+| 可选项 | `CH_NATIVE_PACKAGE_FILES`、`CH_NATIVE_CONFIG_IDENTITY`、`CH_NATIVE_SERVICE_IDENTITY`、`CH_NATIVE_HOST` | 同名 `XSTORE_NATIVE_*` |
+
+`binary_sha256` 由 runner 对 `PRODUCT_PATH` 实测，manifest 的 `engine` 字段记当前引擎名。
+
 ### 6.5 布局边界
 
 asset_ref 保留为应用侧参考布局：查询引用与 assets 记录，再由应用侧 resolver 读取本地内容寻址目录，两引擎使用同一实现。XStore extension 或进程内对象读取属于数据库内调度，定义为第五个候选布局 db_lob_ref，使用独立的查询、存储与失败语义，单独汇总，不重命名 asset_ref，也不并入四布局矩阵的排序。
@@ -1155,6 +1167,36 @@ python experiments/json-storage-stage3/runner/run_layout_matrix.py \
 ### 7.4 缓存状态标注
 
 运行清单的 cache_state 字段记录缓存状态。默认标签 warm-reused-connections-no-os-cache-drop 表示连接复用且未丢弃操作系统缓存。需要区分冷热缓存时，先确认 XStore 与 ClickHouse 都支持对应的缓存控制动作：控制动作可执行且生效时，分别执行 cold 与 warm 两组并分别报告；任一引擎不支持该动作时，记录不适用与原因，不生成对比结论。
+
+### 7.5 一键执行与固定输出名
+
+[yellow_round.py](../../experiments/json-storage-stage3/tools/yellow_round.py) 按固定顺序执行第 8 至第 11 阶段，
+并为每个运行使用固定输出名，[pack_handback.py](../../experiments/json-storage-stage3/report/pack_handback.py)
+只按这些名字取数。两台主机都用这组命令执行本轮实验，不另行拼装命令。
+
+```bash
+cd "$YELLOW_REPO"
+S=experiments/json-storage-stage3/tools/yellow_round.py
+"$PYTHON" $S preflight                 # 环境变量、原生包身份、硬件与构建事实、单元测试输出
+"$PYTHON" $S xstore                    # 先停止 ClickHouse；XStore 主矩阵、混合负载、Asset 故障、行存探针
+"$PYTHON" $S clickhouse                # 先停止 XStore；ClickHouse 主矩阵、part 状态、混合负载、Asset 故障
+"$PYTHON" $S pack --host "$HOST_OCTET"  # HOST_OCTET 为本机 IP 末段；生成 docs/yellow-handback/<IP 末段>-<日期>/
+```
+
+| 运行 | 输出（相对 `$YELLOW_OUTPUT`） |
+|---|---|
+| 主矩阵 | `xstore-main/`、`clickhouse-main/` |
+| part 状态 | `ch-part-states-<布局>/` |
+| 混合负载 | `xstore-interference-<布局>/`、`ch-interference-<布局>/` |
+| Asset 故障 | `xstore-asset-failures/`、`ch-asset-failures/` |
+| 行存探针 | `xstore-row-probe.json` |
+| 主机检查与环境事实 | `facts/` |
+| 各步骤日志 | `logs/<步骤名>.log` |
+
+同一条命令可以重复执行：已完成的步骤跳过，未完成的输出改名为 `<名字>.attempt-<时间>` 保留后重跑。
+每个引擎阶段开始前脚本按反馈契约第 3 节检查主机，另一引擎仍在运行或检查不通过时停止。
+步骤失败时脚本打印该步意图与日志路径；允许的修复范围写在脚本开头的说明中，
+反复失败的步骤用 `--skip <步骤名>` 跳过，打包结果把它标为缺失。
 
 ## 8. 证据与验收
 
@@ -1432,31 +1474,30 @@ printf 'cleanup complete: %s\n' "$YELLOW_STATE"
 
 ### 9.2 回传材料
 
-回传按本机能否向 $YELLOW_REPO_SSH 推送分两条通道。执行前先做一次实际推送试探并把判定
-结果写入运行记录，不按历史印象选择通道。
+执行第 7.5 节的 `pack` 后，在本地分支 `stage3/xstore-yellow-<主机 IP 末段>-<日期>` 上提交两部分内容：
+本机为跑通而修改的代码，以及 `pack` 生成的 `docs/yellow-handback/<主机 IP 末段>-<日期>/`。
+实验报告按第 8.4 节写入 `docs/json-storage/`，提交到同一分支。本文只要求在本机提交，分支的传输由操作者处理。
 
-#### 通道一：可推送
+结果目录由脚本生成，内容固定：
 
-推送到分支 `stage3/xstore-yellow-<主机 IP 末段>-<日期>`，给出三项：
+| 路径 | 内容 |
+|---|---|
+| `feedback-manifest.json` | 各运行是否存在、汇总器拒绝原因、身份异常、引擎版本、每个运行的代码身份、文件清单与摘要 |
+| `feedback.txt` | 按反馈契约第 7 节从数据生成的数据段，缺值写 `NA` 与原因 |
+| `summary/` | 汇总器按族、按引擎分别输出的结果 |
+| `results/` | 八个主矩阵 target 的 `result.json` |
+| `evidence/` | 各主矩阵 target 逐轮的写入、空间、计划签名、扫描量与索引计数 |
+| `facts/` | 主机检查、硬件、XStore 重建事实、ClickHouse 参数、单元测试输出与行存探针结果 |
+| `code/` | 工作区相对 HEAD 的差异；运行时代码与仓库历史中所有提交都不同的源文件原文 |
+| `raw/` | 全部 run manifest（含 child）与 `result.json` 的 tar.gz 分片，单片 40 MiB，按 `cat` 重组 |
 
-| 项 | 内容 | 位置 |
-|---|---|---|
-| 变更 | 本机相对工具包 HEAD 的全部代码改动，含单元测试与测试输出文件 | 仓库原路径 |
-| 结果 | 本节的回传摘录、各 target 的 `result.json`、汇总器输出的 `summary.json` | `docs/yellow-handback/<主机 IP 末段>-<日期>/` |
-| 报告 | 按第 8.4 节写成的实验报告 | `docs/json-storage/` |
+原始 `samples.jsonl` 留在本机输出根，清单记录其路径与大小；目录内每个文件都低于 40 MiB。
+脚本按运行记录中的摘要找回实际运行的源文件放入 `code/`，本地修改照常提交即可。
 
-结果三类文件的合计规模在 3 MiB 以内。`run-manifest.json` 单文件约 5 MiB，留在黄区本地，
-按第 9.1 节归档到 `$YELLOW_OUTPUT/handback/targets/<target>/`，蓝区按需单独索取。
+提交后的回复给出分支名、提交短号、相对工具包 HEAD 的 `git diff --stat`、`pack` 打印的摘要
+（输出目录、总字节、缺失运行、汇总失败与异常）以及 `feedback.txt` 全文，不誊写其他数值。
 
-推送后的回复只给出分支名、提交短号与结果目录路径，不誊写数值。
-
-#### 通道二：不可推送
-
-在本地保留提交，回复中给出提交哈希与 `diff --stat`，并按[阶段三黄区结果反馈契约](json-storage-stage3-yellow-feedback-contract.md)第 7 节
-给出极简回传数据段。该数据段只覆盖标题数值，不能替代通道一的结果文件；采用本通道时，
-场景分析与主机指纹按契约第 7 节的 C 组逐项给出。
-
-#### 两条通道共同的落盘要求
+#### 回传摘录的落盘要求
 
 结果摘录落盘为 $YELLOW_OUTPUT/handback/summary.json，在 9.1 节删除动作之前生成。targets 数组每项对应一个 target 目录，字段如下，缺任一字段视为摘录不完整。
 
@@ -1479,7 +1520,7 @@ storage 与 access 两项在清理后无法重建，逐 target 落盘，不用�
 
 原始 payload、完整 samples.jsonl 与归档文件留在黄区本地只读目录，回复中只给出路径、摘要与失败项。
 
-每一轮的重跑范围、统计口径、保留路径与回传格式见[阶段三黄区结果反馈契约](json-storage-stage3-yellow-feedback-contract.md)。该文与本节的摘录并列交付，摘录是机器可校验的证据，契约第 7 节规定通道二的人工回传口径。
+每一轮的重跑范围、统计口径、保留路径与回传格式见[阶段三黄区结果反馈契约](json-storage-stage3-yellow-feedback-contract.md)。该文与本节的摘录并列交付，摘录是机器可校验的证据，契约第 7 节规定数据段的格式。
 
 ## 10. 转发用黄区 agent prompt
 
@@ -1505,11 +1546,10 @@ Latin square 与 30/5 测量次数不自适应；需要超出适配卡允许范�
 
 按该指南的 fail-closed 规则执行：分支或归档资产不可用时、能力报告字段缺少证据时、
 真值或水位或清理证据缺失时停止并报告，不猜测 XStore 能力。
-回传按第 9.2 节的两条通道，通道由一次实际推送试探决定，不按历史印象选择。
-可推送时推到具名分支，一并给出代码改动、docs/yellow-handback/<主机 IP 末段>-<日期>/ 下的
-回传摘录与各 target result.json 及汇总器 summary.json、第 8.4 节的实验报告、
-文件清单与 SHA-256，回复只给分支名、提交短号与结果目录路径。
-不可推送时给出提交哈希与 diff --stat，并按反馈契约第 7 节给出极简回传数据段。
+正式运行与回传用第 7.5 节的 yellow_round.py：preflight → xstore → clickhouse → pack，
+失败时按脚本开头的说明修复后重跑同一命令。回传按第 9.2 节：把本地代码修改与
+pack 生成的 docs/yellow-handback/<主机 IP 末段>-<日期>/ 提交到本地具名分支，回复给出分支名、
+提交短号、diff --stat、pack 打印的摘要与 feedback.txt 全文。
 摘录通过校验之前不执行第 9.1 节的删除动作。
 报告结构照仓库内的阶段三实验报告，不另起格式。
 ```
