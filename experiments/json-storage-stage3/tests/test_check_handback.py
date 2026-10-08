@@ -80,12 +80,17 @@ class CheckHandbackTest(unittest.TestCase):
                 scenario: {"latency_ms": {"median": 28.3}, "query_complete_ms": {"median": 27.9}}
                 for scenario in check.SMALL_SCENARIOS}}})
         write_json(target / "same_table" / "rounds" / "main" / "round-1" / "run-manifest.json", {
-            "access_validation": {"q1": {"scenario": "list:first"}, "q2": {"scenario": "batch:main"}},
+            "access_validation": {"q1": {"scenario": "list:first"}, "q2": {"scenario": "batch:main"},
+                                  "q3": {"scenario": "list:middle"}},
             "access": {"plans": {"q1": "Limit (cost=0..1) (actual time=0.05..0.84 rows=256 loops=1)\n"
-                                       "Total runtime: 1.02 ms", "q2": "Seq Scan"}}})
+                                       "Total runtime: 1.02 ms", "q2": "Seq Scan",
+                                 "q3": "Limit (actual time=0.08..0.71 rows=256 loops=1)\n"
+                                       "        Rows Removed by Filter: 6\nTotal runtime: 0.87 ms"}}})
         lines = check.xstore_plan_lines(self.root)
         self.assertIn("F3 client same_table list:first latency_median 28.3 query_complete_median 27.9", lines)
-        self.assertIn("F3 server same_table round-1 list:first total_runtime_ms 1.02 top_node_ms 0.84", lines)
+        self.assertIn("F3 server same_table round-1 list:first total_runtime_ms 1.02 top_node_ms 0.84 removed 0", lines)
+        # 中间页的 removed 证明游标下界使扫描从游标处开始。
+        self.assertIn("F3 server same_table round-1 list:middle total_runtime_ms 0.87 top_node_ms 0.71 removed 6", lines)
         self.assertFalse(any("batch:main" in line for line in lines))
 
     def test_roundtrip_times_each_case_on_one_connection_and_closes_it(self):
@@ -121,12 +126,29 @@ class CheckHandbackTest(unittest.TestCase):
         def refuse():
             raise ConnectionError("socket missing")
 
-        lines = check.check(self.feedback, self.root, connect=refuse)
+        def bench(argv):
+            raise OSError("libpq.so.5 lacks PQsetvalue")
+
+        lines = check.check(self.feedback, self.root, connect=refuse, bench=bench)
+        self.assertIn("F6 NA OSError: libpq.so.5 lacks PQsetvalue", lines)
         self.assertTrue(lines[0].startswith("F1 NA FileNotFoundError"))
         self.assertIn("F4 NA ConnectionError: socket missing", lines)
         self.assertEqual([line for line in lines if line.startswith("F5")], ["F5 1.0 2.0 0 0 heap", "F5 NA 缺失"])
         self.assertEqual((self.feedback / "followup" / "checks.txt").read_text(encoding="utf-8"),
                          "\n".join(lines) + "\n")
+
+
+class BenchLinesTest(unittest.TestCase):
+    """驱动基准的输出逐行带 F6 编号进入核对结果。"""
+
+    def test_benchmark_output_is_prefixed(self):
+        def run(argv):
+            print("python 3.11 libpq /lib")
+            print("list_first rows 256 cols 11 fetchall_p50_ms 3.300")
+            return 0
+
+        self.assertEqual(check.bench_lines(run), ["F6 python 3.11 libpq /lib",
+                                                  "F6 list_first rows 256 cols 11 fetchall_p50_ms 3.300"])
 
 
 if __name__ == "__main__":
