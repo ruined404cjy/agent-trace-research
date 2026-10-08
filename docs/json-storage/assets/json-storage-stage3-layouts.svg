@@ -1,0 +1,119 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="720" viewBox="0 0 1500 720" role="img" aria-labelledby="title desc">
+  <title id="title">阶段三四种长载荷布局的表组成与读取路径</title>
+  <desc id="desc">四列分别展示 same_table、separate、full_core 与 asset_ref 的表、每张表的列组成、载荷所在位置，以及列表与详情查询读取哪张表。</desc>
+  <defs>
+    <style>
+      .lane-bg { fill:#fbfcfe; stroke:#d7dee8; stroke-width:1.4; }
+      .table { fill:#ffffff; stroke:#52657a; stroke-width:2; }
+      .outside { fill:#ffffff; stroke:#75508e; stroke-width:2; stroke-dasharray:8 5; }
+      .cols { fill:#eef8f1; stroke:#397554; stroke-width:1.4; }
+      .payload { fill:#f7effc; stroke:#75508e; stroke-width:1.4; }
+      .pill-list { fill:#eef8f1; stroke:#397554; stroke-width:1.4; }
+      .pill-detail { fill:#fff3e6; stroke:#b86a1f; stroke-width:1.4; }
+      .title { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:25px; font-weight:700; fill:#1f2933; text-anchor:middle; }
+      .lane-title { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:20px; font-weight:700; fill:#334155; text-anchor:middle; }
+      .label { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:16px; font-weight:700; fill:#1f2933; text-anchor:middle; }
+      .text { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:14px; fill:#44515f; text-anchor:middle; }
+      .pill { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:13px; font-weight:700; fill:#1f2933; text-anchor:middle; }
+      .note { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:14px; fill:#44515f; }
+    </style>
+  </defs>
+
+  <rect width="1500" height="720" fill="#ffffff"/>
+  <text x="750" y="42" class="title">四种长载荷布局：表组成与读取路径</text>
+
+  <!-- same_table -->
+  <rect x="30" y="70" width="345" height="570" rx="12" class="lane-bg"/>
+  <text x="202" y="105" class="lane-title">same_table</text>
+  <rect x="55" y="130" width="295" height="190" rx="9" class="table"/>
+  <text x="202" y="156" class="label">events</text>
+  <rect x="70" y="170" width="265" height="60" rx="6" class="cols"/>
+  <text x="202" y="205" class="text">普通列 + 内容元数据</text>
+  <rect x="70" y="240" width="265" height="65" rx="6" class="payload"/>
+  <text x="202" y="278" class="text">payload</text>
+  <rect x="55" y="332" width="64" height="26" rx="13" class="pill-list"/>
+  <text x="87" y="350" class="pill">列表</text>
+  <rect x="127" y="332" width="64" height="26" rx="13" class="pill-detail"/>
+  <text x="159" y="350" class="pill">详情</text>
+  <text x="50" y="590" class="note">每个 block 写 1 张表</text>
+  <text x="50" y="614" class="note">载荷位置由引擎决定</text>
+
+  <!-- separate -->
+  <rect x="395" y="70" width="345" height="570" rx="12" class="lane-bg"/>
+  <text x="567" y="105" class="lane-title">separate</text>
+  <rect x="420" y="130" width="295" height="110" rx="9" class="table"/>
+  <text x="567" y="156" class="label">events_analytics</text>
+  <rect x="435" y="170" width="265" height="55" rx="6" class="cols"/>
+  <text x="567" y="203" class="text">普通列 + 内容元数据</text>
+  <rect x="420" y="252" width="64" height="26" rx="13" class="pill-list"/>
+  <text x="452" y="270" class="pill">列表</text>
+  <rect x="492" y="252" width="96" height="26" rx="13" class="pill-detail"/>
+  <text x="540" y="270" class="pill">详情·左表</text>
+  <rect x="420" y="300" width="295" height="190" rx="9" class="table"/>
+  <text x="567" y="326" class="label">event_payloads</text>
+  <rect x="435" y="340" width="265" height="55" rx="6" class="cols"/>
+  <text x="567" y="373" class="text">定位键 + 内容元数据</text>
+  <rect x="435" y="405" width="265" height="70" rx="6" class="payload"/>
+  <text x="567" y="445" class="text">payload</text>
+  <rect x="420" y="502" width="152" height="26" rx="13" class="pill-detail"/>
+  <text x="496" y="520" class="pill">详情·按 event_id 连接</text>
+  <text x="415" y="590" class="note">每个 block 写 2 张表</text>
+  <text x="415" y="614" class="note">两张表各有完整的 48,534 行</text>
+
+  <!-- full_core -->
+  <rect x="760" y="70" width="345" height="570" rx="12" class="lane-bg"/>
+  <text x="932" y="105" class="lane-title">full_core</text>
+  <rect x="785" y="130" width="295" height="110" rx="9" class="table"/>
+  <text x="932" y="156" class="label">events_core</text>
+  <rect x="800" y="170" width="265" height="55" rx="6" class="cols"/>
+  <text x="932" y="203" class="text">普通列 + 内容元数据</text>
+  <rect x="785" y="252" width="64" height="26" rx="13" class="pill-list"/>
+  <text x="817" y="270" class="pill">列表</text>
+  <rect x="785" y="300" width="295" height="190" rx="9" class="table"/>
+  <text x="932" y="326" class="label">events_full</text>
+  <rect x="800" y="340" width="265" height="55" rx="6" class="cols"/>
+  <text x="932" y="373" class="text">普通列 + 内容元数据</text>
+  <rect x="800" y="405" width="265" height="70" rx="6" class="payload"/>
+  <text x="932" y="445" class="text">payload</text>
+  <rect x="785" y="502" width="64" height="26" rx="13" class="pill-detail"/>
+  <text x="817" y="520" class="pill">详情</text>
+  <text x="780" y="590" class="note">每个 block 显式双写 2 张表</text>
+  <text x="780" y="614" class="note">events_core 是不含载荷的列表副本</text>
+
+  <!-- asset_ref -->
+  <rect x="1125" y="70" width="345" height="570" rx="12" class="lane-bg"/>
+  <text x="1297" y="105" class="lane-title">asset_ref</text>
+  <rect x="1150" y="130" width="295" height="110" rx="9" class="table"/>
+  <text x="1297" y="156" class="label">events_analytics</text>
+  <rect x="1165" y="170" width="265" height="55" rx="6" class="cols"/>
+  <text x="1297" y="203" class="text">普通列 + 内容元数据 + asset_id</text>
+  <rect x="1150" y="252" width="64" height="26" rx="13" class="pill-list"/>
+  <text x="1182" y="270" class="pill">列表</text>
+  <rect x="1222" y="252" width="96" height="26" rx="13" class="pill-detail"/>
+  <text x="1270" y="270" class="pill">详情·取引用</text>
+  <rect x="1150" y="300" width="295" height="100" rx="9" class="table"/>
+  <text x="1297" y="326" class="label">assets（目录表）</text>
+  <rect x="1165" y="340" width="265" height="45" rx="6" class="cols"/>
+  <text x="1297" y="368" class="text">sha256、状态、路径、长度</text>
+  <rect x="1150" y="410" width="296" height="120" rx="9" class="outside"/>
+  <text x="1297" y="436" class="label">数据库外：对象存储目录</text>
+  <rect x="1165" y="450" width="265" height="65" rx="6" class="payload"/>
+  <text x="1297" y="478" class="text">payload 原始字节</text>
+  <text x="1297" y="502" class="text">&lt;root&gt;/&lt;前两位&gt;/&lt;sha256&gt;</text>
+  <rect x="1150" y="542" width="176" height="26" rx="13" class="pill-detail"/>
+  <text x="1238" y="560" class="pill">详情·解析器查目录读文件</text>
+  <text x="1145" y="590" class="note">每个 block：登记、发布、转可用、写引用</text>
+  <text x="1145" y="614" class="note">一致性由应用侧解析器与目录状态承担</text>
+
+  <!-- legend -->
+  <rect x="380" y="664" width="40" height="22" rx="5" class="cols"/>
+  <text x="430" y="681" class="note">普通列与内容元数据</text>
+  <rect x="590" y="664" width="40" height="22" rx="5" class="payload"/>
+  <text x="640" y="681" class="note">载荷</text>
+  <rect x="700" y="663" width="64" height="24" rx="12" class="pill-list"/>
+  <text x="732" y="680" class="pill">列表</text>
+  <text x="774" y="681" class="note">列表与预览读取的表</text>
+  <rect x="930" y="663" width="64" height="24" rx="12" class="pill-detail"/>
+  <text x="962" y="680" class="pill">详情</text>
+  <text x="1004" y="681" class="note">详情、Trace 与批量读取的表</text>
+</svg>

@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="700" viewBox="0 0 1500 700" role="img" aria-labelledby="title desc">
+  <title id="title">asset_ref Sidecar 的写入、目录状态与解析流程</title>
+  <desc id="desc">上半部分为每个 block 的写入四步与目录状态转换，下半部分为解析器按引用读取对象时的七步核对及各步失败时返回的错误类别。</desc>
+  <defs>
+    <style>
+      .lane-bg { fill:#fbfcfe; stroke:#d7dee8; stroke-width:1.4; }
+      .box { fill:#f7f9fc; stroke:#52657a; stroke-width:2; }
+      .db { fill:#eef8f1; stroke:#397554; stroke-width:2; }
+      .fs { fill:#f7effc; stroke:#75508e; stroke-width:2; }
+      .state { fill:#fff8e8; stroke:#9a7725; stroke-width:2; }
+      .err { fill:#fdf0f0; stroke:#a64545; stroke-width:1.6; }
+      .title { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:25px; font-weight:700; fill:#1f2933; text-anchor:middle; }
+      .lane-title { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:19px; font-weight:700; fill:#334155; }
+      .label { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:16px; font-weight:700; fill:#1f2933; text-anchor:middle; }
+      .text { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:14px; fill:#44515f; text-anchor:middle; }
+      .small { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:13px; fill:#7a2f2f; text-anchor:middle; }
+      .note { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:14px; fill:#44515f; }
+      .arrow { stroke:#52657a; stroke-width:2.2; fill:none; marker-end:url(#arrow); }
+      .arrow-err { stroke:#a64545; stroke-width:1.6; fill:none; stroke-dasharray:5 4; marker-end:url(#arrow-err); }
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#52657a"/>
+    </marker>
+    <marker id="arrow-err" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#a64545"/>
+    </marker>
+  </defs>
+
+  <rect width="1500" height="700" fill="#ffffff"/>
+  <text x="750" y="42" class="title">asset_ref：写入四步、目录状态与解析核对</text>
+
+  <!-- 写入 -->
+  <rect x="25" y="70" width="1450" height="270" rx="12" class="lane-bg"/>
+  <text x="50" y="104" class="lane-title">A. 每个 block 的写入（四步都计入写入完成时间）</text>
+  <rect x="60" y="130" width="300" height="80" rx="9" class="db"/>
+  <text x="210" y="162" class="label">1. 登记目录行</text>
+  <text x="210" y="188" class="text">assets 插入一行，状态 pending</text>
+  <path d="M360 170 L410 170" class="arrow"/>
+  <rect x="415" y="130" width="320" height="80" rx="9" class="fs"/>
+  <text x="575" y="162" class="label">2. 发布对象</text>
+  <text x="575" y="188" class="text">临时文件 → fsync → 读回核对 → 原子改名</text>
+  <path d="M735 170 L785 170" class="arrow"/>
+  <rect x="790" y="130" width="300" height="80" rx="9" class="db"/>
+  <text x="940" y="162" class="label">3. 转为可用</text>
+  <text x="940" y="188" class="text">目录行更新为 available</text>
+  <path d="M1090 170 L1140 170" class="arrow"/>
+  <rect x="1145" y="130" width="300" height="80" rx="9" class="db"/>
+  <text x="1295" y="162" class="label">4. 写入引用行</text>
+  <text x="1295" y="188" class="text">events_analytics 写 asset_id</text>
+
+  <rect x="230" y="240" width="140" height="50" rx="9" class="state"/>
+  <text x="300" y="271" class="label">pending</text>
+  <path d="M370 265 L470 265" class="arrow"/>
+  <text x="420" y="255" class="text">发布成功</text>
+  <rect x="475" y="240" width="140" height="50" rx="9" class="state"/>
+  <text x="545" y="271" class="label">available</text>
+  <path d="M615 265 L715 265" class="arrow"/>
+  <text x="665" y="255" class="text">开始删除</text>
+  <rect x="720" y="240" width="140" height="50" rx="9" class="state"/>
+  <text x="790" y="271" class="label">deleting</text>
+  <path d="M300 290 L300 318 L940 318 L940 296" class="arrow"/>
+  <text x="620" y="312" class="text">发布失败</text>
+  <rect x="875" y="246" width="130" height="50" rx="9" class="state"/>
+  <text x="940" y="277" class="label">failed</text>
+  <text x="1035" y="262" class="note">行存第 3 步为一条 UPDATE；</text>
+  <text x="1035" y="286" class="note">ClickHouse 为一次同步 mutation</text>
+
+  <!-- 解析 -->
+  <rect x="25" y="360" width="1450" height="320" rx="12" class="lane-bg"/>
+  <text x="50" y="394" class="lane-title">B. 解析器按引用恢复载荷（计入客户端恢复阶段，每个对象各执行一次）</text>
+  <rect x="50" y="420" width="175" height="78" rx="9" class="db"/>
+  <text x="137" y="452" class="label">1. 查目录行</text>
+  <text x="137" y="478" class="text">按 asset_id</text>
+  <path d="M225 459 L248 459" class="arrow"/>
+  <path d="M137 498 L137 540" class="arrow-err"/>
+  <rect x="55" y="544" width="165" height="54" rx="7" class="err"/>
+  <text x="137" y="576" class="small">缺行 → missing</text>
+  <rect x="250" y="420" width="175" height="78" rx="9" class="db"/>
+  <text x="337" y="452" class="label">2. 核对标识</text>
+  <text x="337" y="478" class="text">asset_id 与 sha256</text>
+  <path d="M425 459 L448 459" class="arrow"/>
+  <path d="M337 498 L337 540" class="arrow-err"/>
+  <rect x="255" y="544" width="165" height="54" rx="7" class="err"/>
+  <text x="337" y="566" class="small">不符 →</text>
+  <text x="337" y="587" class="small">metadata_mismatch</text>
+  <rect x="450" y="420" width="175" height="78" rx="9" class="db"/>
+  <text x="537" y="452" class="label">3. 核对状态</text>
+  <text x="537" y="478" class="text">须为 available</text>
+  <path d="M625 459 L648 459" class="arrow"/>
+  <path d="M537 498 L537 540" class="arrow-err"/>
+  <rect x="455" y="544" width="165" height="54" rx="7" class="err"/>
+  <text x="537" y="576" class="small">返回该状态</text>
+  <rect x="650" y="420" width="175" height="78" rx="9" class="db"/>
+  <text x="737" y="452" class="label">4. 核对元数据</text>
+  <text x="737" y="478" class="text">类型、编码、长度</text>
+  <path d="M825 459 L848 459" class="arrow"/>
+  <path d="M737 498 L737 540" class="arrow-err"/>
+  <rect x="655" y="544" width="165" height="54" rx="7" class="err"/>
+  <text x="737" y="566" class="small">不符 →</text>
+  <text x="737" y="587" class="small">metadata_mismatch</text>
+  <rect x="850" y="420" width="175" height="78" rx="9" class="fs"/>
+  <text x="937" y="452" class="label">5. 读对象文件</text>
+  <text x="937" y="478" class="text">按 storage_path</text>
+  <path d="M1025 459 L1048 459" class="arrow"/>
+  <path d="M937 498 L937 540" class="arrow-err"/>
+  <rect x="855" y="544" width="165" height="54" rx="7" class="err"/>
+  <text x="937" y="566" class="small">缺失 → missing</text>
+  <text x="937" y="587" class="small">其他 → failed</text>
+  <rect x="1050" y="420" width="175" height="78" rx="9" class="fs"/>
+  <text x="1137" y="452" class="label">6. 核对内容</text>
+  <text x="1137" y="478" class="text">长度、SHA-256、预览</text>
+  <path d="M1225 459 L1248 459" class="arrow"/>
+  <path d="M1137 498 L1137 540" class="arrow-err"/>
+  <rect x="1055" y="544" width="165" height="54" rx="7" class="err"/>
+  <text x="1137" y="576" class="small">不符 → corrupt</text>
+  <rect x="1250" y="420" width="195" height="78" rx="9" class="box"/>
+  <text x="1347" y="452" class="label">7. 交付载荷</text>
+  <text x="1347" y="478" class="text">对象字节作为结果</text>
+
+  <text x="50" y="630" class="note">对象以内容 SHA-256 为地址；原子改名保证目标路径上只出现完整对象。数据库查询返回引用之后才执行解析，</text>
+  <text x="50" y="654" class="note">Trace 与批量查询按对象逐个查询目录并读取文件，成本随对象数线性增长。</text>
+</svg>
