@@ -65,6 +65,7 @@ class CheckHandbackTest(unittest.TestCase):
                 sample("list", 3, "dropped", error="arrival deadline missed"), sample("list", 4, "success", 30.0)]
         (phase / "samples.jsonl").write_text("\n".join(json.dumps(row) for row in reversed(rows)) + "\n")
         (phase / "warmup-samples.jsonl").write_text(json.dumps(sample("list", 0, "success", 999.0)) + "\n")
+        (self.root / "xstore-interference-same_table" / "run-manifest.json").write_text("{}")
         lines = check.interference_lines(self.root)
         measured = [line for line in lines if line.startswith("F2 xstore-interference-same_table ")]
         self.assertEqual(measured, [
@@ -72,6 +73,15 @@ class CheckHandbackTest(unittest.TestCase):
             "dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:2 "
             "p50/p95/p99/max=30.0/30.0/30.0/30.0 max_consecutive_dropped=3"])
         self.assertIn("F2 NA ch-interference-asset_ref has no samples.jsonl", lines)
+
+    def test_incomplete_interference_run_is_not_read(self):
+        # 中止的运行没有顶层 run-manifest.json，其阶段样本不完整，不进入 F2 统计。
+        phase = self.root / "ch-interference-separate" / "child" / "quiet"
+        phase.mkdir(parents=True)
+        (phase / "samples.jsonl").write_text(json.dumps(sample("list", 0, "success", 10.0)) + "\n")
+        lines = check.interference_lines(self.root)
+        self.assertIn("F2 NA ch-interference-separate incomplete: no run-manifest.json", lines)
+        self.assertFalse(any(line.startswith("F2 ch-interference-separate ") for line in lines))
 
     def test_xstore_plan_lines_pair_server_runtime_with_client_medians(self):
         target = self.root / "xstore-main" / "xstore"

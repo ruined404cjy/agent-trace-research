@@ -94,7 +94,7 @@ class HandLinesTest(unittest.TestCase):
     def test_sections_follow_the_fixed_layout_and_field_order(self):
         lines = hand.hand_lines(self.dir, "161", "2026-10-08")
         self.assertEqual(lines[0], "V2 161 2026-10-08")
-        self.assertEqual(lines[-1], "N")
+        self.assertIn("N", lines)
         _, xm = self.section(lines, "XM")
         self.assertEqual(xm[0], "28.6 29.1 28.3 28.3 28.3 28.3 28.3 28.3")
         self.assertEqual(xm[1], " ".join(["NA"] * 8))
@@ -123,6 +123,19 @@ class HandLinesTest(unittest.TestCase):
         self.assertEqual(rows[0], "20.5 30.1 3|NA NA|NA NA NA NA|NA NA NA|1700 170 NA")
         self.assertEqual(rows[1], "NA NA NA|NA NA|NA NA NA NA|NA NA NA|NA NA NA")
         self.assertEqual(rows[4], "30 40 1|NA NA|31 60 20 3|NA NA NA|2100 140 NA")
+
+    def test_notes_name_missing_runs_non_head_code_and_fallbacks(self):
+        # 自动备注让接收方不必从数字里推断哪些运行缺失、沿用旧代码或改用 F2 取数。
+        write_json(self.dir / "feedback-manifest.json", {
+            "presence": {"interference/xstore/same_table": True, "interference/xstore/full_core": False,
+                         "interference/xstore/asset_ref": False, "probe/xstore": True},
+            "code_runs": [{"run": "xstore-asset-failures/run-manifest.json", "all_head": False},
+                          {"run": "xstore-main/xstore/same_table/run-manifest.json", "all_head": True}]})
+        lines = hand.hand_lines(self.dir, "161", "2026-10-08")
+        notes = lines[lines.index("N") + 1:]
+        self.assertEqual(notes, ["N auto missing interference/xstore full_core,asset_ref",
+                                 "N auto nonhead xstore-asset-failures",
+                                 "N auto I-from-F2 xstore"])
 
     def test_a_failing_section_is_reported_and_the_rest_continue(self):
         lines = hand.hand_lines(self.dir, "161", "2026-10-08")

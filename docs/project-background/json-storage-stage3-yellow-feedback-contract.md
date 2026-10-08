@@ -340,7 +340,10 @@ N <备注>
 1. 首行 `V2` 标明格式版本、主机与日期。
 2. 每节先单起一行写节编号与 4 位十六进制校验码，其后每行一个数据单元，行内字段只用空格分隔，不写表头与布局名。
 3. 节按下表的顺序出现；某节生成失败时节头写 `<节编号> ERR`，下一行为错误摘要，其余各节照常生成。
-4. 末尾 `N` 行之后是备注，每条一行、以 `N ` 开头、至多五条，写跳过的步骤、合并冲突、手工修复与异常；无备注时只保留单独的 `N`。
+4. 末尾 `N` 行之后是备注，每条一行、以 `N ` 开头。脚本先生成 `N auto` 备注，照抄：`missing` 列出缺失的运行，`nonhead` 列出使用非 HEAD 代码的运行目录，`I-from-F2` 列出 I 节改用 check 的 F2 行取数的引擎。其后由转述方补写：
+   - 未重测、未完成或沿用旧结果的运行，每项一条，格式 `N <状态> <运行目录或节> <简要说明>`，状态取 `SKIP`（未运行）、`PART`（运行中止，写明中止时所处的阶段与时间）、`REUSE`（沿用之前的结果，写明来源）；
+   - 跳过的步骤、合并冲突、手工修复与异常，每项一条。
+   手写备注至多十条，每条一行；无备注时只保留脚本生成的内容。
 5. 校验码是该节数据行的 CRC32 低 16 位，由脚本计算；转述方照抄节头，接收方用 `hand_feedback.py --verify <文件>` 定位抄错的节。
 
 **数值规则。** 小于 100 的值保留一位小数，大于等于 100 的值取整，去掉末尾的 `.0`；XQ 的服务端时间、XA 的探针时间与
@@ -359,7 +362,7 @@ XD 的全部计时小于 10 时保留两位小数并去掉末尾的 0。空间�
 | XW | 四行 | XStore 写入合计（第 4.2 节），末轮库内空间 MB，末轮对象存储 MB |
 | XA | 一行 | XStore Asset 六用例终态编码，行存探针展开式的 Total runtime 与 Filter 移除行数，带下界写法的 Total runtime 与 Filter 移除行数 |
 | XD | 一行 | XStore 往返下限 `exec_select_1` `params_select_int` `params_catalog` 的 p50，驱动基准 `list_first` `detail_64k` `detail_2m` 的 fetchall p50，`list_first` 的逐单元下限 p50 |
-| I | 八行 | 五组，组间用 `|` 分隔：quiet 的前台 list p50 p95 丢弃数；detail_2m 与 trace_long 的前台 list 丢弃数；batch_loop 的前台 list p50 p95 丢弃数及其中调度迟到的丢弃数；continuous_ingest 的前台 list p50 p95 丢弃数；batch_loop 干扰流 p50 与成功次数、continuous_ingest 干扰流的单 block p50。某个引擎只运行了部分布局时汇总缺失，该引擎各行改由 check 的 F2 行取数，未运行的布局整行为 NA |
+| I | 八行 | 五组，组间用 `|` 分隔：quiet 的前台 list p50 p95 丢弃数；detail_2m 与 trace_long 的前台 list 丢弃数；batch_loop 的前台 list p50 p95 丢弃数及其中调度迟到的丢弃数；continuous_ingest 的前台 list p50 p95 丢弃数；batch_loop 干扰流 p50 与成功次数、continuous_ingest 干扰流的单 block p50。某个引擎只运行了部分布局时汇总缺失，该引擎各行改由 check 的 F2 行取数；没有顶层 run-manifest.json 的中止运行不参与统计，未运行或中止的布局整行为 NA |
 | CM | 四行 | ClickHouse `main` 的八个目标，顺序同 XM |
 | CE | 四行 | ClickHouse 两个等总字节 workload，顺序同 XE |
 | CW | 四行 | ClickHouse 写入合计，末轮库内空间 MB，末轮对象存储 MB |

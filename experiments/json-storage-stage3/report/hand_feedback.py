@@ -14,6 +14,7 @@
   保留两位小数并去掉末尾的 0；缺值写 NA。
 - 校验码为该节数据行的 CRC32 低 16 位（4 位十六进制），转述方照抄，接收方据此定位抄错的节。
 - 某节生成失败时写 "<节编号> ERR"，其后一行为错误摘要，其余各节照常生成。
+- N 行之后先列脚本生成的 "N auto" 备注（缺失运行、非 HEAD 代码、I 节改用 F2），转述方照抄后再补写自己的备注。
 
 出错时怎么办（给执行本脚本的 agent）：
 1. 先确认 pack 与 check 已在同一回传目录执行；缺少 followup/checks.txt 时 XQ、XD、I 中的部分字段为 NA。
@@ -339,6 +340,22 @@ SECTIONS = (
 )
 
 
+def auto_notes(source):
+    """N 节的自动备注：缺失的运行、使用非 HEAD 代码的运行、I 节改用 F2 取数的引擎。"""
+    missing = {}
+    for name, present in (source.manifest.get("presence") or {}).items():
+        if not present:
+            group, _, item = name.rpartition("/")
+            missing.setdefault(group or item, []).append(item if group else "")
+    notes = [f"N auto missing {group} {','.join(item for item in items if item)}".rstrip()
+             for group, items in missing.items()]
+    stale = sorted({run["run"].split("/")[0] for run in source.manifest.get("code_runs", []) if not run["all_head"]})
+    notes += [f"N auto nonhead {run}" for run in stale]
+    notes += [f"N auto I-from-F2 {engine}" for engine in ("xstore", "clickhouse")
+              if not (source.dir / "summary" / f"interference-{engine}.json").is_file()]
+    return notes
+
+
 def hand_lines(feedback_dir, host, date):
     """返回手敲版 V2 的全部行。单节失败写 ERR 与错误摘要，不影响其余各节。"""
     source = Source(feedback_dir)
@@ -352,6 +369,10 @@ def hand_lines(feedback_dir, host, date):
         lines.append(f"{code} {crc(data)}")
         lines += data
     lines.append("N")
+    try:
+        lines += auto_notes(source)
+    except Exception as error:  # noqa: BLE001 - 备注失败不影响各节
+        lines.append(f"N auto ERR {type(error).__name__}")
     return lines
 
 
