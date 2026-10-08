@@ -1,0 +1,5724 @@
+{
+ "rounds": [
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_declared": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240  /data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "product_path": "/data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 13396.010449971072,
+    "merge_wait_ms": 349.22209999058396,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 1,
+       "events_analytics": 2
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 1,
+       "events_analytics": 2
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 1,
+       "events_analytics": 2
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 349.22209999058396,
+    "watermark_wait_ms": 8733.71456132736,
+    "watermarks": {
+     "assets": 48534,
+     "events_analytics": 48534
+    }
+   },
+   "round_index": 0,
+   "scenarios": {
+    "batch:correctness_only": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 2/2 > Granules: 7/7": 5
+     },
+     "read_bytes": {
+      "maximum": 2543927,
+      "minimum": 2543927
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 2543927,
+      "minimum": 2543927
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:unicode_boundary": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1655151,
+      "minimum": 1655151
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1655151,
+      "minimum": 1655151
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 5963877,
+      "minimum": 5963877
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5963877,
+      "minimum": 5963877
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 5963877,
+      "minimum": 5963877
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5963877,
+      "minimum": 5963877
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": {
+     "available_bytes": 1024,
+     "available_object_count": 1,
+     "orphan_bytes": 0,
+     "orphan_object_count": 0
+    },
+    "merges": [],
+    "tables": {
+     "assets": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "error_category": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "status": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "storage_path": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "updated_at": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 575,
+      "marks": 2,
+      "part_count": 1,
+      "rows": 1,
+      "uncompressed_bytes": 346
+     },
+     "events_analytics": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3192075,
+      "marks": 9,
+      "part_count": 2,
+      "rows": 48534,
+      "uncompressed_bytes": 9895918
+     }
+    }
+   },
+   "workload": "correctness_only",
+   "write": {
+    "asset_publish_ms": 2.0477600628510118,
+    "block_ingest_wall_ms_sum": 2859.1965414816514,
+    "block_wall_ms": {
+     "maximum": 40.663760039024055,
+     "median": 14.780775003600866,
+     "minimum": 9.285900043323636,
+     "p95": 17.59685250581242
+    },
+    "rows_per_second": 3720.0090167781655,
+    "wall_ms": 13046.742570004426
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_declared": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240  /data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "product_path": "/data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 13378.354669897817,
+    "merge_wait_ms": 379.20733995269984,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 3,
+       "events_analytics": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 3,
+       "events_analytics": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 3,
+       "events_analytics": 6
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 379.20733995269984,
+    "watermark_wait_ms": 7531.022169743665,
+    "watermarks": {
+     "assets": 48534,
+     "events_analytics": 48534
+    }
+   },
+   "round_index": 0,
+   "scenarios": {
+    "batch:equal_total_few_large": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 6/6 > Granules: 10/10": 5
+     },
+     "read_bytes": {
+      "maximum": 10156832,
+      "minimum": 10156832
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 10156832,
+      "minimum": 10156832
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/6 > Granules: 1/10": 30
+     },
+     "read_bytes": {
+      "maximum": 1656920,
+      "minimum": 1656920
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1656920,
+      "minimum": 1656920
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/6 > Granules: 4/10": 30
+     },
+     "read_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/6 > Granules: 4/10": 30
+     },
+     "read_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": {
+     "available_bytes": 83886080,
+     "available_object_count": 40,
+     "orphan_bytes": 0,
+     "orphan_object_count": 0
+    },
+    "merges": [],
+    "tables": {
+     "assets": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "error_category": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "status": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "storage_path": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "updated_at": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 9402,
+      "marks": 6,
+      "part_count": 3,
+      "rows": 40,
+      "uncompressed_bytes": 14040
+     },
+     "events_analytics": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3207917,
+      "marks": 16,
+      "part_count": 6,
+      "rows": 48534,
+      "uncompressed_bytes": 9910654
+     }
+    }
+   },
+   "workload": "equal_total_few_large",
+   "write": {
+    "asset_publish_ms": 274.49253969825804,
+    "block_ingest_wall_ms_sum": 3918.047070852481,
+    "block_wall_ms": {
+     "maximum": 97.64167002867907,
+     "median": 12.945314985699952,
+     "minimum": 11.096630012616515,
+     "p95": 51.41568996477871
+    },
+    "rows_per_second": 3733.656865037187,
+    "wall_ms": 12999.052069964819
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_declared": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240  /data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "product_path": "/data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 13615.28367002029,
+    "merge_wait_ms": 366.9480299577117,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 3,
+       "events_analytics": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 3,
+       "events_analytics": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 3,
+       "events_analytics": 6
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 366.9480299577117,
+    "watermark_wait_ms": 7793.54794009123,
+    "watermarks": {
+     "assets": 48534,
+     "events_analytics": 48534
+    }
+   },
+   "round_index": 1,
+   "scenarios": {
+    "batch:equal_total_few_large": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 6/6 > Granules: 10/10": 5
+     },
+     "read_bytes": {
+      "maximum": 10156832,
+      "minimum": 10156832
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 10156832,
+      "minimum": 10156832
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/6 > Granules: 1/10": 30
+     },
+     "read_bytes": {
+      "maximum": 1656920,
+      "minimum": 1656920
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1656920,
+      "minimum": 1656920
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/6 > Granules: 4/10": 30
+     },
+     "read_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/6 > Granules: 4/10": 30
+     },
+     "read_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": {
+     "available_bytes": 83886080,
+     "available_object_count": 40,
+     "orphan_bytes": 0,
+     "orphan_object_count": 0
+    },
+    "merges": [],
+    "tables": {
+     "assets": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "error_category": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "status": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "storage_path": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "updated_at": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 9406,
+      "marks": 6,
+      "part_count": 3,
+      "rows": 40,
+      "uncompressed_bytes": 14040
+     },
+     "events_analytics": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3207917,
+      "marks": 16,
+      "part_count": 6,
+      "rows": 48534,
+      "uncompressed_bytes": 9910654
+     }
+    }
+   },
+   "workload": "equal_total_few_large",
+   "write": {
+    "asset_publish_ms": 276.9548197975382,
+    "block_ingest_wall_ms_sum": 3945.414940244518,
+    "block_wall_ms": {
+     "maximum": 101.81427001953125,
+     "median": 12.581054994370788,
+     "minimum": 11.181899928487837,
+     "p95": 55.22326749050989
+    },
+    "rows_per_second": 3663.427836864285,
+    "wall_ms": 13248.247859999537
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_declared": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240  /data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "product_path": "/data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 12868.251989944838,
+    "merge_wait_ms": 364.2902900464833,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 3,
+       "events_analytics": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 3,
+       "events_analytics": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 3,
+       "events_analytics": 6
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 364.2902900464833,
+    "watermark_wait_ms": 7304.110579774715,
+    "watermarks": {
+     "assets": 48534,
+     "events_analytics": 48534
+    }
+   },
+   "round_index": 2,
+   "scenarios": {
+    "batch:equal_total_few_large": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 6/6 > Granules: 10/10": 5
+     },
+     "read_bytes": {
+      "maximum": 10156832,
+      "minimum": 10156832
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 10156832,
+      "minimum": 10156832
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/6 > Granules: 1/10": 30
+     },
+     "read_bytes": {
+      "maximum": 1656920,
+      "minimum": 1656920
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1656920,
+      "minimum": 1656920
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/6 > Granules: 4/10": 30
+     },
+     "read_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/6 > Granules: 4/10": 30
+     },
+     "read_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": {
+     "available_bytes": 83886080,
+     "available_object_count": 40,
+     "orphan_bytes": 0,
+     "orphan_object_count": 0
+    },
+    "merges": [],
+    "tables": {
+     "assets": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "error_category": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "status": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "storage_path": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "updated_at": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 9404,
+      "marks": 6,
+      "part_count": 3,
+      "rows": 40,
+      "uncompressed_bytes": 14040
+     },
+     "events_analytics": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3207917,
+      "marks": 16,
+      "part_count": 6,
+      "rows": 48534,
+      "uncompressed_bytes": 9910654
+     }
+    }
+   },
+   "workload": "equal_total_few_large",
+   "write": {
+    "asset_publish_ms": 274.70826054923236,
+    "block_ingest_wall_ms_sum": 3697.5609197979793,
+    "block_wall_ms": {
+     "maximum": 78.89237999916077,
+     "median": 12.38486502552405,
+     "minimum": 10.620140004903078,
+     "p95": 48.72892298735678
+    },
+    "rows_per_second": 3881.512430435784,
+    "wall_ms": 12503.888849983923
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_declared": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240  /data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "product_path": "/data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 13649.694460094906,
+    "merge_wait_ms": 369.432249921374,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 3,
+       "events_analytics": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 3,
+       "events_analytics": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 3,
+       "events_analytics": 6
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 369.432249921374,
+    "watermark_wait_ms": 7806.596890324727,
+    "watermarks": {
+     "assets": 48534,
+     "events_analytics": 48534
+    }
+   },
+   "round_index": 3,
+   "scenarios": {
+    "batch:equal_total_few_large": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 6/6 > Granules: 10/10": 5
+     },
+     "read_bytes": {
+      "maximum": 10156832,
+      "minimum": 10156832
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 10156832,
+      "minimum": 10156832
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/6 > Granules: 1/10": 30
+     },
+     "read_bytes": {
+      "maximum": 1656920,
+      "minimum": 1656920
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1656920,
+      "minimum": 1656920
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/6 > Granules: 4/10": 30
+     },
+     "read_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/6 > Granules: 4/10": 30
+     },
+     "read_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5966260,
+      "minimum": 5966260
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": {
+     "available_bytes": 83886080,
+     "available_object_count": 40,
+     "orphan_bytes": 0,
+     "orphan_object_count": 0
+    },
+    "merges": [],
+    "tables": {
+     "assets": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "error_category": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "status": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "storage_path": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "updated_at": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 9406,
+      "marks": 6,
+      "part_count": 3,
+      "rows": 40,
+      "uncompressed_bytes": 14040
+     },
+     "events_analytics": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3207917,
+      "marks": 16,
+      "part_count": 6,
+      "rows": 48534,
+      "uncompressed_bytes": 9910654
+     }
+    }
+   },
+   "workload": "equal_total_few_large",
+   "write": {
+    "asset_publish_ms": 265.7773499377072,
+    "block_ingest_wall_ms_sum": 3957.903540111147,
+    "block_wall_ms": {
+     "maximum": 147.5301799364388,
+     "median": 12.79167999746278,
+     "minimum": 11.027120053768158,
+     "p95": 55.07836648030205
+    },
+    "rows_per_second": 3654.6065436129356,
+    "wall_ms": 13280.225770082325
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_declared": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240  /data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "product_path": "/data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 56830.03575995099,
+    "merge_wait_ms": 355.1917999284342,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 5,
+       "events_analytics": 3
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 5,
+       "events_analytics": 3
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 5,
+       "events_analytics": 3
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 355.1917999284342,
+    "watermark_wait_ms": 7487.53795970697,
+    "watermarks": {
+     "assets": 48534,
+     "events_analytics": 48534
+    }
+   },
+   "round_index": 0,
+   "scenarios": {
+    "batch:equal_total_many_medium": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 3/3 > Granules: 8/8": 5
+     },
+     "read_bytes": {
+      "maximum": 10775608,
+      "minimum": 10775608
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 10775608,
+      "minimum": 10775608
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/3 > Granules: 1/8": 30
+     },
+     "read_bytes": {
+      "maximum": 1730468,
+      "minimum": 1730468
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1730468,
+      "minimum": 1730468
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/3 > Granules: 4/8": 30
+     },
+     "read_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/3 > Granules: 4/8": 30
+     },
+     "read_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": {
+     "available_bytes": 83886080,
+     "available_object_count": 1280,
+     "orphan_bytes": 0,
+     "orphan_object_count": 0
+    },
+    "merges": [],
+    "tables": {
+     "assets": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "error_category": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "status": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "storage_path": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "updated_at": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 263109,
+      "marks": 10,
+      "part_count": 5,
+      "rows": 1280,
+      "uncompressed_bytes": 451840
+     },
+     "events_analytics": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3541290,
+      "marks": 11,
+      "part_count": 3,
+      "rows": 48534,
+      "uncompressed_bytes": 10383214
+     }
+    }
+   },
+   "workload": "equal_total_many_medium",
+   "write": {
+    "asset_publish_ms": 2193.4808986261487,
+    "block_ingest_wall_ms_sum": 47165.07262084633,
+    "block_wall_ms": {
+     "maximum": 1284.5530300401151,
+     "median": 186.46795500535518,
+     "minimum": 56.67119997087866,
+     "p95": 740.2069444768117
+    },
+    "rows_per_second": 859.3921784739052,
+    "wall_ms": 56474.79836991988
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_declared": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240  /data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "product_path": "/data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 58263.710390077904,
+    "merge_wait_ms": 357.614679960534,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 5,
+       "events_analytics": 3
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 5,
+       "events_analytics": 3
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 5,
+       "events_analytics": 3
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 357.614679960534,
+    "watermark_wait_ms": 7741.2549804430455,
+    "watermarks": {
+     "assets": 48534,
+     "events_analytics": 48534
+    }
+   },
+   "round_index": 1,
+   "scenarios": {
+    "batch:equal_total_many_medium": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 3/3 > Granules: 8/8": 5
+     },
+     "read_bytes": {
+      "maximum": 10775608,
+      "minimum": 10775608
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 10775608,
+      "minimum": 10775608
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/3 > Granules: 1/8": 30
+     },
+     "read_bytes": {
+      "maximum": 1730468,
+      "minimum": 1730468
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1730468,
+      "minimum": 1730468
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/3 > Granules: 4/8": 30
+     },
+     "read_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/3 > Granules: 4/8": 30
+     },
+     "read_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": {
+     "available_bytes": 83886080,
+     "available_object_count": 1280,
+     "orphan_bytes": 0,
+     "orphan_object_count": 0
+    },
+    "merges": [],
+    "tables": {
+     "assets": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "error_category": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "status": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "storage_path": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "updated_at": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 263116,
+      "marks": 10,
+      "part_count": 5,
+      "rows": 1280,
+      "uncompressed_bytes": 451840
+     },
+     "events_analytics": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3541290,
+      "marks": 11,
+      "part_count": 3,
+      "rows": 48534,
+      "uncompressed_bytes": 10383214
+     }
+    }
+   },
+   "workload": "equal_total_many_medium",
+   "write": {
+    "asset_publish_ms": 2309.3555690720677,
+    "block_ingest_wall_ms_sum": 48302.83127911389,
+    "block_wall_ms": {
+     "maximum": 1286.0492799663916,
+     "median": 190.49597502453253,
+     "minimum": 60.57452003005892,
+     "p95": 747.8865599667186
+    },
+    "rows_per_second": 838.1516488604874,
+    "wall_ms": 57905.98881000187
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_declared": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240  /data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "product_path": "/data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 57907.135669956915,
+    "merge_wait_ms": 362.13778995443135,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 5,
+       "events_analytics": 3
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 5,
+       "events_analytics": 3
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 5,
+       "events_analytics": 3
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 362.13778995443135,
+    "watermark_wait_ms": 7783.903959207237,
+    "watermarks": {
+     "assets": 48534,
+     "events_analytics": 48534
+    }
+   },
+   "round_index": 2,
+   "scenarios": {
+    "batch:equal_total_many_medium": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 3/3 > Granules: 8/8": 5
+     },
+     "read_bytes": {
+      "maximum": 10775608,
+      "minimum": 10775608
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 10775608,
+      "minimum": 10775608
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/3 > Granules: 1/8": 30
+     },
+     "read_bytes": {
+      "maximum": 1730468,
+      "minimum": 1730468
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1730468,
+      "minimum": 1730468
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/3 > Granules: 4/8": 30
+     },
+     "read_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/3 > Granules: 4/8": 30
+     },
+     "read_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": {
+     "available_bytes": 83886080,
+     "available_object_count": 1280,
+     "orphan_bytes": 0,
+     "orphan_object_count": 0
+    },
+    "merges": [],
+    "tables": {
+     "assets": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "error_category": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "status": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "storage_path": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "updated_at": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 263110,
+      "marks": 10,
+      "part_count": 5,
+      "rows": 1280,
+      "uncompressed_bytes": 451840
+     },
+     "events_analytics": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3541290,
+      "marks": 11,
+      "part_count": 3,
+      "rows": 48534,
+      "uncompressed_bytes": 10383214
+     }
+    }
+   },
+   "workload": "equal_total_many_medium",
+   "write": {
+    "asset_publish_ms": 2343.7825001310557,
+    "block_ingest_wall_ms_sum": 48064.87927015405,
+    "block_wall_ms": {
+     "maximum": 1202.7167399646714,
+     "median": 189.95769997127354,
+     "minimum": 62.20728997141123,
+     "p95": 786.1405380477662
+    },
+    "rows_per_second": 843.410419001256,
+    "wall_ms": 57544.93767989334
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_declared": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240  /data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "product_path": "/data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 95,
+    "response_bytes_validated": true,
+    "successful_samples": 95,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 55530.570170027204,
+    "merge_wait_ms": 347.6220699958503,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 5,
+       "events_analytics": 3
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 5,
+       "events_analytics": 3
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 5,
+       "events_analytics": 3
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 347.6220699958503,
+    "watermark_wait_ms": 7578.1469899229705,
+    "watermarks": {
+     "assets": 48534,
+     "events_analytics": 48534
+    }
+   },
+   "round_index": 3,
+   "scenarios": {
+    "batch:equal_total_many_medium": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 3/3 > Granules: 8/8": 5
+     },
+     "read_bytes": {
+      "maximum": 10775608,
+      "minimum": 10775608
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 10775608,
+      "minimum": 10775608
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/3 > Granules: 1/8": 30
+     },
+     "read_bytes": {
+      "maximum": 1730468,
+      "minimum": 1730468
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1730468,
+      "minimum": 1730468
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/3 > Granules: 4/8": 30
+     },
+     "read_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/3 > Granules: 4/8": 30
+     },
+     "read_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6045616,
+      "minimum": 6045616
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": {
+     "available_bytes": 83886080,
+     "available_object_count": 1280,
+     "orphan_bytes": 0,
+     "orphan_object_count": 0
+    },
+    "merges": [],
+    "tables": {
+     "assets": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "error_category": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "status": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "storage_path": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "updated_at": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 263103,
+      "marks": 10,
+      "part_count": 5,
+      "rows": 1280,
+      "uncompressed_bytes": 451840
+     },
+     "events_analytics": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3541290,
+      "marks": 11,
+      "part_count": 3,
+      "rows": 48534,
+      "uncompressed_bytes": 10383214
+     }
+    }
+   },
+   "workload": "equal_total_many_medium",
+   "write": {
+    "asset_publish_ms": 2227.745410404168,
+    "block_ingest_wall_ms_sum": 45908.7720887037,
+    "block_wall_ms": {
+     "maximum": 1089.0138000249863,
+     "median": 185.91207498684525,
+     "minimum": 59.440189972519875,
+     "p95": 742.8319844999348
+    },
+    "rows_per_second": 879.5115736437622,
+    "wall_ms": 55182.90089000948
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_declared": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240  /data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "product_path": "/data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 335,
+    "response_bytes_validated": true,
+    "successful_samples": 335,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 17242.953450069763,
+    "merge_wait_ms": 509.05702996533364,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 1,
+      "parts": {
+       "assets": 2,
+       "events_analytics": 7
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 2,
+       "events_analytics": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 2,
+       "events_analytics": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 2,
+       "events_analytics": 6
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 509.05702996533364,
+    "watermark_wait_ms": 7404.477309435606,
+    "watermarks": {
+     "assets": 48534,
+     "events_analytics": 48534
+    }
+   },
+   "round_index": 0,
+   "scenarios": {
+    "batch:main": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 2/2 > Granules: 7/7": 5
+     },
+     "read_bytes": {
+      "maximum": 10347128,
+      "minimum": 10347128
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 10347128,
+      "minimum": 10347128
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:entropy_512k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "detail:text_512k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "preview:first": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "preview:middle": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "trace:p25": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "trace:p50": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "trace:p95": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1664798,
+      "minimum": 1664798
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1664798,
+      "minimum": 1664798
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": {
+     "available_bytes": 128450560,
+     "available_object_count": 160,
+     "orphan_bytes": 0,
+     "orphan_object_count": 0
+    },
+    "merges": [],
+    "tables": {
+     "assets": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "error_category": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "status": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "storage_path": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "updated_at": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 33277,
+      "marks": 4,
+      "part_count": 2,
+      "rows": 160,
+      "uncompressed_bytes": 53440
+     },
+     "events_analytics": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3248511,
+      "marks": 17,
+      "part_count": 6,
+      "rows": 48534,
+      "uncompressed_bytes": 9953614
+     }
+    }
+   },
+   "workload": "main",
+   "write": {
+    "asset_publish_ms": 592.9122905945405,
+    "block_ingest_wall_ms_sum": 7681.6403401317075,
+    "block_wall_ms": {
+     "maximum": 283.8871900457889,
+     "median": 39.08858000067994,
+     "minimum": 8.819979964755476,
+     "p95": 98.95745408721254
+    },
+    "rows_per_second": 2900.3560259650753,
+    "wall_ms": 16733.807699987665
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_declared": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240  /data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "product_path": "/data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 335,
+    "response_bytes_validated": true,
+    "successful_samples": 335,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 18087.166409939528,
+    "merge_wait_ms": 515.0536700384691,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 1,
+      "parts": {
+       "assets": 2,
+       "events_analytics": 7
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 2,
+       "events_analytics": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 2,
+       "events_analytics": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 2,
+       "events_analytics": 6
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 515.0536700384691,
+    "watermark_wait_ms": 7914.929100195877,
+    "watermarks": {
+     "assets": 48534,
+     "events_analytics": 48534
+    }
+   },
+   "round_index": 1,
+   "scenarios": {
+    "batch:main": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 2/2 > Granules: 7/7": 5
+     },
+     "read_bytes": {
+      "maximum": 10347128,
+      "minimum": 10347128
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 10347128,
+      "minimum": 10347128
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:entropy_512k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "detail:text_512k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "preview:first": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "preview:middle": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "trace:p25": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "trace:p50": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "trace:p95": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1664798,
+      "minimum": 1664798
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1664798,
+      "minimum": 1664798
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": {
+     "available_bytes": 128450560,
+     "available_object_count": 160,
+     "orphan_bytes": 0,
+     "orphan_object_count": 0
+    },
+    "merges": [],
+    "tables": {
+     "assets": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "error_category": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "status": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "storage_path": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "updated_at": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 33290,
+      "marks": 4,
+      "part_count": 2,
+      "rows": 160,
+      "uncompressed_bytes": 53440
+     },
+     "events_analytics": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3248511,
+      "marks": 17,
+      "part_count": 6,
+      "rows": 48534,
+      "uncompressed_bytes": 9953614
+     }
+    }
+   },
+   "workload": "main",
+   "write": {
+    "asset_publish_ms": 657.7512497315183,
+    "block_ingest_wall_ms_sum": 7967.590820742771,
+    "block_wall_ms": {
+     "maximum": 155.0919699948281,
+     "median": 41.26488999463618,
+     "minimum": 9.435179992578924,
+     "p95": 105.58827407658084
+    },
+    "rows_per_second": 2762.0025557164004,
+    "wall_ms": 17572.032980038784
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_declared": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240  /data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "product_path": "/data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 335,
+    "response_bytes_validated": true,
+    "successful_samples": 335,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 17229.300110018812,
+    "merge_wait_ms": 495.1663300162181,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 1,
+      "parts": {
+       "assets": 2,
+       "events_analytics": 7
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 2,
+       "events_analytics": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 2,
+       "events_analytics": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 2,
+       "events_analytics": 6
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 495.1663300162181,
+    "watermark_wait_ms": 7480.006270692684,
+    "watermarks": {
+     "assets": 48534,
+     "events_analytics": 48534
+    }
+   },
+   "round_index": 2,
+   "scenarios": {
+    "batch:main": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 2/2 > Granules: 7/7": 5
+     },
+     "read_bytes": {
+      "maximum": 10347128,
+      "minimum": 10347128
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 10347128,
+      "minimum": 10347128
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:entropy_512k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "detail:text_512k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "preview:first": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "preview:middle": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "trace:p25": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "trace:p50": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "trace:p95": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1664798,
+      "minimum": 1664798
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1664798,
+      "minimum": 1664798
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": {
+     "available_bytes": 128450560,
+     "available_object_count": 160,
+     "orphan_bytes": 0,
+     "orphan_object_count": 0
+    },
+    "merges": [],
+    "tables": {
+     "assets": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "error_category": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "status": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "storage_path": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "updated_at": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 33286,
+      "marks": 4,
+      "part_count": 2,
+      "rows": 160,
+      "uncompressed_bytes": 53440
+     },
+     "events_analytics": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3248511,
+      "marks": 17,
+      "part_count": 6,
+      "rows": 48534,
+      "uncompressed_bytes": 9953614
+     }
+    }
+   },
+   "workload": "main",
+   "write": {
+    "asset_publish_ms": 600.7713490398601,
+    "block_ingest_wall_ms_sum": 7621.333230054006,
+    "block_wall_ms": {
+     "maximum": 387.8902100259438,
+     "median": 38.62090996699408,
+     "minimum": 8.425039937719703,
+     "p95": 94.03657900984375
+    },
+    "rows_per_second": 2900.308023169415,
+    "wall_ms": 16734.08466007095
+   }
+  },
+  {
+   "container": {
+    "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_declared": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+    "binary_sha256_source": "measured",
+    "container": null,
+    "engine": "1",
+    "engine_version": "23.3.10.5",
+    "host": "localhost.localdomain",
+    "mode": "native-package",
+    "package_checksums": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240  /data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+    "product_path": "/data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse"
+   },
+   "correctness": {
+    "failed_samples": 0,
+    "formal_samples": 335,
+    "response_bytes_validated": true,
+    "successful_samples": 335,
+    "truth_identity": "a71b4c3a798dd9cb45afef1be2653857afe5fdd61978c7da49cf80dbef3094b8"
+   },
+   "engine_runtime": {
+    "source": "database-query",
+    "version": "23.3.10.5"
+   },
+   "host": {
+    "cpu_count": 256,
+    "machine": "aarch64",
+    "memory_total_kib": 453186788,
+    "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+   },
+   "index_scans": {},
+   "maintenance": {
+    "analyze_ms": null,
+    "completed": true,
+    "load_to_query_ready_ms": 25421.76912992727,
+    "merge_wait_ms": 589.4781799288467,
+    "natural_stable_parts": true,
+    "observations": [
+     {
+      "merges": 1,
+      "parts": {
+       "assets": 2,
+       "events_analytics": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 2,
+       "events_analytics": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 2,
+       "events_analytics": 6
+      }
+     },
+     {
+      "merges": 0,
+      "parts": {
+       "assets": 2,
+       "events_analytics": 6
+      }
+     }
+    ],
+    "optimize_final": false,
+    "wall_ms": 589.4781799288467,
+    "watermark_wait_ms": 10734.902259893715,
+    "watermarks": {
+     "assets": 48534,
+     "events_analytics": 48534
+    }
+   },
+   "round_index": 3,
+   "scenarios": {
+    "batch:main": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "batch",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 2/2 > Granules: 7/7": 5
+     },
+     "read_bytes": {
+      "maximum": 10347128,
+      "minimum": 10347128
+     },
+     "read_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     },
+     "samples": 5,
+     "scanned_bytes": {
+      "maximum": 10347128,
+      "minimum": 10347128
+     },
+     "scanned_rows": {
+      "maximum": 48534,
+      "minimum": 48534
+     }
+    },
+    "detail:entropy_512k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "detail:text_2m": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "detail:text_512k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "detail:text_64k": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "detail",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "list:first": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "list:middle": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "list",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 5974875,
+      "minimum": 5974875
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "preview:first": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "preview:middle": {
+     "access_structure": [
+      "batch-or-preview-no-structure-requirement"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "preview",
+     "payload_selected": [
+      false
+     ],
+     "plans": {
+      "Limit (preliminary LIMIT (without OFFSET)) > Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 4/7": 30
+     },
+     "read_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "read_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 6326155,
+      "minimum": 6326155
+     },
+     "scanned_rows": {
+      "maximum": 32768,
+      "minimum": 32768
+     }
+    },
+    "trace:p25": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1667316,
+      "minimum": 1667316
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "trace:p50": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1664105,
+      "minimum": 1664105
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    },
+    "trace:p95": {
+     "access_structure": [
+      "primary-key-mark-pruning"
+     ],
+     "expected_sources": [
+      "events_analytics"
+     ],
+     "kind": "trace",
+     "payload_selected": [
+      true
+     ],
+     "plans": {
+      "Sorting (Sorting for ORDER BY) > ReadFromMergeTree (events_analytics) > Parts: 1/2 > Granules: 1/7": 30
+     },
+     "read_bytes": {
+      "maximum": 1664798,
+      "minimum": 1664798
+     },
+     "read_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     },
+     "samples": 30,
+     "scanned_bytes": {
+      "maximum": 1664798,
+      "minimum": 1664798
+     },
+     "scanned_rows": {
+      "maximum": 8192,
+      "minimum": 8192
+     }
+    }
+   },
+   "status": "complete",
+   "storage": {
+    "asset_store": {
+     "available_bytes": 128450560,
+     "available_object_count": 160,
+     "orphan_bytes": 0,
+     "orphan_object_count": 0
+    },
+    "merges": [],
+    "tables": {
+     "assets": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "error_category": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "status": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "storage_path": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "updated_at": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 33309,
+      "marks": 4,
+      "part_count": 2,
+      "rows": 160,
+      "uncompressed_bytes": 53440
+     },
+     "events_analytics": {
+      "columns": {
+       "asset_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "cohort": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_length": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "content_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "duration_ms": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "encoding": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "end_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "event_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "framework": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "ingest_seq": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "level": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "parent_span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "preview": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "profile": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "project_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "sha256": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "span_type": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "start_time": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       },
+       "trace_id": {
+        "compressed_bytes": 0,
+        "uncompressed_bytes": 0
+       }
+      },
+      "compressed_bytes": 3248511,
+      "marks": 17,
+      "part_count": 6,
+      "rows": 48534,
+      "uncompressed_bytes": 9953614
+     }
+    }
+   },
+   "workload": "main",
+   "write": {
+    "asset_publish_ms": 1176.6712402459234,
+    "block_ingest_wall_ms_sum": 11761.597429635003,
+    "block_wall_ms": {
+     "maximum": 257.0264999521896,
+     "median": 56.20568001177162,
+     "minimum": 14.001769945025444,
+     "p95": 167.81574195483694
+    },
+    "rows_per_second": 1954.4824837394058,
+    "wall_ms": 24832.148869987577
+   }
+  }
+ ],
+ "target": "/data1/cjy/.stage3-yellow/runs/clickhouse-main/clickhouse/asset_ref"
+}

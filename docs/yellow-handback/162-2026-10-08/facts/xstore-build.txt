@@ -1,0 +1,6 @@
+source_commit: 94f77718
+build_command: sh build_all.sh release
+product_path: /data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb
+$ sha256sum /data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb
+462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884  /data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb
+

@@ -1,0 +1,171 @@
+A1
+22.7 23.4 22.9 23.5
+22.7 23.3 22.9 23.5
+22.7 23.2 22.8 23.3
+22.7 23.3 22.8 23.4
+22.9 26.7 21.1 26.1
+29.5 27.4 28.8 29.6
+30.6 29.9 29.7 28.4
+27.0 27.4 28.6 28.7
+A2
+10.8 13.7 24.0 13.5
+12.1 14.5 24.8 14.6
+10.4 13.3 23.5 13.0
+20.1 21.8 27.5 21.9
+10.0 19.1 77.3 32.6
+134.4 148.2 167.9 141.5
+14.1 23.3 76.9 35.8
+14.4 16.5 34.0 20.7
+A3
+13.1 15.8 28.5 1361.6
+14.7 17.4 30.3 1297.0
+12.6 15.3 28.0 1361.9
+22.6 24.3 32.9 803.6
+24.9 22.1 68.5 2297.9
+133.6 151.9 171.7 2928.2
+26.5 21.6 72.2 2476.9
+17.1 19.3 41.6 1782.9
+A4
+930.8 859.8
+887.3 835.6
+927.1 847.1
+498.6 1672.9
+1815.6 1641.9
+1730.4 1823.8
+1774.2 1668.5
+698.6 9893.5
+A5
+8442.5 27.9
+10980.9 43.5
+11563.6 45.2
+8792.9 47.3
+5031.6 14.9
+6538.0 23.4
+7067.0 29.0
+7824.6 40.2
+A6
+events:186515456,33505280,0,220020736
+event_payloads:183287808,33308672,0,216596480;events_analytics:10977280,33308672,0,44285952
+events_core:10977280,33308672,0,44285952;events_full:186515456,33505280,0,220020736
+assets:98304,180224,0,278528;events_analytics:10977280,33308672,0,44285952;asset_store:128450560,160
+events:6,48534,21,19032758,138345760
+event_payloads:5,48534,18,17650307,135147278;events_analytics:6,48534,17,3235614,9846306
+events_core:6,48534,17,3235614,9846306;events_full:5,48534,19,19027321,138345760
+assets:2,160,4,33309,53440;events_analytics:6,48534,17,3248511,9953614;asset_store:128450560,160
+A7
+642712800 0 642712800
+642712800 0 642712800
+642712800 0 642712800
+460000 642252800 642712800
+642712800 0 642712800
+642712800 0 642712800
+642712800 0 642712800
+460000 642252800 642712800
+A8
+256 256 1 1 5 31
+256 256 1 1 5 31
+256 256 1 1 5 31
+256 256 1 1 5 31
+10541 18899 2688 8192 3245 8192
+32768 32768 56726 56726 56726 56726
+32768 32768 2688 8192 3245 8192
+32768 32768 8192 8192 8192 8192
+B1
+entropy_512k 40 20971520 20971680
+text_2m 40 83886080 83886240
+text_512k 40 20971520 20971680
+text_64k 40 2621440 2621600
+entropy_512k 40 20971520 20971680
+text_2m 40 83886080 83886240
+text_512k 40 20971520 20971680
+text_64k 40 2621440 2621600
+entropy_512k 40 20971520 20971680
+text_2m 40 83886080 83886240
+text_512k 40 20971520 20971680
+text_64k 40 2621440 2621600
+NA 载荷在库外
+15792873 127317856
+15787283 127318112
+15790227 128498792
+NA 载荷在库外
+B2
+85.6 190 0
+22.6 190 7
+25.5 6 0
+16.0 1 0
+83.3 190 0
+29.5 190 5
+37.4 3 0
+27.0 1 0
+90.0 190 0
+29.6 190 8
+29.7 3 0
+27.0 1 0
+115.7 190 0
+29.7 190 2
+29.4 3 0
+29.8 1 0
+B3
+24.7 24.9 1 1 row
+24.7 24.9 0 0 row
+25.9 26.0 0 0 row
+25.8 25.7 0 0 row
+25.3 25.3 0 0 row
+24.8 24.6 2 1 row
+24.8 24.8 0 0 row
+24.8 24.8 0 0 row
+26.2 26.1 0 0 row
+25.1 24.9 0 0 row
+25.0 25.1 1 1 row
+24.2 24.2 0 0 row
+24.5 24.4 0 0 row
+25.4 25.4 0 0 row
+24.6 24.4 0 0 row
+114.5 112.8 2448 2510 row
+26.8 26.8 350 352 row
+25.5 25.5 1 2 row
+26.2 26.6 3 3 row
+25.4 25.1 0 0 row
+NA 缺失
+NA 缺失
+NA 缺失
+NA 缺失
+NA 缺失
+NA 缺失
+NA 缺失
+NA 缺失
+NA 缺失
+NA 缺失
+NA 缺失
+NA 缺失
+NA 缺失
+NA 缺失
+NA 缺失
+NA 缺失
+NA 缺失
+NA 缺失
+NA 缺失
+NA 缺失
+B4
+remove_published_object missing available True 0 restore_missing_object
+modify_published_bytes corrupt available True 0 replace_corrupt_object
+replace_catalog_metadata metadata_mismatch available True 0 restore_catalog_metadata
+fail_after_object_upload missing absent False 1 remove_orphan_object
+fail_pending_publication failed failed True 0 confirm_failed_publication
+fail_deleting_object_removal deleting deleting True 0 confirm_delete_failure_state
+remove_published_object missing available True 0 restore_missing_object
+modify_published_bytes corrupt available True 0 replace_corrupt_object
+replace_catalog_metadata metadata_mismatch available True 0 restore_catalog_metadata
+fail_after_object_upload missing absent False 1 remove_orphan_object
+fail_pending_publication failed failed True 0 confirm_failed_publication
+fail_deleting_object_removal deleting deleting True 0 confirm_delete_failure_state
+C4
+events:0:None pass
+event_payloads:0:None;events_analytics:0:None pass
+events_core:0:None;events_full:0:None pass
+NA 探针缺失 pass
+C5
+Index Scan using events_list_idx on events 256
+Index Scan using events_list_idx on events 256
+C6
+48f2512 61 of 124 runs use code other than HEAD

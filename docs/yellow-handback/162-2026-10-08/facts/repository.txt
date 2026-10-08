@@ -1,0 +1,12 @@
+$ git -C /data1/cjy/agent-trace-research rev-parse HEAD
+094488b2ea25d3c87dbeaf57aa431bf7445e8290
+
+$ git -C /data1/cjy/agent-trace-research status --short
+
+$ git -C /data1/cjy/agent-trace-research log --oneline -5
+094488b Merge remote-tracking branch 'origin/stage3/xstore-yellow-handoff' into stage3/xstore-yellow-162-2026-09-24
+9a6aacb feat: generate a checksummed hand-typed handback format
+481d0e0 feat: report middle-page filter rows and the driver benchmark in check
+8d97521 docs: add follow-up checks for 162-2026-09-24 handback
+090e4b3 docs: state that each interference stream runs in its own process
+

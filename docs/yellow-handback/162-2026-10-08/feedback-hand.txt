@@ -1,0 +1,67 @@
+V2 162 2026-10-08
+H 635f
+94f77718 R 23.3.10.5 48f2512 61 3 1 X 1-296 3
+XM 9f7b
+22.7 23.4 23.5 10.8 13.5 24 28.5 1362
+22.7 23.3 23.5 12.1 14.6 24.8 30.3 1297
+22.7 23.2 23.3 10.4 13 23.5 28 1362
+22.7 23.3 23.4 20.1 21.9 27.5 32.9 804
+XQ b0c3
+12.3 0.6 12.8 0.67 6 6
+12.2 0.6 12.8 0.66 6 6
+12.3 0.6 12.8 0.66 6 6
+12.1 0.6 12.7 0.67 6 6
+XE e086
+931 860
+887 836
+927 847
+499 1673
+XW 44da
+8442 220 0
+10981 261 0
+11564 264 0
+8793 44.6 128
+XA b4ac
+AAAXFD 67.8 13652 0.73 6
+XD e07c
+0.15 0.24 0.44 4.68 0.05 1.42 2.92
+I 1479
+24.7 26.4 1|0 0|25.8 28.8 0 0|25.3 28.1 0|1665 170 66.5
+24.8 26 2|0 0|26.2 28.6 0 0|25.1 27.8 0|1443 197 85.3
+25 27.4 1|0 0|25.4 27.8 0 0|24.6 26.9 0|1496 191 85.5
+114 320 2448|350 1|26.2 28.7 3 3|25.4 27.8 0|863 331 53.7
+20.7 23.8 1|1 1|21.6 28.9 0 0|18.9 23.7 1|2295 129 36.1
+NA NA NA|NA NA|NA NA NA NA|NA NA NA|NA NA NA
+NA NA NA|NA NA|NA NA NA NA|NA NA NA|NA NA NA
+NA NA NA|NA NA|NA NA NA NA|NA NA NA|NA NA NA
+CM 61d0
+22.9 26.7 26.1 10 32.6 77.3 68.5 2298
+29.5 27.4 29.6 134 141 168 172 2928
+30.6 29.9 28.4 14.1 35.8 76.9 72.2 2477
+27 27.4 28.7 14.4 20.7 34 41.6 1783
+CE fd45
+1816 1642
+1730 1824
+1774 1668
+699 9893
+CW 0685
+5032 19 0
+6538 20.9 0
+7067 22.3 0
+7825 3.3 128
+CP b488
+85.6 22.6 25.5 16
+83.3 29.5 37.4 27
+90 29.6 29.7 27
+116 29.7 29.4 29.8
+CA 24c9
+AAAXFD
+N
+N auto missing interference/clickhouse asset_ref,full_core,separate
+N auto nonhead ch-asset-failures
+N auto nonhead ch-part-states-asset_ref
+N auto nonhead ch-part-states-full_core
+N auto nonhead ch-part-states-same_table
+N auto nonhead ch-part-states-separate
+N auto nonhead clickhouse-main
+N auto I-from-F2 clickhouse

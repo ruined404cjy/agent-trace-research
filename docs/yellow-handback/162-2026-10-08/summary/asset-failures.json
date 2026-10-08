@@ -1,0 +1,1081 @@
+{
+ "case_order": [
+  "missing",
+  "corrupt",
+  "metadata_mismatch",
+  "upload_then_db_failure",
+  "publish_failure",
+  "delete_failure"
+ ],
+ "engines": [
+  {
+   "cases": [
+    {
+     "asset_id": "0d3671d1ca9dc6c86ab38424ee1e72f40bc60c5d36ba6db3e3a11b42ec67e8ca",
+     "case": "missing",
+     "catalog_transitions": [
+      {
+       "after": "available",
+       "asset_id": "0d3671d1ca9dc6c86ab38424ee1e72f40bc60c5d36ba6db3e3a11b42ec67e8ca",
+       "before": "available",
+       "phase": "injection",
+       "sha256": "0d3671d1ca9dc6c86ab38424ee1e72f40bc60c5d36ba6db3e3a11b42ec67e8ca"
+      },
+      {
+       "after": "available",
+       "asset_id": "0d3671d1ca9dc6c86ab38424ee1e72f40bc60c5d36ba6db3e3a11b42ec67e8ca",
+       "before": "available",
+       "phase": "recovery",
+       "sha256": "0d3671d1ca9dc6c86ab38424ee1e72f40bc60c5d36ba6db3e3a11b42ec67e8ca"
+      }
+     ],
+     "cleanup": {
+      "adapter_cleanup_target": "jsons3_af_missing_5ebbef239c_asset_ref",
+      "errors": [],
+      "namespace": "jsons3_af_missing_5ebbef239c",
+      "namespace_removed": true,
+      "object_directory": "/data1/cjy/.stage3-yellow/runs/ch-asset-failures/child/asset-failure-cases/missing/objects",
+      "object_directory_removed": true
+     },
+     "event_visible": true,
+     "execution_error": null,
+     "final_status": "available",
+     "injection_point": "remove_published_object",
+     "namespace": "jsons3_af_missing_5ebbef239c",
+     "orphan_count": 0,
+     "orphan_count_after_recovery": 0,
+     "reconcile": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "reconcile_after_recovery": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "recovery_actions": [
+      "restore_missing_object"
+     ],
+     "recovery_resolver": {
+      "content_length": 35,
+      "content_visible": true,
+      "error": null,
+      "preview": "{\"content\":\"asset failure missing\"}",
+      "sha256": "0d3671d1ca9dc6c86ab38424ee1e72f40bc60c5d36ba6db3e3a11b42ec67e8ca"
+     },
+     "resolver": {
+      "content_length": null,
+      "content_visible": false,
+      "error": "missing",
+      "preview": null,
+      "sha256": null
+     },
+     "sha256": "0d3671d1ca9dc6c86ab38424ee1e72f40bc60c5d36ba6db3e3a11b42ec67e8ca",
+     "store_observation": {
+      "object_exists": false,
+      "object_path": "/data1/cjy/.stage3-yellow/runs/ch-asset-failures/child/asset-failure-cases/missing/objects/0d/0d3671d1ca9dc6c86ab38424ee1e72f40bc60c5d36ba6db3e3a11b42ec67e8ca",
+      "publish_attempts": []
+     },
+     "validation_errors": []
+    },
+    {
+     "asset_id": "312ec7342654fed4e8eb22a355b4be5d2f7bde2fd8a454e98540e4268e81fd6a",
+     "case": "corrupt",
+     "catalog_transitions": [
+      {
+       "after": "available",
+       "asset_id": "312ec7342654fed4e8eb22a355b4be5d2f7bde2fd8a454e98540e4268e81fd6a",
+       "before": "available",
+       "phase": "injection",
+       "sha256": "312ec7342654fed4e8eb22a355b4be5d2f7bde2fd8a454e98540e4268e81fd6a"
+      },
+      {
+       "after": "available",
+       "asset_id": "312ec7342654fed4e8eb22a355b4be5d2f7bde2fd8a454e98540e4268e81fd6a",
+       "before": "available",
+       "phase": "recovery",
+       "sha256": "312ec7342654fed4e8eb22a355b4be5d2f7bde2fd8a454e98540e4268e81fd6a"
+      }
+     ],
+     "cleanup": {
+      "adapter_cleanup_target": "jsons3_af_corrupt_c3676568ba_asset_ref",
+      "errors": [],
+      "namespace": "jsons3_af_corrupt_c3676568ba",
+      "namespace_removed": true,
+      "object_directory": "/data1/cjy/.stage3-yellow/runs/ch-asset-failures/child/asset-failure-cases/corrupt/objects",
+      "object_directory_removed": true
+     },
+     "event_visible": true,
+     "execution_error": null,
+     "final_status": "available",
+     "injection_point": "modify_published_bytes",
+     "namespace": "jsons3_af_corrupt_c3676568ba",
+     "orphan_count": 0,
+     "orphan_count_after_recovery": 0,
+     "reconcile": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "reconcile_after_recovery": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "recovery_actions": [
+      "replace_corrupt_object"
+     ],
+     "recovery_resolver": {
+      "content_length": 35,
+      "content_visible": true,
+      "error": null,
+      "preview": "{\"content\":\"asset failure corrupt\"}",
+      "sha256": "312ec7342654fed4e8eb22a355b4be5d2f7bde2fd8a454e98540e4268e81fd6a"
+     },
+     "resolver": {
+      "content_length": null,
+      "content_visible": false,
+      "error": "corrupt",
+      "preview": null,
+      "sha256": null
+     },
+     "sha256": "312ec7342654fed4e8eb22a355b4be5d2f7bde2fd8a454e98540e4268e81fd6a",
+     "store_observation": {
+      "object_exists": true,
+      "object_path": "/data1/cjy/.stage3-yellow/runs/ch-asset-failures/child/asset-failure-cases/corrupt/objects/31/312ec7342654fed4e8eb22a355b4be5d2f7bde2fd8a454e98540e4268e81fd6a",
+      "publish_attempts": []
+     },
+     "validation_errors": []
+    },
+    {
+     "asset_id": "0b06099ed93bcd0321bbebd2b45b7f6e6694050753ce481d2a84f8d0e7049e55",
+     "case": "metadata_mismatch",
+     "catalog_transitions": [
+      {
+       "after": "available",
+       "asset_id": "0b06099ed93bcd0321bbebd2b45b7f6e6694050753ce481d2a84f8d0e7049e55",
+       "before": "available",
+       "phase": "injection",
+       "sha256": "0b06099ed93bcd0321bbebd2b45b7f6e6694050753ce481d2a84f8d0e7049e55"
+      },
+      {
+       "after": "available",
+       "asset_id": "0b06099ed93bcd0321bbebd2b45b7f6e6694050753ce481d2a84f8d0e7049e55",
+       "before": "available",
+       "phase": "recovery",
+       "sha256": "0b06099ed93bcd0321bbebd2b45b7f6e6694050753ce481d2a84f8d0e7049e55"
+      }
+     ],
+     "cleanup": {
+      "adapter_cleanup_target": "jsons3_af_metadata_mismatch_4b0fde21fd_asset_ref",
+      "errors": [],
+      "namespace": "jsons3_af_metadata_mismatch_4b0fde21fd",
+      "namespace_removed": true,
+      "object_directory": "/data1/cjy/.stage3-yellow/runs/ch-asset-failures/child/asset-failure-cases/metadata_mismatch/objects",
+      "object_directory_removed": true
+     },
+     "event_visible": true,
+     "execution_error": null,
+     "final_status": "available",
+     "injection_point": "replace_catalog_metadata",
+     "namespace": "jsons3_af_metadata_mismatch_4b0fde21fd",
+     "orphan_count": 0,
+     "orphan_count_after_recovery": 0,
+     "reconcile": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "reconcile_after_recovery": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "recovery_actions": [
+      "restore_catalog_metadata"
+     ],
+     "recovery_resolver": {
+      "content_length": 45,
+      "content_visible": true,
+      "error": null,
+      "preview": "{\"content\":\"asset failure metadata_mismatch\"}",
+      "sha256": "0b06099ed93bcd0321bbebd2b45b7f6e6694050753ce481d2a84f8d0e7049e55"
+     },
+     "resolver": {
+      "content_length": null,
+      "content_visible": false,
+      "error": "metadata_mismatch",
+      "preview": null,
+      "sha256": null
+     },
+     "sha256": "0b06099ed93bcd0321bbebd2b45b7f6e6694050753ce481d2a84f8d0e7049e55",
+     "store_observation": {
+      "object_exists": true,
+      "object_path": "/data1/cjy/.stage3-yellow/runs/ch-asset-failures/child/asset-failure-cases/metadata_mismatch/objects/0b/0b06099ed93bcd0321bbebd2b45b7f6e6694050753ce481d2a84f8d0e7049e55",
+      "publish_attempts": []
+     },
+     "validation_errors": []
+    },
+    {
+     "asset_id": "a4020a5ab77a67285c32fcb52ee7facdacbfe304a45e349a953c7e43991b466c",
+     "case": "upload_then_db_failure",
+     "catalog_transitions": [
+      {
+       "after": "absent",
+       "asset_id": "a4020a5ab77a67285c32fcb52ee7facdacbfe304a45e349a953c7e43991b466c",
+       "before": "absent",
+       "phase": "injection",
+       "sha256": "a4020a5ab77a67285c32fcb52ee7facdacbfe304a45e349a953c7e43991b466c"
+      },
+      {
+       "after": "absent",
+       "asset_id": "a4020a5ab77a67285c32fcb52ee7facdacbfe304a45e349a953c7e43991b466c",
+       "before": "absent",
+       "phase": "recovery",
+       "sha256": "a4020a5ab77a67285c32fcb52ee7facdacbfe304a45e349a953c7e43991b466c"
+      }
+     ],
+     "cleanup": {
+      "adapter_cleanup_target": "jsons3_af_upload_then_db_failure_5ebfa9b247_asset_ref",
+      "errors": [],
+      "namespace": "jsons3_af_upload_then_db_failure_5ebfa9b247",
+      "namespace_removed": true,
+      "object_directory": "/data1/cjy/.stage3-yellow/runs/ch-asset-failures/child/asset-failure-cases/upload_then_db_failure/objects",
+      "object_directory_removed": true
+     },
+     "event_visible": false,
+     "execution_error": null,
+     "final_status": "absent",
+     "injection_point": "fail_after_object_upload",
+     "namespace": "jsons3_af_upload_then_db_failure_5ebfa9b247",
+     "orphan_count": 1,
+     "orphan_count_after_recovery": 0,
+     "reconcile": {
+      "orphan_count": 1,
+      "orphan_paths": [
+       "/data1/cjy/.stage3-yellow/runs/ch-asset-failures/child/asset-failure-cases/upload_then_db_failure/objects/a4/a4020a5ab77a67285c32fcb52ee7facdacbfe304a45e349a953c7e43991b466c"
+      ]
+     },
+     "reconcile_after_recovery": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "recovery_actions": [
+      "remove_orphan_object"
+     ],
+     "recovery_resolver": {
+      "content_length": null,
+      "content_visible": false,
+      "error": "missing",
+      "preview": null,
+      "sha256": null
+     },
+     "resolver": {
+      "content_length": null,
+      "content_visible": false,
+      "error": "missing",
+      "preview": null,
+      "sha256": null
+     },
+     "sha256": "a4020a5ab77a67285c32fcb52ee7facdacbfe304a45e349a953c7e43991b466c",
+     "store_observation": {
+      "object_exists": true,
+      "object_path": "/data1/cjy/.stage3-yellow/runs/ch-asset-failures/child/asset-failure-cases/upload_then_db_failure/objects/a4/a4020a5ab77a67285c32fcb52ee7facdacbfe304a45e349a953c7e43991b466c",
+      "publish_attempts": [
+       {
+        "asset_id": "a4020a5ab77a67285c32fcb52ee7facdacbfe304a45e349a953c7e43991b466c",
+        "error": null,
+        "final_object_exists": true
+       }
+      ]
+     },
+     "validation_errors": []
+    },
+    {
+     "asset_id": "60ca0fa3a3752f3374b6c05dcf67e773eee0352b0fb8ffce05ca01943d2408fc",
+     "case": "publish_failure",
+     "catalog_transitions": [
+      {
+       "after": "failed",
+       "asset_id": "60ca0fa3a3752f3374b6c05dcf67e773eee0352b0fb8ffce05ca01943d2408fc",
+       "before": "pending",
+       "phase": "injection",
+       "sha256": "60ca0fa3a3752f3374b6c05dcf67e773eee0352b0fb8ffce05ca01943d2408fc"
+      },
+      {
+       "after": "failed",
+       "asset_id": "60ca0fa3a3752f3374b6c05dcf67e773eee0352b0fb8ffce05ca01943d2408fc",
+       "before": "failed",
+       "phase": "recovery",
+       "sha256": "60ca0fa3a3752f3374b6c05dcf67e773eee0352b0fb8ffce05ca01943d2408fc"
+      }
+     ],
+     "cleanup": {
+      "adapter_cleanup_target": "jsons3_af_publish_failure_db1ee627f3_asset_ref",
+      "errors": [],
+      "namespace": "jsons3_af_publish_failure_db1ee627f3",
+      "namespace_removed": true,
+      "object_directory": "/data1/cjy/.stage3-yellow/runs/ch-asset-failures/child/asset-failure-cases/publish_failure/objects",
+      "object_directory_removed": true
+     },
+     "event_visible": true,
+     "execution_error": null,
+     "final_status": "failed",
+     "injection_point": "fail_pending_publication",
+     "namespace": "jsons3_af_publish_failure_db1ee627f3",
+     "orphan_count": 0,
+     "orphan_count_after_recovery": 0,
+     "reconcile": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "reconcile_after_recovery": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "recovery_actions": [
+      "confirm_failed_publication"
+     ],
+     "recovery_resolver": {
+      "content_length": null,
+      "content_visible": false,
+      "error": "failed",
+      "preview": null,
+      "sha256": null
+     },
+     "resolver": {
+      "content_length": null,
+      "content_visible": false,
+      "error": "failed",
+      "preview": null,
+      "sha256": null
+     },
+     "sha256": "60ca0fa3a3752f3374b6c05dcf67e773eee0352b0fb8ffce05ca01943d2408fc",
+     "store_observation": {
+      "object_exists": false,
+      "object_path": "/data1/cjy/.stage3-yellow/runs/ch-asset-failures/child/asset-failure-cases/publish_failure/objects/60/60ca0fa3a3752f3374b6c05dcf67e773eee0352b0fb8ffce05ca01943d2408fc",
+      "publish_attempts": [
+       {
+        "asset_id": "60ca0fa3a3752f3374b6c05dcf67e773eee0352b0fb8ffce05ca01943d2408fc",
+        "error": "failed",
+        "final_object_exists": false
+       }
+      ]
+     },
+     "validation_errors": []
+    },
+    {
+     "asset_id": "7e1a1ea6d14048386ca8c9021ad9016fe5fb020e30d429e5b8b957a9b4a21cc7",
+     "case": "delete_failure",
+     "catalog_transitions": [
+      {
+       "after": "deleting",
+       "asset_id": "7e1a1ea6d14048386ca8c9021ad9016fe5fb020e30d429e5b8b957a9b4a21cc7",
+       "before": "available",
+       "phase": "injection",
+       "sha256": "7e1a1ea6d14048386ca8c9021ad9016fe5fb020e30d429e5b8b957a9b4a21cc7"
+      },
+      {
+       "after": "deleting",
+       "asset_id": "7e1a1ea6d14048386ca8c9021ad9016fe5fb020e30d429e5b8b957a9b4a21cc7",
+       "before": "deleting",
+       "phase": "recovery",
+       "sha256": "7e1a1ea6d14048386ca8c9021ad9016fe5fb020e30d429e5b8b957a9b4a21cc7"
+      }
+     ],
+     "cleanup": {
+      "adapter_cleanup_target": "jsons3_af_delete_failure_b5595b4cc4_asset_ref",
+      "errors": [],
+      "namespace": "jsons3_af_delete_failure_b5595b4cc4",
+      "namespace_removed": true,
+      "object_directory": "/data1/cjy/.stage3-yellow/runs/ch-asset-failures/child/asset-failure-cases/delete_failure/objects",
+      "object_directory_removed": true
+     },
+     "event_visible": true,
+     "execution_error": null,
+     "final_status": "deleting",
+     "injection_point": "fail_deleting_object_removal",
+     "namespace": "jsons3_af_delete_failure_b5595b4cc4",
+     "orphan_count": 0,
+     "orphan_count_after_recovery": 0,
+     "reconcile": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "reconcile_after_recovery": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "recovery_actions": [
+      "confirm_delete_failure_state"
+     ],
+     "recovery_resolver": {
+      "content_length": null,
+      "content_visible": false,
+      "error": "deleting",
+      "preview": null,
+      "sha256": null
+     },
+     "resolver": {
+      "content_length": null,
+      "content_visible": false,
+      "error": "deleting",
+      "preview": null,
+      "sha256": null
+     },
+     "sha256": "7e1a1ea6d14048386ca8c9021ad9016fe5fb020e30d429e5b8b957a9b4a21cc7",
+     "store_observation": {
+      "object_exists": true,
+      "object_path": "/data1/cjy/.stage3-yellow/runs/ch-asset-failures/child/asset-failure-cases/delete_failure/objects/7e/7e1a1ea6d14048386ca8c9021ad9016fe5fb020e30d429e5b8b957a9b4a21cc7",
+      "publish_attempts": []
+     },
+     "validation_errors": []
+    }
+   ],
+   "child": {
+    "bytes": 11609,
+    "format": "agent-trace-json-storage-stage3-asset-failure-run",
+    "format_version": 1,
+    "path": "child/run-manifest.json",
+    "run_id": "jsons3-asset-failures-82d82989e3",
+    "sha256": "899527562fc945f69c431e449f2ce9c18fd9b8920464642d27ba97a77848b36c",
+    "status": "complete"
+   },
+   "cleanup": {
+    "namespaces": [
+     "jsons3_af_missing_5ebbef239c",
+     "jsons3_af_corrupt_c3676568ba",
+     "jsons3_af_metadata_mismatch_4b0fde21fd",
+     "jsons3_af_upload_then_db_failure_5ebfa9b247",
+     "jsons3_af_publish_failure_db1ee627f3",
+     "jsons3_af_delete_failure_b5595b4cc4"
+    ],
+    "namespaces_removed": true,
+    "object_directories_removed": true,
+    "runtime_probe_directory": "/data1/cjy/.stage3-yellow/runs/ch-asset-failures/runtime-probe-assets",
+    "runtime_probe_directory_removed": true
+   },
+   "code": {
+    "asset_failure_runner": {
+     "bytes": 22145,
+     "path": "/data1/cjy/agent-trace-research/experiments/json-storage-stage3/runner/run_asset_failures.py",
+     "sha256": "daca18b9f0e1e2df660c80f72095074f296587060c7e9efb22f057b5a093abba"
+    },
+    "assets": {
+     "bytes": 11938,
+     "path": "/data1/cjy/agent-trace-research/experiments/json-storage-stage3/runner/assets.py",
+     "sha256": "04e45782ddfe87558ece610e3ac63150e068d38d02e39f2d52ec40753a490c2c"
+    },
+    "common": {
+     "bytes": 22823,
+     "path": "/data1/cjy/agent-trace-research/experiments/json-storage-stage3/runner/common.py",
+     "sha256": "a443be843155f65bcdeafcdc9a50a89f9787bc296834dddeab059d8d3b11af25"
+    },
+    "generator": {
+     "bytes": 21612,
+     "path": "/data1/cjy/agent-trace-research/experiments/json-storage-stage3/generator/generate_payloads.py",
+     "sha256": "ce5d0ec65a9c4e3ba7dfc8ce48aef39ebac716d252a5680ec1e29f23c839a214"
+    },
+    "layout_runner": {
+     "bytes": 90163,
+     "path": "/data1/cjy/agent-trace-research/experiments/json-storage-stage3/runner/run_layout_matrix.py",
+     "sha256": "94603559ee0a0f34a099ca3534f3865358d8519f88d225e13cdba69da6b91d49"
+    },
+    "production": {
+     "bytes": 46667,
+     "path": "/data1/cjy/agent-trace-research/experiments/json-storage-stage3/runner/production.py",
+     "sha256": "109185ef46217472a79db207f0aefd947388a252ec5f7bfab8fd6becb4b192c4"
+    },
+    "run_stage3": {
+     "bytes": 84220,
+     "path": "/data1/cjy/agent-trace-research/experiments/json-storage-stage3/runner/run_stage3.py",
+     "sha256": "fe890239f2d33f8771493a0ab6408fc6886cc790fbf3aedeaddee9b41f032113"
+    }
+   },
+   "engine": "clickhouse",
+   "namespace_policy": {
+    "case_order": [
+     "missing",
+     "corrupt",
+     "metadata_mismatch",
+     "upload_then_db_failure",
+     "publish_failure",
+     "delete_failure"
+    ],
+    "namespace_prefix": "jsons3_af_<case>_",
+    "namespaces": [
+     "jsons3_af_missing_5ebbef239c",
+     "jsons3_af_corrupt_c3676568ba",
+     "jsons3_af_metadata_mismatch_4b0fde21fd",
+     "jsons3_af_upload_then_db_failure_5ebfa9b247",
+     "jsons3_af_publish_failure_db1ee627f3",
+     "jsons3_af_delete_failure_b5595b4cc4"
+    ],
+    "reuse": false,
+    "strategy": "runner-fixed-case-unique"
+   },
+   "run_id": "jsons3-production-asset-failures-62f9918dd5",
+   "runtime": {
+    "container": {
+     "binary_sha256": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+     "binary_sha256_declared": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240",
+     "binary_sha256_source": "measured",
+     "container": null,
+     "engine": "clickhouse",
+     "engine_version": "23.3.10.5",
+     "host": "localhost.localdomain",
+     "mode": "native-package",
+     "package_checksums": "ae9d4b1c6a6de9cefe91a5d3eca25511120e8ea969fbaf10a4506300f1ae2240  /data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse",
+     "product_path": "/data1/cjy/.stage3-yellow/clickhouse/opt/clickhouse-common-static-23.3.10.5/usr/bin/clickhouse"
+    },
+    "endpoint": {
+     "host": "127.0.0.1",
+     "port": 18123
+    },
+    "engine": "clickhouse",
+    "engine_runtime": {
+     "source": "database-query",
+     "version": "23.3.10.5"
+    },
+    "host": {
+     "cpu_count": 256,
+     "machine": "aarch64",
+     "memory_total_kib": 453186788,
+     "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+    },
+    "layout": "asset_ref",
+    "operation": "asset-failures"
+   }
+  },
+  {
+   "cases": [
+    {
+     "asset_id": "0d3671d1ca9dc6c86ab38424ee1e72f40bc60c5d36ba6db3e3a11b42ec67e8ca",
+     "case": "missing",
+     "catalog_transitions": [
+      {
+       "after": "available",
+       "asset_id": "0d3671d1ca9dc6c86ab38424ee1e72f40bc60c5d36ba6db3e3a11b42ec67e8ca",
+       "before": "available",
+       "phase": "injection",
+       "sha256": "0d3671d1ca9dc6c86ab38424ee1e72f40bc60c5d36ba6db3e3a11b42ec67e8ca"
+      },
+      {
+       "after": "available",
+       "asset_id": "0d3671d1ca9dc6c86ab38424ee1e72f40bc60c5d36ba6db3e3a11b42ec67e8ca",
+       "before": "available",
+       "phase": "recovery",
+       "sha256": "0d3671d1ca9dc6c86ab38424ee1e72f40bc60c5d36ba6db3e3a11b42ec67e8ca"
+      }
+     ],
+     "cleanup": {
+      "adapter_cleanup_target": "jsons3_af_missing_3f20e1cc85_asset_ref",
+      "errors": [],
+      "namespace": "jsons3_af_missing_3f20e1cc85",
+      "namespace_removed": true,
+      "object_directory": "/data1/cjy/.stage3-yellow/runs/xstore-asset-failures/child/asset-failure-cases/missing/objects",
+      "object_directory_removed": true
+     },
+     "event_visible": true,
+     "execution_error": null,
+     "final_status": "available",
+     "injection_point": "remove_published_object",
+     "namespace": "jsons3_af_missing_3f20e1cc85",
+     "orphan_count": 0,
+     "orphan_count_after_recovery": 0,
+     "reconcile": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "reconcile_after_recovery": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "recovery_actions": [
+      "restore_missing_object"
+     ],
+     "recovery_resolver": {
+      "content_length": 35,
+      "content_visible": true,
+      "error": null,
+      "preview": "{\"content\":\"asset failure missing\"}",
+      "sha256": "0d3671d1ca9dc6c86ab38424ee1e72f40bc60c5d36ba6db3e3a11b42ec67e8ca"
+     },
+     "resolver": {
+      "content_length": null,
+      "content_visible": false,
+      "error": "missing",
+      "preview": null,
+      "sha256": null
+     },
+     "sha256": "0d3671d1ca9dc6c86ab38424ee1e72f40bc60c5d36ba6db3e3a11b42ec67e8ca",
+     "store_observation": {
+      "object_exists": false,
+      "object_path": "/data1/cjy/.stage3-yellow/runs/xstore-asset-failures/child/asset-failure-cases/missing/objects/0d/0d3671d1ca9dc6c86ab38424ee1e72f40bc60c5d36ba6db3e3a11b42ec67e8ca",
+      "publish_attempts": []
+     },
+     "validation_errors": []
+    },
+    {
+     "asset_id": "312ec7342654fed4e8eb22a355b4be5d2f7bde2fd8a454e98540e4268e81fd6a",
+     "case": "corrupt",
+     "catalog_transitions": [
+      {
+       "after": "available",
+       "asset_id": "312ec7342654fed4e8eb22a355b4be5d2f7bde2fd8a454e98540e4268e81fd6a",
+       "before": "available",
+       "phase": "injection",
+       "sha256": "312ec7342654fed4e8eb22a355b4be5d2f7bde2fd8a454e98540e4268e81fd6a"
+      },
+      {
+       "after": "available",
+       "asset_id": "312ec7342654fed4e8eb22a355b4be5d2f7bde2fd8a454e98540e4268e81fd6a",
+       "before": "available",
+       "phase": "recovery",
+       "sha256": "312ec7342654fed4e8eb22a355b4be5d2f7bde2fd8a454e98540e4268e81fd6a"
+      }
+     ],
+     "cleanup": {
+      "adapter_cleanup_target": "jsons3_af_corrupt_b7e3459350_asset_ref",
+      "errors": [],
+      "namespace": "jsons3_af_corrupt_b7e3459350",
+      "namespace_removed": true,
+      "object_directory": "/data1/cjy/.stage3-yellow/runs/xstore-asset-failures/child/asset-failure-cases/corrupt/objects",
+      "object_directory_removed": true
+     },
+     "event_visible": true,
+     "execution_error": null,
+     "final_status": "available",
+     "injection_point": "modify_published_bytes",
+     "namespace": "jsons3_af_corrupt_b7e3459350",
+     "orphan_count": 0,
+     "orphan_count_after_recovery": 0,
+     "reconcile": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "reconcile_after_recovery": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "recovery_actions": [
+      "replace_corrupt_object"
+     ],
+     "recovery_resolver": {
+      "content_length": 35,
+      "content_visible": true,
+      "error": null,
+      "preview": "{\"content\":\"asset failure corrupt\"}",
+      "sha256": "312ec7342654fed4e8eb22a355b4be5d2f7bde2fd8a454e98540e4268e81fd6a"
+     },
+     "resolver": {
+      "content_length": null,
+      "content_visible": false,
+      "error": "corrupt",
+      "preview": null,
+      "sha256": null
+     },
+     "sha256": "312ec7342654fed4e8eb22a355b4be5d2f7bde2fd8a454e98540e4268e81fd6a",
+     "store_observation": {
+      "object_exists": true,
+      "object_path": "/data1/cjy/.stage3-yellow/runs/xstore-asset-failures/child/asset-failure-cases/corrupt/objects/31/312ec7342654fed4e8eb22a355b4be5d2f7bde2fd8a454e98540e4268e81fd6a",
+      "publish_attempts": []
+     },
+     "validation_errors": []
+    },
+    {
+     "asset_id": "0b06099ed93bcd0321bbebd2b45b7f6e6694050753ce481d2a84f8d0e7049e55",
+     "case": "metadata_mismatch",
+     "catalog_transitions": [
+      {
+       "after": "available",
+       "asset_id": "0b06099ed93bcd0321bbebd2b45b7f6e6694050753ce481d2a84f8d0e7049e55",
+       "before": "available",
+       "phase": "injection",
+       "sha256": "0b06099ed93bcd0321bbebd2b45b7f6e6694050753ce481d2a84f8d0e7049e55"
+      },
+      {
+       "after": "available",
+       "asset_id": "0b06099ed93bcd0321bbebd2b45b7f6e6694050753ce481d2a84f8d0e7049e55",
+       "before": "available",
+       "phase": "recovery",
+       "sha256": "0b06099ed93bcd0321bbebd2b45b7f6e6694050753ce481d2a84f8d0e7049e55"
+      }
+     ],
+     "cleanup": {
+      "adapter_cleanup_target": "jsons3_af_metadata_mismatch_373fef1b93_asset_ref",
+      "errors": [],
+      "namespace": "jsons3_af_metadata_mismatch_373fef1b93",
+      "namespace_removed": true,
+      "object_directory": "/data1/cjy/.stage3-yellow/runs/xstore-asset-failures/child/asset-failure-cases/metadata_mismatch/objects",
+      "object_directory_removed": true
+     },
+     "event_visible": true,
+     "execution_error": null,
+     "final_status": "available",
+     "injection_point": "replace_catalog_metadata",
+     "namespace": "jsons3_af_metadata_mismatch_373fef1b93",
+     "orphan_count": 0,
+     "orphan_count_after_recovery": 0,
+     "reconcile": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "reconcile_after_recovery": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "recovery_actions": [
+      "restore_catalog_metadata"
+     ],
+     "recovery_resolver": {
+      "content_length": 45,
+      "content_visible": true,
+      "error": null,
+      "preview": "{\"content\":\"asset failure metadata_mismatch\"}",
+      "sha256": "0b06099ed93bcd0321bbebd2b45b7f6e6694050753ce481d2a84f8d0e7049e55"
+     },
+     "resolver": {
+      "content_length": null,
+      "content_visible": false,
+      "error": "metadata_mismatch",
+      "preview": null,
+      "sha256": null
+     },
+     "sha256": "0b06099ed93bcd0321bbebd2b45b7f6e6694050753ce481d2a84f8d0e7049e55",
+     "store_observation": {
+      "object_exists": true,
+      "object_path": "/data1/cjy/.stage3-yellow/runs/xstore-asset-failures/child/asset-failure-cases/metadata_mismatch/objects/0b/0b06099ed93bcd0321bbebd2b45b7f6e6694050753ce481d2a84f8d0e7049e55",
+      "publish_attempts": []
+     },
+     "validation_errors": []
+    },
+    {
+     "asset_id": "a4020a5ab77a67285c32fcb52ee7facdacbfe304a45e349a953c7e43991b466c",
+     "case": "upload_then_db_failure",
+     "catalog_transitions": [
+      {
+       "after": "absent",
+       "asset_id": "a4020a5ab77a67285c32fcb52ee7facdacbfe304a45e349a953c7e43991b466c",
+       "before": "absent",
+       "phase": "injection",
+       "sha256": "a4020a5ab77a67285c32fcb52ee7facdacbfe304a45e349a953c7e43991b466c"
+      },
+      {
+       "after": "absent",
+       "asset_id": "a4020a5ab77a67285c32fcb52ee7facdacbfe304a45e349a953c7e43991b466c",
+       "before": "absent",
+       "phase": "recovery",
+       "sha256": "a4020a5ab77a67285c32fcb52ee7facdacbfe304a45e349a953c7e43991b466c"
+      }
+     ],
+     "cleanup": {
+      "adapter_cleanup_target": "jsons3_af_upload_then_db_failure_bc04a5cfe9_asset_ref",
+      "errors": [],
+      "namespace": "jsons3_af_upload_then_db_failure_bc04a5cfe9",
+      "namespace_removed": true,
+      "object_directory": "/data1/cjy/.stage3-yellow/runs/xstore-asset-failures/child/asset-failure-cases/upload_then_db_failure/objects",
+      "object_directory_removed": true
+     },
+     "event_visible": false,
+     "execution_error": null,
+     "final_status": "absent",
+     "injection_point": "fail_after_object_upload",
+     "namespace": "jsons3_af_upload_then_db_failure_bc04a5cfe9",
+     "orphan_count": 1,
+     "orphan_count_after_recovery": 0,
+     "reconcile": {
+      "orphan_count": 1,
+      "orphan_paths": [
+       "/data1/cjy/.stage3-yellow/runs/xstore-asset-failures/child/asset-failure-cases/upload_then_db_failure/objects/a4/a4020a5ab77a67285c32fcb52ee7facdacbfe304a45e349a953c7e43991b466c"
+      ]
+     },
+     "reconcile_after_recovery": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "recovery_actions": [
+      "remove_orphan_object"
+     ],
+     "recovery_resolver": {
+      "content_length": null,
+      "content_visible": false,
+      "error": "missing",
+      "preview": null,
+      "sha256": null
+     },
+     "resolver": {
+      "content_length": null,
+      "content_visible": false,
+      "error": "missing",
+      "preview": null,
+      "sha256": null
+     },
+     "sha256": "a4020a5ab77a67285c32fcb52ee7facdacbfe304a45e349a953c7e43991b466c",
+     "store_observation": {
+      "object_exists": true,
+      "object_path": "/data1/cjy/.stage3-yellow/runs/xstore-asset-failures/child/asset-failure-cases/upload_then_db_failure/objects/a4/a4020a5ab77a67285c32fcb52ee7facdacbfe304a45e349a953c7e43991b466c",
+      "publish_attempts": [
+       {
+        "asset_id": "a4020a5ab77a67285c32fcb52ee7facdacbfe304a45e349a953c7e43991b466c",
+        "error": null,
+        "final_object_exists": true
+       }
+      ]
+     },
+     "validation_errors": []
+    },
+    {
+     "asset_id": "60ca0fa3a3752f3374b6c05dcf67e773eee0352b0fb8ffce05ca01943d2408fc",
+     "case": "publish_failure",
+     "catalog_transitions": [
+      {
+       "after": "failed",
+       "asset_id": "60ca0fa3a3752f3374b6c05dcf67e773eee0352b0fb8ffce05ca01943d2408fc",
+       "before": "pending",
+       "phase": "injection",
+       "sha256": "60ca0fa3a3752f3374b6c05dcf67e773eee0352b0fb8ffce05ca01943d2408fc"
+      },
+      {
+       "after": "failed",
+       "asset_id": "60ca0fa3a3752f3374b6c05dcf67e773eee0352b0fb8ffce05ca01943d2408fc",
+       "before": "failed",
+       "phase": "recovery",
+       "sha256": "60ca0fa3a3752f3374b6c05dcf67e773eee0352b0fb8ffce05ca01943d2408fc"
+      }
+     ],
+     "cleanup": {
+      "adapter_cleanup_target": "jsons3_af_publish_failure_4880570145_asset_ref",
+      "errors": [],
+      "namespace": "jsons3_af_publish_failure_4880570145",
+      "namespace_removed": true,
+      "object_directory": "/data1/cjy/.stage3-yellow/runs/xstore-asset-failures/child/asset-failure-cases/publish_failure/objects",
+      "object_directory_removed": true
+     },
+     "event_visible": true,
+     "execution_error": null,
+     "final_status": "failed",
+     "injection_point": "fail_pending_publication",
+     "namespace": "jsons3_af_publish_failure_4880570145",
+     "orphan_count": 0,
+     "orphan_count_after_recovery": 0,
+     "reconcile": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "reconcile_after_recovery": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "recovery_actions": [
+      "confirm_failed_publication"
+     ],
+     "recovery_resolver": {
+      "content_length": null,
+      "content_visible": false,
+      "error": "failed",
+      "preview": null,
+      "sha256": null
+     },
+     "resolver": {
+      "content_length": null,
+      "content_visible": false,
+      "error": "failed",
+      "preview": null,
+      "sha256": null
+     },
+     "sha256": "60ca0fa3a3752f3374b6c05dcf67e773eee0352b0fb8ffce05ca01943d2408fc",
+     "store_observation": {
+      "object_exists": false,
+      "object_path": "/data1/cjy/.stage3-yellow/runs/xstore-asset-failures/child/asset-failure-cases/publish_failure/objects/60/60ca0fa3a3752f3374b6c05dcf67e773eee0352b0fb8ffce05ca01943d2408fc",
+      "publish_attempts": [
+       {
+        "asset_id": "60ca0fa3a3752f3374b6c05dcf67e773eee0352b0fb8ffce05ca01943d2408fc",
+        "error": "failed",
+        "final_object_exists": false
+       }
+      ]
+     },
+     "validation_errors": []
+    },
+    {
+     "asset_id": "7e1a1ea6d14048386ca8c9021ad9016fe5fb020e30d429e5b8b957a9b4a21cc7",
+     "case": "delete_failure",
+     "catalog_transitions": [
+      {
+       "after": "deleting",
+       "asset_id": "7e1a1ea6d14048386ca8c9021ad9016fe5fb020e30d429e5b8b957a9b4a21cc7",
+       "before": "available",
+       "phase": "injection",
+       "sha256": "7e1a1ea6d14048386ca8c9021ad9016fe5fb020e30d429e5b8b957a9b4a21cc7"
+      },
+      {
+       "after": "deleting",
+       "asset_id": "7e1a1ea6d14048386ca8c9021ad9016fe5fb020e30d429e5b8b957a9b4a21cc7",
+       "before": "deleting",
+       "phase": "recovery",
+       "sha256": "7e1a1ea6d14048386ca8c9021ad9016fe5fb020e30d429e5b8b957a9b4a21cc7"
+      }
+     ],
+     "cleanup": {
+      "adapter_cleanup_target": "jsons3_af_delete_failure_c0dde7820c_asset_ref",
+      "errors": [],
+      "namespace": "jsons3_af_delete_failure_c0dde7820c",
+      "namespace_removed": true,
+      "object_directory": "/data1/cjy/.stage3-yellow/runs/xstore-asset-failures/child/asset-failure-cases/delete_failure/objects",
+      "object_directory_removed": true
+     },
+     "event_visible": true,
+     "execution_error": null,
+     "final_status": "deleting",
+     "injection_point": "fail_deleting_object_removal",
+     "namespace": "jsons3_af_delete_failure_c0dde7820c",
+     "orphan_count": 0,
+     "orphan_count_after_recovery": 0,
+     "reconcile": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "reconcile_after_recovery": {
+      "orphan_count": 0,
+      "orphan_paths": []
+     },
+     "recovery_actions": [
+      "confirm_delete_failure_state"
+     ],
+     "recovery_resolver": {
+      "content_length": null,
+      "content_visible": false,
+      "error": "deleting",
+      "preview": null,
+      "sha256": null
+     },
+     "resolver": {
+      "content_length": null,
+      "content_visible": false,
+      "error": "deleting",
+      "preview": null,
+      "sha256": null
+     },
+     "sha256": "7e1a1ea6d14048386ca8c9021ad9016fe5fb020e30d429e5b8b957a9b4a21cc7",
+     "store_observation": {
+      "object_exists": true,
+      "object_path": "/data1/cjy/.stage3-yellow/runs/xstore-asset-failures/child/asset-failure-cases/delete_failure/objects/7e/7e1a1ea6d14048386ca8c9021ad9016fe5fb020e30d429e5b8b957a9b4a21cc7",
+      "publish_attempts": []
+     },
+     "validation_errors": []
+    }
+   ],
+   "child": {
+    "bytes": 11661,
+    "format": "agent-trace-json-storage-stage3-asset-failure-run",
+    "format_version": 1,
+    "path": "child/run-manifest.json",
+    "run_id": "jsons3-asset-failures-fe09a35546",
+    "sha256": "ae654ad641e97808c523bd7747527c32eff2e770c0c99e21b07d0b02723aea62",
+    "status": "complete"
+   },
+   "cleanup": {
+    "namespaces": [
+     "jsons3_af_missing_3f20e1cc85",
+     "jsons3_af_corrupt_b7e3459350",
+     "jsons3_af_metadata_mismatch_373fef1b93",
+     "jsons3_af_upload_then_db_failure_bc04a5cfe9",
+     "jsons3_af_publish_failure_4880570145",
+     "jsons3_af_delete_failure_c0dde7820c"
+    ],
+    "namespaces_removed": true,
+    "object_directories_removed": true,
+    "runtime_probe_directory": "/data1/cjy/.stage3-yellow/runs/xstore-asset-failures/runtime-probe-assets",
+    "runtime_probe_directory_removed": true
+   },
+   "code": {
+    "asset_failure_runner": {
+     "bytes": 22145,
+     "path": "/data1/cjy/agent-trace-research/experiments/json-storage-stage3/runner/run_asset_failures.py",
+     "sha256": "daca18b9f0e1e2df660c80f72095074f296587060c7e9efb22f057b5a093abba"
+    },
+    "assets": {
+     "bytes": 11938,
+     "path": "/data1/cjy/agent-trace-research/experiments/json-storage-stage3/runner/assets.py",
+     "sha256": "04e45782ddfe87558ece610e3ac63150e068d38d02e39f2d52ec40753a490c2c"
+    },
+    "common": {
+     "bytes": 22823,
+     "path": "/data1/cjy/agent-trace-research/experiments/json-storage-stage3/runner/common.py",
+     "sha256": "a443be843155f65bcdeafcdc9a50a89f9787bc296834dddeab059d8d3b11af25"
+    },
+    "generator": {
+     "bytes": 21612,
+     "path": "/data1/cjy/agent-trace-research/experiments/json-storage-stage3/generator/generate_payloads.py",
+     "sha256": "ce5d0ec65a9c4e3ba7dfc8ce48aef39ebac716d252a5680ec1e29f23c839a214"
+    },
+    "layout_runner": {
+     "bytes": 90163,
+     "path": "/data1/cjy/agent-trace-research/experiments/json-storage-stage3/runner/run_layout_matrix.py",
+     "sha256": "94603559ee0a0f34a099ca3534f3865358d8519f88d225e13cdba69da6b91d49"
+    },
+    "production": {
+     "bytes": 46667,
+     "path": "/data1/cjy/agent-trace-research/experiments/json-storage-stage3/runner/production.py",
+     "sha256": "109185ef46217472a79db207f0aefd947388a252ec5f7bfab8fd6becb4b192c4"
+    },
+    "run_stage3": {
+     "bytes": 84282,
+     "path": "/data1/cjy/agent-trace-research/experiments/json-storage-stage3/runner/run_stage3.py",
+     "sha256": "9f3f8230350732756ac969cba4a301c883476ae9ad61d548dbc432f8a29346d0"
+    }
+   },
+   "engine": "xstore",
+   "namespace_policy": {
+    "case_order": [
+     "missing",
+     "corrupt",
+     "metadata_mismatch",
+     "upload_then_db_failure",
+     "publish_failure",
+     "delete_failure"
+    ],
+    "namespace_prefix": "jsons3_af_<case>_",
+    "namespaces": [
+     "jsons3_af_missing_3f20e1cc85",
+     "jsons3_af_corrupt_b7e3459350",
+     "jsons3_af_metadata_mismatch_373fef1b93",
+     "jsons3_af_upload_then_db_failure_bc04a5cfe9",
+     "jsons3_af_publish_failure_4880570145",
+     "jsons3_af_delete_failure_c0dde7820c"
+    ],
+    "reuse": false,
+    "strategy": "runner-fixed-case-unique"
+   },
+   "run_id": "jsons3-production-asset-failures-273036a6b3",
+   "runtime": {
+    "container": {
+     "binary_sha256": "462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+     "binary_sha256_source": "measured",
+     "container": null,
+     "engine": "xstore",
+     "engine_version": "94f77718",
+     "mode": "native-package",
+     "package_checksums": "sha256:462374ac04a88672042a1e037f20edc38c62a128777116f78cd919df30ec1884",
+     "product_path": "/data1/cjy/code/GaussVector-server/output/server/gaussdb/bin/gaussdb"
+    },
+    "endpoint": {
+     "host": "127.0.0.1",
+     "port": 29000
+    },
+    "engine": "xstore",
+    "engine_runtime": {
+     "source": "database-query",
+     "version": "gaussdb (GaussVector 103.0.0 build 94f77718) compiled at 2026-09-23 12:59:04 last mr 463 release"
+    },
+    "host": {
+     "cpu_count": 256,
+     "machine": "aarch64",
+     "memory_total_kib": 453186788,
+     "platform": "Linux-5.10.0-182.0.0.95.h1954.eulerosv2r13.aarch64-aarch64-with-glibc2.34"
+    },
+    "layout": "asset_ref",
+    "operation": "asset-failures"
+   }
+  }
+ ],
+ "format": "agent-trace-json-storage-stage3-asset-failures-summary",
+ "format_version": 1,
+ "statistics_boundary": "classification-and-evidence-only-no-timing-statistic"
+}
