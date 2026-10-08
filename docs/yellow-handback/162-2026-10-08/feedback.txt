@@ -126,26 +126,26 @@ B3
 25.5 25.5 1 2 row
 26.2 26.6 3 3 row
 25.4 25.1 0 0 row
-NA 缺失
-NA 缺失
-NA 缺失
-NA 缺失
-NA 缺失
-NA 缺失
-NA 缺失
-NA 缺失
-NA 缺失
-NA 缺失
-NA 缺失
-NA 缺失
-NA 缺失
-NA 缺失
-NA 缺失
-NA 缺失
-NA 缺失
-NA 缺失
-NA 缺失
-NA 缺失
+20.6 19.7 1 1 part
+20.8 19.7 1 1 part
+20.2 19.3 1 1 part
+21.6 20.4 0 1 part
+18.9 19.0 1 0 part
+30.4 31.2 3 3 part
+35.5 36.8 1224 1218 part
+67.8 70.1 2077 2182 part
+30.0 30.8 2 2 part
+67.4 68.5 1602 1678 part
+31.4 32.1 378 432 part
+33.7 35.3 1186 1192 part
+29.1 29.7 0 0 part
+30.6 31.3 1 1 part
+29.1 29.8 0 0 part
+30.7 31.6 1 1 part
+34.9 35.5 3 2 part
+29.2 30.2 1 1 part
+29.5 30.2 0 0 part
+32.9 33.3 0 0 part
 B4
 remove_published_object missing available True 0 restore_missing_object
 modify_published_bytes corrupt available True 0 replace_corrupt_object
@@ -168,4 +168,4 @@ C5
 Index Scan using events_list_idx on events 256
 Index Scan using events_list_idx on events 256
 C6
-48f2512 61 of 124 runs use code other than HEAD
+0c8912b 61 of 127 runs use code other than HEAD

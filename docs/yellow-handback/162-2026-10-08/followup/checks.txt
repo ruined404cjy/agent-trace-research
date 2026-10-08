@@ -1,4 +1,4 @@
-F1 runs 124 non_head 61
+F1 runs 127 non_head 61
 F1 non_head ch-asset-failures experiments/json-storage-stage3/runner/run_stage3.py published:22b4eb7d0744 1
 F1 non_head ch-part-states-asset_ref experiments/json-storage-stage3/runner/production.py published:1cf4e6798bba 1
 F1 non_head ch-part-states-asset_ref experiments/json-storage-stage3/runner/run_layout_matrix.py published:1cf4e6798bba 1
@@ -13,7 +13,10 @@ F1 non_head ch-part-states-separate experiments/json-storage-stage3/runner/produ
 F1 non_head ch-part-states-separate experiments/json-storage-stage3/runner/run_layout_matrix.py published:1cf4e6798bba 1
 F1 non_head ch-part-states-separate experiments/json-storage-stage3/runner/run_stage3.py published:1cf4e6798bba 1
 F1 non_head clickhouse-main experiments/json-storage-stage3/runner/run_layout_matrix.py published:1cf4e6798bba 56
+F1 head_run ch-interference-asset_ref/run-manifest.json
+F1 head_run ch-interference-full_core/run-manifest.json
 F1 head_run ch-interference-same_table/run-manifest.json
+F1 head_run ch-interference-separate/run-manifest.json
 F1 head_run xstore-asset-failures/run-manifest.json
 F1 head_run xstore-interference-asset_ref/run-manifest.json
 F1 head_run xstore-interference-full_core/run-manifest.json
@@ -146,9 +149,48 @@ F2 ch-interference-same_table quiet preview 6000 status=dropped:1,success:5999 d
 F2 ch-interference-same_table trace_long list 6000 status=dropped:1,success:5999 dropped_by=arrival_deadline_missed:1 p50/p95/p99/max=20.2/23.5/45.7/107.8 max_consecutive_dropped=1
 F2 ch-interference-same_table trace_long preview 6000 status=dropped:1,success:5999 dropped_by=arrival_deadline_missed:1 p50/p95/p99/max=19.3/22.1/25.4/107.7 max_consecutive_dropped=1
 F2 ch-interference-same_table trace_long trace_long 60 status=success:60 dropped_by= p50/p95/p99/max=64.5/75.4/77.4/77.4 max_consecutive_dropped=0
-F2 NA ch-interference-separate has no samples.jsonl
-F2 NA ch-interference-full_core has no samples.jsonl
-F2 NA ch-interference-asset_ref has no samples.jsonl
+F2 ch-interference-separate batch_loop batch_loop 92 status=success:92 dropped_by= p50/p95/p99/max=2997.0/4041.1/4137.6/4137.6 max_consecutive_dropped=0
+F2 ch-interference-separate batch_loop list 6000 status=dropped:2,success:5998 dropped_by=arrival_deadline_missed:2 p50/p95/p99/max=30.1/38.1/43.0/188.9 max_consecutive_dropped=2
+F2 ch-interference-separate batch_loop preview 6000 status=dropped:2,success:5998 dropped_by=arrival_deadline_missed:2 p50/p95/p99/max=30.9/39.2/44.1/173.8 max_consecutive_dropped=2
+F2 ch-interference-separate continuous_ingest continuous_ingest 300 status=dropped:2,success:298 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:1 p50/p95/p99/max=113.6/472.3/905.1/1952.5 max_consecutive_dropped=1
+F2 ch-interference-separate continuous_ingest list 6000 status=dropped:1602,success:4398 dropped_by=arrival_deadline_missed:49,worker_capacity_unavailable:1553 p50/p95/p99/max=67.7/239.7/521.5/3910.9 max_consecutive_dropped=61
+F2 ch-interference-separate continuous_ingest preview 6000 status=dropped:1678,success:4322 dropped_by=arrival_deadline_missed:26,worker_capacity_unavailable:1652 p50/p95/p99/max=68.7/249.9/481.8/3234.4 max_consecutive_dropped=55
+F2 ch-interference-separate detail_2m detail_2m 300 status=dropped:55,success:245 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:54 p50/p95/p99/max=172.2/1864.6/3435.9/4010.0 max_consecutive_dropped=4
+F2 ch-interference-separate detail_2m list 6000 status=dropped:1224,success:4776 dropped_by=arrival_deadline_missed:16,worker_capacity_unavailable:1208 p50/p95/p99/max=35.6/216.8/502.1/2062.1 max_consecutive_dropped=19
+F2 ch-interference-separate detail_2m preview 6000 status=dropped:1218,success:4782 dropped_by=arrival_deadline_missed:4,worker_capacity_unavailable:1214 p50/p95/p99/max=36.9/209.7/552.0/3235.7 max_consecutive_dropped=26
+F2 ch-interference-separate quiet list 6000 status=dropped:3,success:5997 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:2 p50/p95/p99/max=30.5/40.8/47.3/163.9 max_consecutive_dropped=1
+F2 ch-interference-separate quiet preview 6000 status=dropped:3,success:5997 dropped_by=arrival_deadline_missed:1,worker_capacity_unavailable:2 p50/p95/p99/max=31.3/41.9/49.1/183.8 max_consecutive_dropped=1
+F2 ch-interference-separate trace_long list 6000 status=dropped:2077,success:3923 dropped_by=arrival_deadline_missed:38,worker_capacity_unavailable:2039 p50/p95/p99/max=67.8/328.2/830.9/5714.1 max_consecutive_dropped=78
+F2 ch-interference-separate trace_long preview 6000 status=dropped:2182,success:3818 dropped_by=arrival_deadline_missed:34,worker_capacity_unavailable:2148 p50/p95/p99/max=70.3/338.6/972.0/4376.4 max_consecutive_dropped=75
+F2 ch-interference-separate trace_long trace_long 60 status=dropped:1,success:59 dropped_by=worker_capacity_unavailable:1 p50/p95/p99/max=1765.6/4068.4/8473.1/8473.1 max_consecutive_dropped=1
+F2 ch-interference-full_core batch_loop batch_loop 124 status=success:124 dropped_by= p50/p95/p99/max=2429.2/2604.1/2698.3/2715.2 max_consecutive_dropped=0
+F2 ch-interference-full_core batch_loop list 6000 status=dropped:1,success:5999 dropped_by=arrival_deadline_missed:1 p50/p95/p99/max=30.7/41.1/51.1/134.4 max_consecutive_dropped=1
+F2 ch-interference-full_core batch_loop preview 6000 status=dropped:1,success:5999 dropped_by=arrival_deadline_missed:1 p50/p95/p99/max=31.4/41.8/52.0/137.8 max_consecutive_dropped=1
+F2 ch-interference-full_core continuous_ingest continuous_ingest 300 status=success:300 dropped_by= p50/p95/p99/max=53.3/94.0/110.5/113.7 max_consecutive_dropped=0
+F2 ch-interference-full_core continuous_ingest list 6000 status=success:6000 dropped_by= p50/p95/p99/max=29.1/38.8/42.1/95.9 max_consecutive_dropped=0
+F2 ch-interference-full_core continuous_ingest preview 6000 status=success:6000 dropped_by= p50/p95/p99/max=29.8/40.0/43.7/96.6 max_consecutive_dropped=0
+F2 ch-interference-full_core detail_2m detail_2m 300 status=dropped:36,success:264 dropped_by=worker_capacity_unavailable:36 p50/p95/p99/max=92.2/1328.0/3470.9/4298.5 max_consecutive_dropped=4
+F2 ch-interference-full_core detail_2m list 6000 status=dropped:1186,success:4814 dropped_by=arrival_deadline_missed:11,worker_capacity_unavailable:1175 p50/p95/p99/max=33.8/177.4/789.3/3342.2 max_consecutive_dropped=39
+F2 ch-interference-full_core detail_2m preview 6000 status=dropped:1192,success:4808 dropped_by=arrival_deadline_missed:12,worker_capacity_unavailable:1180 p50/p95/p99/max=35.4/178.0/632.3/3436.5 max_consecutive_dropped=43
+F2 ch-interference-full_core quiet list 6000 status=dropped:378,success:5622 dropped_by=arrival_deadline_missed:8,worker_capacity_unavailable:370 p50/p95/p99/max=31.4/71.3/196.6/2980.0 max_consecutive_dropped=38
+F2 ch-interference-full_core quiet preview 6000 status=dropped:432,success:5568 dropped_by=arrival_deadline_missed:9,worker_capacity_unavailable:423 p50/p95/p99/max=32.2/69.2/269.1/3022.9 max_consecutive_dropped=38
+F2 ch-interference-full_core trace_long list 6000 status=success:6000 dropped_by= p50/p95/p99/max=29.2/38.1/42.4/98.6 max_consecutive_dropped=0
+F2 ch-interference-full_core trace_long preview 6000 status=success:6000 dropped_by= p50/p95/p99/max=29.8/39.0/42.8/110.4 max_consecutive_dropped=0
+F2 ch-interference-full_core trace_long trace_long 60 status=success:60 dropped_by= p50/p95/p99/max=68.3/78.5/81.4/81.4 max_consecutive_dropped=0
+F2 ch-interference-asset_ref batch_loop batch_loop 198 status=success:198 dropped_by= p50/p95/p99/max=1443.5/1889.1/1942.1/1986.0 max_consecutive_dropped=0
+F2 ch-interference-asset_ref batch_loop list 6000 status=success:6000 dropped_by= p50/p95/p99/max=29.6/39.5/43.0/123.9 max_consecutive_dropped=0
+F2 ch-interference-asset_ref batch_loop preview 6000 status=success:6000 dropped_by= p50/p95/p99/max=30.2/40.2/44.4/97.1 max_consecutive_dropped=0
+F2 ch-interference-asset_ref continuous_ingest continuous_ingest 300 status=success:300 dropped_by= p50/p95/p99/max=26.0/29.9/33.5/36.1 max_consecutive_dropped=0
+F2 ch-interference-asset_ref continuous_ingest list 6000 status=success:6000 dropped_by= p50/p95/p99/max=33.0/42.0/46.4/105.5 max_consecutive_dropped=0
+F2 ch-interference-asset_ref continuous_ingest preview 6000 status=success:6000 dropped_by= p50/p95/p99/max=33.4/41.5/45.8/102.8 max_consecutive_dropped=0
+F2 ch-interference-asset_ref detail_2m detail_2m 300 status=success:300 dropped_by= p50/p95/p99/max=26.7/33.2/38.4/59.2 max_consecutive_dropped=0
+F2 ch-interference-asset_ref detail_2m list 6000 status=dropped:3,success:5997 dropped_by=arrival_deadline_missed:3 p50/p95/p99/max=35.0/43.2/47.4/240.2 max_consecutive_dropped=3
+F2 ch-interference-asset_ref detail_2m preview 6000 status=dropped:2,success:5998 dropped_by=arrival_deadline_missed:2 p50/p95/p99/max=35.5/43.3/47.3/200.9 max_consecutive_dropped=2
+F2 ch-interference-asset_ref quiet list 6000 status=dropped:1,success:5999 dropped_by=arrival_deadline_missed:1 p50/p95/p99/max=30.8/40.4/45.4/149.1 max_consecutive_dropped=1
+F2 ch-interference-asset_ref quiet preview 6000 status=dropped:1,success:5999 dropped_by=arrival_deadline_missed:1 p50/p95/p99/max=31.7/41.6/47.1/143.5 max_consecutive_dropped=1
+F2 ch-interference-asset_ref trace_long list 6000 status=dropped:1,success:5999 dropped_by=arrival_deadline_missed:1 p50/p95/p99/max=29.3/39.0/43.6/133.8 max_consecutive_dropped=1
+F2 ch-interference-asset_ref trace_long preview 6000 status=dropped:1,success:5999 dropped_by=arrival_deadline_missed:1 p50/p95/p99/max=30.2/39.0/42.8/135.3 max_consecutive_dropped=1
+F2 ch-interference-asset_ref trace_long trace_long 60 status=success:60 dropped_by= p50/p95/p99/max=33.4/38.3/41.3/41.3 max_consecutive_dropped=0
 F3 client same_table list:first latency_median 22.829194989753887 query_complete_median 12.259399984031916
 F3 client same_table list:middle latency_median 23.445935017662123 query_complete_median 12.824529985664412
 F3 client same_table preview:first latency_median 22.915560024557635 query_complete_median 12.316540000028908
@@ -2569,9 +2611,9 @@ F3 server asset_ref round-4 preview:first total_runtime_ms 0.596 top_node_ms 0.5
 F3 server asset_ref round-4 preview:first total_runtime_ms 0.591 top_node_ms 0.507 removed 0
 F3 server asset_ref round-4 preview:middle total_runtime_ms 0.662 top_node_ms 0.582 removed 6
 F3 server asset_ref round-4 preview:first total_runtime_ms 0.594 top_node_ms 0.520 removed 0
-F4 exec_select_1 p50 0.15 p95 0.16 max 0.19
-F4 params_select_int p50 0.24 p95 0.26 max 0.43
-F4 params_catalog p50 0.44 p95 0.47 max 0.56
+F4 exec_select_1 p50 0.18 p95 0.21 max 0.35
+F4 params_select_int p50 0.29 p95 0.3 max 0.34
+F4 params_catalog p50 0.50 p95 0.53 max 0.62
 F5 24.7 24.9 1 1 row
 F5 24.7 24.9 0 0 row
 F5 25.9 26.0 0 0 row
@@ -2592,27 +2634,27 @@ F5 26.8 26.8 350 352 row
 F5 25.5 25.5 1 2 row
 F5 26.2 26.6 3 3 row
 F5 25.4 25.1 0 0 row
-F5 NA 缺失
-F5 NA 缺失
-F5 NA 缺失
-F5 NA 缺失
-F5 NA 缺失
-F5 NA 缺失
-F5 NA 缺失
-F5 NA 缺失
-F5 NA 缺失
-F5 NA 缺失
-F5 NA 缺失
-F5 NA 缺失
-F5 NA 缺失
-F5 NA 缺失
-F5 NA 缺失
-F5 NA 缺失
-F5 NA 缺失
-F5 NA 缺失
-F5 NA 缺失
-F5 NA 缺失
+F5 20.6 19.7 1 1 part
+F5 20.8 19.7 1 1 part
+F5 20.2 19.3 1 1 part
+F5 21.6 20.4 0 1 part
+F5 18.9 19.0 1 0 part
+F5 30.4 31.2 3 3 part
+F5 35.5 36.8 1224 1218 part
+F5 67.8 70.1 2077 2182 part
+F5 30.0 30.8 2 2 part
+F5 67.4 68.5 1602 1678 part
+F5 31.4 32.1 378 432 part
+F5 33.7 35.3 1186 1192 part
+F5 29.1 29.7 0 0 part
+F5 30.6 31.3 1 1 part
+F5 29.1 29.8 0 0 part
+F5 30.7 31.6 1 1 part
+F5 34.9 35.5 3 2 part
+F5 29.2 30.2 1 1 part
+F5 29.5 30.2 0 0 part
+F5 32.9 33.3 0 0 part
 F6 python 3.11.9 libpq /data1/cjy/code/GaussVector-server/output/libpq/lib
-F6 list_first rows 256 cols 11 fetchall_p50_ms 4.682 fetchall_p95_ms 4.716 getvalue_floor_p50_ms 2.918
-F6 detail_64k rows 1 cols 11 fetchall_p50_ms 0.046 fetchall_p95_ms 0.048 getvalue_floor_p50_ms 0.019
-F6 detail_2m rows 1 cols 11 fetchall_p50_ms 1.420 fetchall_p95_ms 1.473 getvalue_floor_p50_ms 0.692
+F6 list_first rows 256 cols 11 fetchall_p50_ms 4.619 fetchall_p95_ms 4.660 getvalue_floor_p50_ms 2.966
+F6 detail_64k rows 1 cols 11 fetchall_p50_ms 0.048 fetchall_p95_ms 0.049 getvalue_floor_p50_ms 0.019
+F6 detail_2m rows 1 cols 11 fetchall_p50_ms 1.599 fetchall_p95_ms 1.749 getvalue_floor_p50_ms 0.772

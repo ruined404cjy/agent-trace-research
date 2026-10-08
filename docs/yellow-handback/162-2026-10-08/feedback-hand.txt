@@ -1,6 +1,6 @@
 V2 162 2026-10-08
-H 635f
-94f77718 R 23.3.10.5 48f2512 61 3 1 X 1-296 3
+H d66a
+94f77718 R 23.3.10.5 0c8912b 61 0 0 P 1-296 3
 XM 9f7b
 22.7 23.4 23.5 10.8 13.5 24 28.5 1362
 22.7 23.3 23.5 12.1 14.6 24.8 30.3 1297
@@ -23,17 +23,17 @@ XW 44da
 8793 44.6 128
 XA b4ac
 AAAXFD 67.8 13652 0.73 6
-XD e07c
-0.15 0.24 0.44 4.68 0.05 1.42 2.92
-I 1479
+XD 65ca
+0.18 0.29 0.5 4.62 0.05 1.6 2.97
+I 675f
 24.7 26.4 1|0 0|25.8 28.8 0 0|25.3 28.1 0|1665 170 66.5
 24.8 26 2|0 0|26.2 28.6 0 0|25.1 27.8 0|1443 197 85.3
 25 27.4 1|0 0|25.4 27.8 0 0|24.6 26.9 0|1496 191 85.5
 114 320 2448|350 1|26.2 28.7 3 3|25.4 27.8 0|863 331 53.7
-20.7 23.8 1|1 1|21.6 28.9 0 0|18.9 23.7 1|2295 129 36.1
-NA NA NA|NA NA|NA NA NA NA|NA NA NA|NA NA NA
-NA NA NA|NA NA|NA NA NA NA|NA NA NA|NA NA NA
-NA NA NA|NA NA|NA NA NA NA|NA NA NA|NA NA NA
+20.6 23.7 1|1 1|21.6 28.9 0 0|18.9 23.6 1|2286 129 36.1
+30.4 40.7 3|1224 2077|30 38 2 2|67.4 239 1602|2973 92 113
+31.4 71.2 378|1186 0|30.6 41 1 1|29.1 38.8 0|2419 124 53.2
+30.7 40.4 1|3 1|29.5 39.4 0 0|32.9 42 0|1434 198 26
 CM 61d0
 22.9 26.7 26.1 10 32.6 77.3 68.5 2298
 29.5 27.4 29.6 134 141 168 172 2928
@@ -57,11 +57,9 @@ CP b488
 CA 24c9
 AAAXFD
 N
-N auto missing interference/clickhouse asset_ref,full_core,separate
 N auto nonhead ch-asset-failures
 N auto nonhead ch-part-states-asset_ref
 N auto nonhead ch-part-states-full_core
 N auto nonhead ch-part-states-same_table
 N auto nonhead ch-part-states-separate
 N auto nonhead clickhouse-main
-N auto I-from-F2 clickhouse

@@ -1,8 +1,8 @@
 {
  "anomalies": [],
  "archive": {
-  "archive_bytes": 48953799,
-  "archive_sha256": "b279639a3ac0f5a3fb4d63891b4604bf3056802e682d0e0798c6d921ed321c12",
+  "archive_bytes": 76155933,
+  "archive_sha256": "ae822ac316eb71764a0f241aa81989a2dca849c8ed03cefac033894d597cd619",
   "members": [
    {
     "bytes": 11609,
@@ -13,6 +13,76 @@
     "bytes": 15862,
     "path": "ch-asset-failures/run-manifest.json",
     "sha256": "ba91e94d3f202eb849ae107a978970f30c56aff73c6380dc7cb3c5a20cd134de"
+   },
+   {
+    "bytes": 26687935,
+    "path": "ch-interference-asset_ref/child/batch_loop/run-manifest.json",
+    "sha256": "1a89f5355d131495b0f1b91bebb79ab27cb2e45817de1fc9b938e1fbe77b89c3"
+   },
+   {
+    "bytes": 26586661,
+    "path": "ch-interference-asset_ref/child/continuous_ingest/run-manifest.json",
+    "sha256": "f1a8845131adf5e7098d78399fc8fc6574c691fc9e0fbb5458d69359b596a3f2"
+   },
+   {
+    "bytes": 26946923,
+    "path": "ch-interference-asset_ref/child/detail_2m/run-manifest.json",
+    "sha256": "01971f62a8f03d5991bf2547f38762d920666d11466d47f51491a9ff7dd5077e"
+   },
+   {
+    "bytes": 26251158,
+    "path": "ch-interference-asset_ref/child/quiet/run-manifest.json",
+    "sha256": "9e6784394ae948b553d6f518effc1855da48d9d506dcf7ca1af206b44896418f"
+   },
+   {
+    "bytes": 132976184,
+    "path": "ch-interference-asset_ref/child/run-manifest.json",
+    "sha256": "8f0c2a4bfa801e8d04c539d0ddf199eab76df12e2c55fd6b5eddeee8df2ad5a1"
+   },
+   {
+    "bytes": 26503120,
+    "path": "ch-interference-asset_ref/child/trace_long/run-manifest.json",
+    "sha256": "f465f0162f6ae008d7f284fa082788e4fdd79c7d6fa747938d73a2da633b5370"
+   },
+   {
+    "bytes": 10427,
+    "path": "ch-interference-asset_ref/run-manifest.json",
+    "sha256": "4b9a255e937695dadb054cade2e1713bd246c107426be43af1e312f6a4172f8b"
+   },
+   {
+    "bytes": 26384534,
+    "path": "ch-interference-full_core/child/batch_loop/run-manifest.json",
+    "sha256": "b1de64b8c18b9c1e9a1a2f207754cca2c74702ff36850e550a6f1044578a22fb"
+   },
+   {
+    "bytes": 26388607,
+    "path": "ch-interference-full_core/child/continuous_ingest/run-manifest.json",
+    "sha256": "3505b82222f965dad5ea4964deb3200e073a03539ba06eb9e9464f2f2076ae52"
+   },
+   {
+    "bytes": 21951855,
+    "path": "ch-interference-full_core/child/detail_2m/run-manifest.json",
+    "sha256": "d7f692a0468e77ae6e8c016bd60a0cb26063eeb8f2aac5894fc8325e4bbd65c7"
+   },
+   {
+    "bytes": 24471469,
+    "path": "ch-interference-full_core/child/quiet/run-manifest.json",
+    "sha256": "525e35e769632b93007de4880c3d7279b3b44f5ef2d2cb37c43d406eedf26227"
+   },
+   {
+    "bytes": 125501462,
+    "path": "ch-interference-full_core/child/run-manifest.json",
+    "sha256": "cbe65e1a41324e28000b8f516e494597172606fccf82a2d97b678f978863d945"
+   },
+   {
+    "bytes": 26304610,
+    "path": "ch-interference-full_core/child/trace_long/run-manifest.json",
+    "sha256": "f1b66bc6a59b93a7760fece7e3d76f43272148acc31da338593bf9e8da0a1747"
+   },
+   {
+    "bytes": 10428,
+    "path": "ch-interference-full_core/run-manifest.json",
+    "sha256": "e64f979013269825806cb77b4a24d286c8dda57c462898e6148c8e93a2488319"
    },
    {
     "bytes": 26194162,
@@ -48,6 +118,41 @@
     "bytes": 10431,
     "path": "ch-interference-same_table/run-manifest.json",
     "sha256": "f864b42143b5739c9c44a99b4d9fca7c9c85019da3c824bcd7208ffbeefb0941"
+   },
+   {
+    "bytes": 26570097,
+    "path": "ch-interference-separate/child/batch_loop/run-manifest.json",
+    "sha256": "ec3fe86c51324938e52404214081ed05f3747922a1da241c8041765dbcfd8e70"
+   },
+   {
+    "bytes": 19964254,
+    "path": "ch-interference-separate/child/continuous_ingest/run-manifest.json",
+    "sha256": "0432d0d0b785e567227bef98ad5c9c1abe2e555a0dcdbb0284983c06c48da67a"
+   },
+   {
+    "bytes": 20461151,
+    "path": "ch-interference-separate/child/detail_2m/run-manifest.json",
+    "sha256": "1d4b6bc8d1eb9d12cd898fb938d1d731accdfaa09406209c6bdefdb3e3a33cb6"
+   },
+   {
+    "bytes": 26216629,
+    "path": "ch-interference-separate/child/quiet/run-manifest.json",
+    "sha256": "74b186fc8f146fc5b34253ae4f072d728238066cc5121a738931fbdf87c1f3d0"
+   },
+   {
+    "bytes": 111234033,
+    "path": "ch-interference-separate/child/run-manifest.json",
+    "sha256": "8815460813a5e633160fb68fccf7042a9a369da525ff32708dc8ea70998c23cb"
+   },
+   {
+    "bytes": 18021515,
+    "path": "ch-interference-separate/child/trace_long/run-manifest.json",
+    "sha256": "4c251fcb21c0f40e73c57e1381a9006b3e910cad764db73676a564a3cb0613a1"
+   },
+   {
+    "bytes": 10424,
+    "path": "ch-interference-separate/run-manifest.json",
+    "sha256": "a5846f4418528b5afc2a9ab7dd373c66f703794176e0e36dfa4b18e95ff1c765"
    },
    {
     "bytes": 11269248,
@@ -1050,7 +1155,151 @@
      "status": "head"
     }
    ],
+   "run": "ch-interference-asset_ref/run-manifest.json"
+  },
+  {
+   "all_head": true,
+   "code": [
+    {
+     "path": "experiments/json-storage-stage3/runner/assets.py",
+     "role": "assets",
+     "sha256": "04e45782ddfe87558ece610e3ac63150e068d38d02e39f2d52ec40753a490c2c",
+     "status": "head"
+    },
+    {
+     "path": "experiments/json-storage-stage3/runner/common.py",
+     "role": "common",
+     "sha256": "a443be843155f65bcdeafcdc9a50a89f9787bc296834dddeab059d8d3b11af25",
+     "status": "head"
+    },
+    {
+     "path": "experiments/json-storage-stage3/generator/generate_payloads.py",
+     "role": "generator",
+     "sha256": "ce5d0ec65a9c4e3ba7dfc8ce48aef39ebac716d252a5680ec1e29f23c839a214",
+     "status": "head"
+    },
+    {
+     "path": "experiments/json-storage-stage3/runner/run_interference.py",
+     "role": "interference_runner",
+     "sha256": "0d91286383563321f73e751b61937adc5850e7e84998fa84a71b43166869f36c",
+     "status": "head"
+    },
+    {
+     "path": "experiments/json-storage-stage3/runner/run_layout_matrix.py",
+     "role": "layout_runner",
+     "sha256": "94603559ee0a0f34a099ca3534f3865358d8519f88d225e13cdba69da6b91d49",
+     "status": "head"
+    },
+    {
+     "path": "experiments/json-storage-stage3/runner/production.py",
+     "role": "production",
+     "sha256": "109185ef46217472a79db207f0aefd947388a252ec5f7bfab8fd6becb4b192c4",
+     "status": "head"
+    },
+    {
+     "path": "experiments/json-storage-stage3/runner/run_stage3.py",
+     "role": "run_stage3",
+     "sha256": "9f3f8230350732756ac969cba4a301c883476ae9ad61d548dbc432f8a29346d0",
+     "status": "head"
+    }
+   ],
+   "run": "ch-interference-full_core/run-manifest.json"
+  },
+  {
+   "all_head": true,
+   "code": [
+    {
+     "path": "experiments/json-storage-stage3/runner/assets.py",
+     "role": "assets",
+     "sha256": "04e45782ddfe87558ece610e3ac63150e068d38d02e39f2d52ec40753a490c2c",
+     "status": "head"
+    },
+    {
+     "path": "experiments/json-storage-stage3/runner/common.py",
+     "role": "common",
+     "sha256": "a443be843155f65bcdeafcdc9a50a89f9787bc296834dddeab059d8d3b11af25",
+     "status": "head"
+    },
+    {
+     "path": "experiments/json-storage-stage3/generator/generate_payloads.py",
+     "role": "generator",
+     "sha256": "ce5d0ec65a9c4e3ba7dfc8ce48aef39ebac716d252a5680ec1e29f23c839a214",
+     "status": "head"
+    },
+    {
+     "path": "experiments/json-storage-stage3/runner/run_interference.py",
+     "role": "interference_runner",
+     "sha256": "0d91286383563321f73e751b61937adc5850e7e84998fa84a71b43166869f36c",
+     "status": "head"
+    },
+    {
+     "path": "experiments/json-storage-stage3/runner/run_layout_matrix.py",
+     "role": "layout_runner",
+     "sha256": "94603559ee0a0f34a099ca3534f3865358d8519f88d225e13cdba69da6b91d49",
+     "status": "head"
+    },
+    {
+     "path": "experiments/json-storage-stage3/runner/production.py",
+     "role": "production",
+     "sha256": "109185ef46217472a79db207f0aefd947388a252ec5f7bfab8fd6becb4b192c4",
+     "status": "head"
+    },
+    {
+     "path": "experiments/json-storage-stage3/runner/run_stage3.py",
+     "role": "run_stage3",
+     "sha256": "9f3f8230350732756ac969cba4a301c883476ae9ad61d548dbc432f8a29346d0",
+     "status": "head"
+    }
+   ],
    "run": "ch-interference-same_table/run-manifest.json"
+  },
+  {
+   "all_head": true,
+   "code": [
+    {
+     "path": "experiments/json-storage-stage3/runner/assets.py",
+     "role": "assets",
+     "sha256": "04e45782ddfe87558ece610e3ac63150e068d38d02e39f2d52ec40753a490c2c",
+     "status": "head"
+    },
+    {
+     "path": "experiments/json-storage-stage3/runner/common.py",
+     "role": "common",
+     "sha256": "a443be843155f65bcdeafcdc9a50a89f9787bc296834dddeab059d8d3b11af25",
+     "status": "head"
+    },
+    {
+     "path": "experiments/json-storage-stage3/generator/generate_payloads.py",
+     "role": "generator",
+     "sha256": "ce5d0ec65a9c4e3ba7dfc8ce48aef39ebac716d252a5680ec1e29f23c839a214",
+     "status": "head"
+    },
+    {
+     "path": "experiments/json-storage-stage3/runner/run_interference.py",
+     "role": "interference_runner",
+     "sha256": "0d91286383563321f73e751b61937adc5850e7e84998fa84a71b43166869f36c",
+     "status": "head"
+    },
+    {
+     "path": "experiments/json-storage-stage3/runner/run_layout_matrix.py",
+     "role": "layout_runner",
+     "sha256": "94603559ee0a0f34a099ca3534f3865358d8519f88d225e13cdba69da6b91d49",
+     "status": "head"
+    },
+    {
+     "path": "experiments/json-storage-stage3/runner/production.py",
+     "role": "production",
+     "sha256": "109185ef46217472a79db207f0aefd947388a252ec5f7bfab8fd6becb4b192c4",
+     "status": "head"
+    },
+    {
+     "path": "experiments/json-storage-stage3/runner/run_stage3.py",
+     "role": "run_stage3",
+     "sha256": "9f3f8230350732756ac969cba4a301c883476ae9ad61d548dbc432f8a29346d0",
+     "status": "head"
+    }
+   ],
+   "run": "ch-interference-separate/run-manifest.json"
   },
   {
    "all_head": false,
@@ -4960,9 +5209,9 @@
    "sha256": "5390e64651796dba2b09b6598840f401758fdaaa644a2e1dcfa09294257ae3bc"
   },
   {
-   "bytes": 17642,
+   "bytes": 25488,
    "path": "facts/host-checks.txt",
-   "sha256": "3c410a6ffdaaab1aed84a52d7c386b1629b970bd980ffeece05a6b8af5fccc5f"
+   "sha256": "cacdec03843916a3a2d7ddc289b1d5716e62e4ab5e5baf00b8ffa0152670149b"
   },
   {
    "bytes": 610,
@@ -4985,24 +5234,24 @@
    "sha256": "9f7593f317afe3fa4b3dd7c046144a99cb521682f63278af69efc596de22b3b5"
   },
   {
-   "bytes": 912,
+   "bytes": 924,
    "path": "feedback-core.txt",
-   "sha256": "4ce00d3b097f01e13e216f59e42c33add1513ec75f8242591aed351a0a5248dc"
+   "sha256": "b730d539513bda7457088294dc1a5774f7d3a5385a2ebf837c5a8d0e5fcb201a"
   },
   {
-   "bytes": 4130,
+   "bytes": 4338,
    "path": "feedback.txt",
-   "sha256": "9a361e0af9960e353b99be024aa4c9eb7fc66aa52a87f0181d38a55cd0be2d12"
+   "sha256": "2eb720804b1d0a55d30b64a8ba3be89baad99ac7aa3ef202a1c35a5beffce398"
   },
   {
    "bytes": 41943040,
    "path": "raw/manifests.tar.gz.part-000",
-   "sha256": "441c6fa7f3184e599490730ecadc205d748489514ce7a069c9dbcd1cf1f5d83b"
+   "sha256": "d66babaf65c7276a6eb53b74bb4b419e1c7c176b60ede09bbeea2e085eb46646"
   },
   {
-   "bytes": 7010759,
+   "bytes": 34212893,
    "path": "raw/manifests.tar.gz.part-001",
-   "sha256": "044ce4a89fa05d91a692b51cbca6178029d5c07cc6189ddc90a148081da9ccf9"
+   "sha256": "4dc0426e719505c3fda2ec1b6adfe6004d5c14b56c42e3c263cb6aac7faabfdd"
   },
   {
    "bytes": 31891,
@@ -5050,6 +5299,11 @@
    "sha256": "36247b7232c39d620b6b3c82ec96a611ea92d1f603f3fb16ebcbc53867a85ee4"
   },
   {
+   "bytes": 246005,
+   "path": "summary/interference-clickhouse.json",
+   "sha256": "380966d7a1548fbe864bdc5e7ceef8b53285e701b3acff50e9d739fc7bba3736"
+  },
+  {
    "bytes": 246504,
    "path": "summary/interference-xstore.json",
    "sha256": "71b734a52e1898986900daa87d339ef1d27c6311b4ed76e37d8ce55d7919a6f7"
@@ -5075,316 +5329,60 @@
  "host": "162",
  "local_only_samples": [
   {
-   "bytes": 171903976,
-   "path": "xstore-interference-same_table/child/batch_loop/samples.jsonl"
+   "bytes": 858948,
+   "path": "xstore-main/xstore/separate/rounds/correctness_only/round-1/samples.jsonl"
   },
   {
-   "bytes": 17198274,
-   "path": "xstore-interference-same_table/child/batch_loop/warmup-samples.jsonl"
+   "bytes": 868768,
+   "path": "xstore-main/xstore/separate/rounds/equal_total_few_large/round-1/samples.jsonl"
   },
   {
-   "bytes": 170505726,
-   "path": "xstore-interference-same_table/child/continuous_ingest/samples.jsonl"
+   "bytes": 868743,
+   "path": "xstore-main/xstore/separate/rounds/equal_total_few_large/round-2/samples.jsonl"
   },
   {
-   "bytes": 17049147,
-   "path": "xstore-interference-same_table/child/continuous_ingest/warmup-samples.jsonl"
+   "bytes": 868735,
+   "path": "xstore-main/xstore/separate/rounds/equal_total_few_large/round-3/samples.jsonl"
   },
   {
-   "bytes": 170644701,
-   "path": "xstore-interference-same_table/child/detail_2m/samples.jsonl"
+   "bytes": 868753,
+   "path": "xstore-main/xstore/separate/rounds/equal_total_few_large/round-4/samples.jsonl"
   },
   {
-   "bytes": 17062940,
-   "path": "xstore-interference-same_table/child/detail_2m/warmup-samples.jsonl"
+   "bytes": 1191066,
+   "path": "xstore-main/xstore/separate/rounds/equal_total_many_medium/round-1/samples.jsonl"
   },
   {
-   "bytes": 170298142,
-   "path": "xstore-interference-same_table/child/quiet/samples.jsonl"
+   "bytes": 1191080,
+   "path": "xstore-main/xstore/separate/rounds/equal_total_many_medium/round-2/samples.jsonl"
   },
   {
-   "bytes": 17031192,
-   "path": "xstore-interference-same_table/child/quiet/warmup-samples.jsonl"
+   "bytes": 1191063,
+   "path": "xstore-main/xstore/separate/rounds/equal_total_many_medium/round-3/samples.jsonl"
   },
   {
-   "bytes": 170479640,
-   "path": "xstore-interference-same_table/child/trace_long/samples.jsonl"
+   "bytes": 1191078,
+   "path": "xstore-main/xstore/separate/rounds/equal_total_many_medium/round-4/samples.jsonl"
   },
   {
-   "bytes": 17046510,
-   "path": "xstore-interference-same_table/child/trace_long/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 171517507,
-   "path": "ch-interference-same_table/child/batch_loop/samples.jsonl"
-  },
-  {
-   "bytes": 17152732,
-   "path": "ch-interference-same_table/child/batch_loop/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 170502213,
-   "path": "ch-interference-same_table/child/continuous_ingest/samples.jsonl"
-  },
-  {
-   "bytes": 17049985,
-   "path": "ch-interference-same_table/child/continuous_ingest/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 170624597,
-   "path": "ch-interference-same_table/child/detail_2m/samples.jsonl"
-  },
-  {
-   "bytes": 17063697,
-   "path": "ch-interference-same_table/child/detail_2m/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 170307155,
-   "path": "ch-interference-same_table/child/quiet/samples.jsonl"
-  },
-  {
-   "bytes": 17031903,
-   "path": "ch-interference-same_table/child/quiet/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 170460050,
-   "path": "ch-interference-same_table/child/trace_long/samples.jsonl"
-  },
-  {
-   "bytes": 17047350,
-   "path": "ch-interference-same_table/child/trace_long/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 858845,
-   "path": "clickhouse-main/clickhouse/separate/rounds/correctness_only/round-1/samples.jsonl"
-  },
-  {
-   "bytes": 868835,
-   "path": "clickhouse-main/clickhouse/separate/rounds/equal_total_few_large/round-1/samples.jsonl"
-  },
-  {
-   "bytes": 868849,
-   "path": "clickhouse-main/clickhouse/separate/rounds/equal_total_few_large/round-2/samples.jsonl"
-  },
-  {
-   "bytes": 868845,
-   "path": "clickhouse-main/clickhouse/separate/rounds/equal_total_few_large/round-3/samples.jsonl"
-  },
-  {
-   "bytes": 868850,
-   "path": "clickhouse-main/clickhouse/separate/rounds/equal_total_few_large/round-4/samples.jsonl"
-  },
-  {
-   "bytes": 1191123,
-   "path": "clickhouse-main/clickhouse/separate/rounds/equal_total_many_medium/round-1/samples.jsonl"
-  },
-  {
-   "bytes": 1191124,
-   "path": "clickhouse-main/clickhouse/separate/rounds/equal_total_many_medium/round-2/samples.jsonl"
-  },
-  {
-   "bytes": 1191104,
-   "path": "clickhouse-main/clickhouse/separate/rounds/equal_total_many_medium/round-3/samples.jsonl"
-  },
-  {
-   "bytes": 1191130,
-   "path": "clickhouse-main/clickhouse/separate/rounds/equal_total_many_medium/round-4/samples.jsonl"
-  },
-  {
-   "bytes": 1927086,
-   "path": "clickhouse-main/clickhouse/separate/rounds/main/round-1/samples.jsonl"
-  },
-  {
-   "bytes": 1927093,
-   "path": "clickhouse-main/clickhouse/separate/rounds/main/round-2/samples.jsonl"
-  },
-  {
-   "bytes": 1926992,
-   "path": "clickhouse-main/clickhouse/separate/rounds/main/round-3/samples.jsonl"
-  },
-  {
-   "bytes": 1927132,
-   "path": "clickhouse-main/clickhouse/separate/rounds/main/round-4/samples.jsonl"
-  },
-  {
-   "bytes": 16924993,
-   "path": "clickhouse-main/clickhouse/separate/samples.jsonl"
-  },
-  {
-   "bytes": 172098850,
-   "path": "xstore-interference-full_core/child/batch_loop/samples.jsonl"
-  },
-  {
-   "bytes": 17198284,
-   "path": "xstore-interference-full_core/child/batch_loop/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 170539810,
-   "path": "xstore-interference-full_core/child/continuous_ingest/samples.jsonl"
-  },
-  {
-   "bytes": 17052490,
-   "path": "xstore-interference-full_core/child/continuous_ingest/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 170644378,
-   "path": "xstore-interference-full_core/child/detail_2m/samples.jsonl"
-  },
-  {
-   "bytes": 17062989,
-   "path": "xstore-interference-full_core/child/detail_2m/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 170298366,
-   "path": "xstore-interference-full_core/child/quiet/samples.jsonl"
-  },
-  {
-   "bytes": 17031324,
-   "path": "xstore-interference-full_core/child/quiet/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 170479694,
-   "path": "xstore-interference-full_core/child/trace_long/samples.jsonl"
-  },
-  {
-   "bytes": 17046635,
-   "path": "xstore-interference-full_core/child/trace_long/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 173321626,
-   "path": "xstore-interference-asset_ref/child/batch_loop/samples.jsonl"
-  },
-  {
-   "bytes": 17347403,
-   "path": "xstore-interference-asset_ref/child/batch_loop/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 170537915,
-   "path": "xstore-interference-asset_ref/child/continuous_ingest/samples.jsonl"
-  },
-  {
-   "bytes": 17052405,
-   "path": "xstore-interference-asset_ref/child/continuous_ingest/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 160872396,
-   "path": "xstore-interference-asset_ref/child/detail_2m/samples.jsonl"
-  },
-  {
-   "bytes": 10353255,
-   "path": "xstore-interference-asset_ref/child/detail_2m/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 101307945,
-   "path": "xstore-interference-asset_ref/child/quiet/samples.jsonl"
-  },
-  {
-   "bytes": 17031211,
-   "path": "xstore-interference-asset_ref/child/quiet/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 170438320,
-   "path": "xstore-interference-asset_ref/child/trace_long/samples.jsonl"
-  },
-  {
-   "bytes": 17046795,
-   "path": "xstore-interference-asset_ref/child/trace_long/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 858943,
-   "path": "xstore-main/xstore/full_core/rounds/correctness_only/round-1/samples.jsonl"
-  },
-  {
-   "bytes": 868744,
-   "path": "xstore-main/xstore/full_core/rounds/equal_total_few_large/round-1/samples.jsonl"
-  },
-  {
-   "bytes": 868747,
-   "path": "xstore-main/xstore/full_core/rounds/equal_total_few_large/round-2/samples.jsonl"
-  },
-  {
-   "bytes": 868747,
-   "path": "xstore-main/xstore/full_core/rounds/equal_total_few_large/round-3/samples.jsonl"
-  },
-  {
-   "bytes": 868741,
-   "path": "xstore-main/xstore/full_core/rounds/equal_total_few_large/round-4/samples.jsonl"
-  },
-  {
-   "bytes": 1191092,
-   "path": "xstore-main/xstore/full_core/rounds/equal_total_many_medium/round-1/samples.jsonl"
-  },
-  {
-   "bytes": 1191091,
-   "path": "xstore-main/xstore/full_core/rounds/equal_total_many_medium/round-2/samples.jsonl"
-  },
-  {
-   "bytes": 1191081,
-   "path": "xstore-main/xstore/full_core/rounds/equal_total_many_medium/round-3/samples.jsonl"
-  },
-  {
-   "bytes": 1191079,
-   "path": "xstore-main/xstore/full_core/rounds/equal_total_many_medium/round-4/samples.jsonl"
-  },
-  {
-   "bytes": 1926738,
-   "path": "xstore-main/xstore/full_core/rounds/main/round-1/samples.jsonl"
-  },
-  {
-   "bytes": 1926722,
-   "path": "xstore-main/xstore/full_core/rounds/main/round-2/samples.jsonl"
+   "bytes": 1926718,
+   "path": "xstore-main/xstore/separate/rounds/main/round-1/samples.jsonl"
   },
   {
    "bytes": 1926725,
-   "path": "xstore-main/xstore/full_core/rounds/main/round-3/samples.jsonl"
+   "path": "xstore-main/xstore/separate/rounds/main/round-2/samples.jsonl"
   },
   {
-   "bytes": 1926749,
-   "path": "xstore-main/xstore/full_core/rounds/main/round-4/samples.jsonl"
+   "bytes": 1926680,
+   "path": "xstore-main/xstore/separate/rounds/main/round-3/samples.jsonl"
   },
   {
-   "bytes": 16923184,
-   "path": "xstore-main/xstore/full_core/samples.jsonl"
+   "bytes": 1926693,
+   "path": "xstore-main/xstore/separate/rounds/main/round-4/samples.jsonl"
   },
   {
-   "bytes": 172154624,
-   "path": "xstore-interference-separate/child/batch_loop/samples.jsonl"
-  },
-  {
-   "bytes": 17207543,
-   "path": "xstore-interference-separate/child/batch_loop/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 170549178,
-   "path": "xstore-interference-separate/child/continuous_ingest/samples.jsonl"
-  },
-  {
-   "bytes": 17053439,
-   "path": "xstore-interference-separate/child/continuous_ingest/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 170643708,
-   "path": "xstore-interference-separate/child/detail_2m/samples.jsonl"
-  },
-  {
-   "bytes": 17062983,
-   "path": "xstore-interference-separate/child/detail_2m/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 170284505,
-   "path": "xstore-interference-separate/child/quiet/samples.jsonl"
-  },
-  {
-   "bytes": 17031254,
-   "path": "xstore-interference-separate/child/quiet/warmup-samples.jsonl"
-  },
-  {
-   "bytes": 170479003,
-   "path": "xstore-interference-separate/child/trace_long/samples.jsonl"
-  },
-  {
-   "bytes": 17046562,
-   "path": "xstore-interference-separate/child/trace_long/warmup-samples.jsonl"
+   "bytes": 16923035,
+   "path": "xstore-main/xstore/separate/samples.jsonl"
   },
   {
    "bytes": 859523,
@@ -5443,6 +5441,278 @@
    "path": "clickhouse-main/clickhouse/asset_ref/samples.jsonl"
   },
   {
+   "bytes": 858961,
+   "path": "xstore-main/xstore/same_table/rounds/correctness_only/round-1/samples.jsonl"
+  },
+  {
+   "bytes": 868733,
+   "path": "xstore-main/xstore/same_table/rounds/equal_total_few_large/round-1/samples.jsonl"
+  },
+  {
+   "bytes": 868735,
+   "path": "xstore-main/xstore/same_table/rounds/equal_total_few_large/round-2/samples.jsonl"
+  },
+  {
+   "bytes": 868738,
+   "path": "xstore-main/xstore/same_table/rounds/equal_total_few_large/round-3/samples.jsonl"
+  },
+  {
+   "bytes": 868741,
+   "path": "xstore-main/xstore/same_table/rounds/equal_total_few_large/round-4/samples.jsonl"
+  },
+  {
+   "bytes": 1191103,
+   "path": "xstore-main/xstore/same_table/rounds/equal_total_many_medium/round-1/samples.jsonl"
+  },
+  {
+   "bytes": 1191098,
+   "path": "xstore-main/xstore/same_table/rounds/equal_total_many_medium/round-2/samples.jsonl"
+  },
+  {
+   "bytes": 1191098,
+   "path": "xstore-main/xstore/same_table/rounds/equal_total_many_medium/round-3/samples.jsonl"
+  },
+  {
+   "bytes": 1191071,
+   "path": "xstore-main/xstore/same_table/rounds/equal_total_many_medium/round-4/samples.jsonl"
+  },
+  {
+   "bytes": 1926715,
+   "path": "xstore-main/xstore/same_table/rounds/main/round-1/samples.jsonl"
+  },
+  {
+   "bytes": 1926709,
+   "path": "xstore-main/xstore/same_table/rounds/main/round-2/samples.jsonl"
+  },
+  {
+   "bytes": 1926757,
+   "path": "xstore-main/xstore/same_table/rounds/main/round-3/samples.jsonl"
+  },
+  {
+   "bytes": 1926749,
+   "path": "xstore-main/xstore/same_table/rounds/main/round-4/samples.jsonl"
+  },
+  {
+   "bytes": 16923193,
+   "path": "xstore-main/xstore/same_table/samples.jsonl"
+  },
+  {
+   "bytes": 172098850,
+   "path": "xstore-interference-full_core/child/batch_loop/samples.jsonl"
+  },
+  {
+   "bytes": 17198284,
+   "path": "xstore-interference-full_core/child/batch_loop/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 170539810,
+   "path": "xstore-interference-full_core/child/continuous_ingest/samples.jsonl"
+  },
+  {
+   "bytes": 17052490,
+   "path": "xstore-interference-full_core/child/continuous_ingest/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 170644378,
+   "path": "xstore-interference-full_core/child/detail_2m/samples.jsonl"
+  },
+  {
+   "bytes": 17062989,
+   "path": "xstore-interference-full_core/child/detail_2m/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 170298366,
+   "path": "xstore-interference-full_core/child/quiet/samples.jsonl"
+  },
+  {
+   "bytes": 17031324,
+   "path": "xstore-interference-full_core/child/quiet/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 170479694,
+   "path": "xstore-interference-full_core/child/trace_long/samples.jsonl"
+  },
+  {
+   "bytes": 17046635,
+   "path": "xstore-interference-full_core/child/trace_long/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 171903976,
+   "path": "xstore-interference-same_table/child/batch_loop/samples.jsonl"
+  },
+  {
+   "bytes": 17198274,
+   "path": "xstore-interference-same_table/child/batch_loop/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 170505726,
+   "path": "xstore-interference-same_table/child/continuous_ingest/samples.jsonl"
+  },
+  {
+   "bytes": 17049147,
+   "path": "xstore-interference-same_table/child/continuous_ingest/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 170644701,
+   "path": "xstore-interference-same_table/child/detail_2m/samples.jsonl"
+  },
+  {
+   "bytes": 17062940,
+   "path": "xstore-interference-same_table/child/detail_2m/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 170298142,
+   "path": "xstore-interference-same_table/child/quiet/samples.jsonl"
+  },
+  {
+   "bytes": 17031192,
+   "path": "xstore-interference-same_table/child/quiet/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 170479640,
+   "path": "xstore-interference-same_table/child/trace_long/samples.jsonl"
+  },
+  {
+   "bytes": 17046510,
+   "path": "xstore-interference-same_table/child/trace_long/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 858845,
+   "path": "clickhouse-main/clickhouse/separate/rounds/correctness_only/round-1/samples.jsonl"
+  },
+  {
+   "bytes": 868835,
+   "path": "clickhouse-main/clickhouse/separate/rounds/equal_total_few_large/round-1/samples.jsonl"
+  },
+  {
+   "bytes": 868849,
+   "path": "clickhouse-main/clickhouse/separate/rounds/equal_total_few_large/round-2/samples.jsonl"
+  },
+  {
+   "bytes": 868845,
+   "path": "clickhouse-main/clickhouse/separate/rounds/equal_total_few_large/round-3/samples.jsonl"
+  },
+  {
+   "bytes": 868850,
+   "path": "clickhouse-main/clickhouse/separate/rounds/equal_total_few_large/round-4/samples.jsonl"
+  },
+  {
+   "bytes": 1191123,
+   "path": "clickhouse-main/clickhouse/separate/rounds/equal_total_many_medium/round-1/samples.jsonl"
+  },
+  {
+   "bytes": 1191124,
+   "path": "clickhouse-main/clickhouse/separate/rounds/equal_total_many_medium/round-2/samples.jsonl"
+  },
+  {
+   "bytes": 1191104,
+   "path": "clickhouse-main/clickhouse/separate/rounds/equal_total_many_medium/round-3/samples.jsonl"
+  },
+  {
+   "bytes": 1191130,
+   "path": "clickhouse-main/clickhouse/separate/rounds/equal_total_many_medium/round-4/samples.jsonl"
+  },
+  {
+   "bytes": 1927086,
+   "path": "clickhouse-main/clickhouse/separate/rounds/main/round-1/samples.jsonl"
+  },
+  {
+   "bytes": 1927093,
+   "path": "clickhouse-main/clickhouse/separate/rounds/main/round-2/samples.jsonl"
+  },
+  {
+   "bytes": 1926992,
+   "path": "clickhouse-main/clickhouse/separate/rounds/main/round-3/samples.jsonl"
+  },
+  {
+   "bytes": 1927132,
+   "path": "clickhouse-main/clickhouse/separate/rounds/main/round-4/samples.jsonl"
+  },
+  {
+   "bytes": 16924993,
+   "path": "clickhouse-main/clickhouse/separate/samples.jsonl"
+  },
+  {
+   "bytes": 172154624,
+   "path": "xstore-interference-separate/child/batch_loop/samples.jsonl"
+  },
+  {
+   "bytes": 17207543,
+   "path": "xstore-interference-separate/child/batch_loop/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 170549178,
+   "path": "xstore-interference-separate/child/continuous_ingest/samples.jsonl"
+  },
+  {
+   "bytes": 17053439,
+   "path": "xstore-interference-separate/child/continuous_ingest/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 170643708,
+   "path": "xstore-interference-separate/child/detail_2m/samples.jsonl"
+  },
+  {
+   "bytes": 17062983,
+   "path": "xstore-interference-separate/child/detail_2m/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 170284505,
+   "path": "xstore-interference-separate/child/quiet/samples.jsonl"
+  },
+  {
+   "bytes": 17031254,
+   "path": "xstore-interference-separate/child/quiet/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 170479003,
+   "path": "xstore-interference-separate/child/trace_long/samples.jsonl"
+  },
+  {
+   "bytes": 17046562,
+   "path": "xstore-interference-separate/child/trace_long/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 173321626,
+   "path": "xstore-interference-asset_ref/child/batch_loop/samples.jsonl"
+  },
+  {
+   "bytes": 17347403,
+   "path": "xstore-interference-asset_ref/child/batch_loop/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 170537915,
+   "path": "xstore-interference-asset_ref/child/continuous_ingest/samples.jsonl"
+  },
+  {
+   "bytes": 17052405,
+   "path": "xstore-interference-asset_ref/child/continuous_ingest/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 160872396,
+   "path": "xstore-interference-asset_ref/child/detail_2m/samples.jsonl"
+  },
+  {
+   "bytes": 10353255,
+   "path": "xstore-interference-asset_ref/child/detail_2m/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 101307945,
+   "path": "xstore-interference-asset_ref/child/quiet/samples.jsonl"
+  },
+  {
+   "bytes": 17031211,
+   "path": "xstore-interference-asset_ref/child/quiet/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 170438320,
+   "path": "xstore-interference-asset_ref/child/trace_long/samples.jsonl"
+  },
+  {
+   "bytes": 17046795,
+   "path": "xstore-interference-asset_ref/child/trace_long/warmup-samples.jsonl"
+  },
+  {
    "bytes": 858907,
    "path": "clickhouse-main/clickhouse/same_table/rounds/correctness_only/round-1/samples.jsonl"
   },
@@ -5499,60 +5769,140 @@
    "path": "clickhouse-main/clickhouse/same_table/samples.jsonl"
   },
   {
-   "bytes": 858948,
-   "path": "xstore-main/xstore/separate/rounds/correctness_only/round-1/samples.jsonl"
+   "bytes": 171449819,
+   "path": "ch-interference-full_core/child/batch_loop/samples.jsonl"
   },
   {
-   "bytes": 868768,
-   "path": "xstore-main/xstore/separate/rounds/equal_total_few_large/round-1/samples.jsonl"
+   "bytes": 17142803,
+   "path": "ch-interference-full_core/child/batch_loop/warmup-samples.jsonl"
   },
   {
-   "bytes": 868743,
-   "path": "xstore-main/xstore/separate/rounds/equal_total_few_large/round-2/samples.jsonl"
+   "bytes": 170543739,
+   "path": "ch-interference-full_core/child/continuous_ingest/samples.jsonl"
   },
   {
-   "bytes": 868735,
-   "path": "xstore-main/xstore/separate/rounds/equal_total_few_large/round-3/samples.jsonl"
+   "bytes": 17053012,
+   "path": "ch-interference-full_core/child/continuous_ingest/warmup-samples.jsonl"
   },
   {
-   "bytes": 868753,
-   "path": "xstore-main/xstore/separate/rounds/equal_total_few_large/round-4/samples.jsonl"
+   "bytes": 137512768,
+   "path": "ch-interference-full_core/child/detail_2m/samples.jsonl"
   },
   {
-   "bytes": 1191066,
-   "path": "xstore-main/xstore/separate/rounds/equal_total_many_medium/round-1/samples.jsonl"
+   "bytes": 17062159,
+   "path": "ch-interference-full_core/child/detail_2m/warmup-samples.jsonl"
   },
   {
-   "bytes": 1191080,
-   "path": "xstore-main/xstore/separate/rounds/equal_total_many_medium/round-2/samples.jsonl"
+   "bytes": 159048962,
+   "path": "ch-interference-full_core/child/quiet/samples.jsonl"
   },
   {
-   "bytes": 1191063,
-   "path": "xstore-main/xstore/separate/rounds/equal_total_many_medium/round-3/samples.jsonl"
+   "bytes": 17031455,
+   "path": "ch-interference-full_core/child/quiet/warmup-samples.jsonl"
   },
   {
-   "bytes": 1191078,
-   "path": "xstore-main/xstore/separate/rounds/equal_total_many_medium/round-4/samples.jsonl"
+   "bytes": 170482347,
+   "path": "ch-interference-full_core/child/trace_long/samples.jsonl"
   },
   {
-   "bytes": 1926718,
-   "path": "xstore-main/xstore/separate/rounds/main/round-1/samples.jsonl"
+   "bytes": 17046820,
+   "path": "ch-interference-full_core/child/trace_long/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 858943,
+   "path": "xstore-main/xstore/full_core/rounds/correctness_only/round-1/samples.jsonl"
+  },
+  {
+   "bytes": 868744,
+   "path": "xstore-main/xstore/full_core/rounds/equal_total_few_large/round-1/samples.jsonl"
+  },
+  {
+   "bytes": 868747,
+   "path": "xstore-main/xstore/full_core/rounds/equal_total_few_large/round-2/samples.jsonl"
+  },
+  {
+   "bytes": 868747,
+   "path": "xstore-main/xstore/full_core/rounds/equal_total_few_large/round-3/samples.jsonl"
+  },
+  {
+   "bytes": 868741,
+   "path": "xstore-main/xstore/full_core/rounds/equal_total_few_large/round-4/samples.jsonl"
+  },
+  {
+   "bytes": 1191092,
+   "path": "xstore-main/xstore/full_core/rounds/equal_total_many_medium/round-1/samples.jsonl"
+  },
+  {
+   "bytes": 1191091,
+   "path": "xstore-main/xstore/full_core/rounds/equal_total_many_medium/round-2/samples.jsonl"
+  },
+  {
+   "bytes": 1191081,
+   "path": "xstore-main/xstore/full_core/rounds/equal_total_many_medium/round-3/samples.jsonl"
+  },
+  {
+   "bytes": 1191079,
+   "path": "xstore-main/xstore/full_core/rounds/equal_total_many_medium/round-4/samples.jsonl"
+  },
+  {
+   "bytes": 1926738,
+   "path": "xstore-main/xstore/full_core/rounds/main/round-1/samples.jsonl"
+  },
+  {
+   "bytes": 1926722,
+   "path": "xstore-main/xstore/full_core/rounds/main/round-2/samples.jsonl"
   },
   {
    "bytes": 1926725,
-   "path": "xstore-main/xstore/separate/rounds/main/round-2/samples.jsonl"
+   "path": "xstore-main/xstore/full_core/rounds/main/round-3/samples.jsonl"
   },
   {
-   "bytes": 1926680,
-   "path": "xstore-main/xstore/separate/rounds/main/round-3/samples.jsonl"
+   "bytes": 1926749,
+   "path": "xstore-main/xstore/full_core/rounds/main/round-4/samples.jsonl"
   },
   {
-   "bytes": 1926693,
-   "path": "xstore-main/xstore/separate/rounds/main/round-4/samples.jsonl"
+   "bytes": 16923184,
+   "path": "xstore-main/xstore/full_core/samples.jsonl"
   },
   {
-   "bytes": 16923035,
-   "path": "xstore-main/xstore/separate/samples.jsonl"
+   "bytes": 172170251,
+   "path": "ch-interference-asset_ref/child/batch_loop/samples.jsonl"
+  },
+  {
+   "bytes": 17226348,
+   "path": "ch-interference-asset_ref/child/batch_loop/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 170536408,
+   "path": "ch-interference-asset_ref/child/continuous_ingest/samples.jsonl"
+  },
+  {
+   "bytes": 17052434,
+   "path": "ch-interference-asset_ref/child/continuous_ingest/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 170571922,
+   "path": "ch-interference-asset_ref/child/detail_2m/samples.jsonl"
+  },
+  {
+   "bytes": 17063306,
+   "path": "ch-interference-asset_ref/child/detail_2m/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 170298260,
+   "path": "ch-interference-asset_ref/child/quiet/samples.jsonl"
+  },
+  {
+   "bytes": 17031070,
+   "path": "ch-interference-asset_ref/child/quiet/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 170454698,
+   "path": "ch-interference-asset_ref/child/trace_long/samples.jsonl"
+  },
+  {
+   "bytes": 17046853,
+   "path": "ch-interference-asset_ref/child/trace_long/warmup-samples.jsonl"
   },
   {
    "bytes": 859485,
@@ -5611,60 +5961,84 @@
    "path": "xstore-main/xstore/asset_ref/samples.jsonl"
   },
   {
-   "bytes": 858961,
-   "path": "xstore-main/xstore/same_table/rounds/correctness_only/round-1/samples.jsonl"
+   "bytes": 171517507,
+   "path": "ch-interference-same_table/child/batch_loop/samples.jsonl"
   },
   {
-   "bytes": 868733,
-   "path": "xstore-main/xstore/same_table/rounds/equal_total_few_large/round-1/samples.jsonl"
+   "bytes": 17152732,
+   "path": "ch-interference-same_table/child/batch_loop/warmup-samples.jsonl"
   },
   {
-   "bytes": 868735,
-   "path": "xstore-main/xstore/same_table/rounds/equal_total_few_large/round-2/samples.jsonl"
+   "bytes": 170502213,
+   "path": "ch-interference-same_table/child/continuous_ingest/samples.jsonl"
   },
   {
-   "bytes": 868738,
-   "path": "xstore-main/xstore/same_table/rounds/equal_total_few_large/round-3/samples.jsonl"
+   "bytes": 17049985,
+   "path": "ch-interference-same_table/child/continuous_ingest/warmup-samples.jsonl"
   },
   {
-   "bytes": 868741,
-   "path": "xstore-main/xstore/same_table/rounds/equal_total_few_large/round-4/samples.jsonl"
+   "bytes": 170624597,
+   "path": "ch-interference-same_table/child/detail_2m/samples.jsonl"
   },
   {
-   "bytes": 1191103,
-   "path": "xstore-main/xstore/same_table/rounds/equal_total_many_medium/round-1/samples.jsonl"
+   "bytes": 17063697,
+   "path": "ch-interference-same_table/child/detail_2m/warmup-samples.jsonl"
   },
   {
-   "bytes": 1191098,
-   "path": "xstore-main/xstore/same_table/rounds/equal_total_many_medium/round-2/samples.jsonl"
+   "bytes": 170307155,
+   "path": "ch-interference-same_table/child/quiet/samples.jsonl"
   },
   {
-   "bytes": 1191098,
-   "path": "xstore-main/xstore/same_table/rounds/equal_total_many_medium/round-3/samples.jsonl"
+   "bytes": 17031903,
+   "path": "ch-interference-same_table/child/quiet/warmup-samples.jsonl"
   },
   {
-   "bytes": 1191071,
-   "path": "xstore-main/xstore/same_table/rounds/equal_total_many_medium/round-4/samples.jsonl"
+   "bytes": 170460050,
+   "path": "ch-interference-same_table/child/trace_long/samples.jsonl"
   },
   {
-   "bytes": 1926715,
-   "path": "xstore-main/xstore/same_table/rounds/main/round-1/samples.jsonl"
+   "bytes": 17047350,
+   "path": "ch-interference-same_table/child/trace_long/warmup-samples.jsonl"
   },
   {
-   "bytes": 1926709,
-   "path": "xstore-main/xstore/same_table/rounds/main/round-2/samples.jsonl"
+   "bytes": 171125835,
+   "path": "ch-interference-separate/child/batch_loop/samples.jsonl"
   },
   {
-   "bytes": 1926757,
-   "path": "xstore-main/xstore/same_table/rounds/main/round-3/samples.jsonl"
+   "bytes": 17142442,
+   "path": "ch-interference-separate/child/batch_loop/warmup-samples.jsonl"
   },
   {
-   "bytes": 1926749,
-   "path": "xstore-main/xstore/same_table/rounds/main/round-4/samples.jsonl"
+   "bytes": 124883692,
+   "path": "ch-interference-separate/child/continuous_ingest/samples.jsonl"
   },
   {
-   "bytes": 16923193,
-   "path": "xstore-main/xstore/same_table/samples.jsonl"
+   "bytes": 17053523,
+   "path": "ch-interference-separate/child/continuous_ingest/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 136606331,
+   "path": "ch-interference-separate/child/detail_2m/samples.jsonl"
+  },
+  {
+   "bytes": 5676186,
+   "path": "ch-interference-separate/child/detail_2m/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 170242865,
+   "path": "ch-interference-separate/child/quiet/samples.jsonl"
+  },
+  {
+   "bytes": 17030419,
+   "path": "ch-interference-separate/child/quiet/warmup-samples.jsonl"
+  },
+  {
+   "bytes": 111186767,
+   "path": "ch-interference-separate/child/trace_long/samples.jsonl"
+  },
+  {
+   "bytes": 17046421,
+   "path": "ch-interference-separate/child/trace_long/warmup-samples.jsonl"
   },
   {
    "bytes": 858906,
@@ -5727,10 +6101,10 @@
  "presence": {
   "asset-failures/clickhouse": true,
   "asset-failures/xstore": true,
-  "interference/clickhouse/asset_ref": false,
-  "interference/clickhouse/full_core": false,
+  "interference/clickhouse/asset_ref": true,
+  "interference/clickhouse/full_core": true,
   "interference/clickhouse/same_table": true,
-  "interference/clickhouse/separate": false,
+  "interference/clickhouse/separate": true,
   "interference/xstore/asset_ref": true,
   "interference/xstore/full_core": true,
   "interference/xstore/same_table": true,
@@ -5749,18 +6123,8 @@
   "part-states/clickhouse/separate": true
  },
  "repository": {
-  "head": "48f25121689cee7f47b518f58150214e90d2bdb4"
+  "head": "0c8912b96cbaf78497a3a2152c877279fa509af2"
  },
- "summary_errors": [
-  {
-   "error": "run directories missing",
-   "missing": [
-    "/data1/cjy/.stage3-yellow/runs/ch-interference-separate",
-    "/data1/cjy/.stage3-yellow/runs/ch-interference-full_core",
-    "/data1/cjy/.stage3-yellow/runs/ch-interference-asset_ref"
-   ],
-   "summary": "interference-clickhouse"
-  }
- ],
- "total_bytes": 51539132
+ "summary_errors": [],
+ "total_bytes": 78995337
 }
