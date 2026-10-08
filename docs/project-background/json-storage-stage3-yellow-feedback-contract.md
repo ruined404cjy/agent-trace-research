@@ -359,7 +359,7 @@ XD 的全部计时小于 10 时保留两位小数并去掉末尾的 0。空间�
 | XW | 四行 | XStore 写入合计（第 4.2 节），末轮库内空间 MB，末轮对象存储 MB |
 | XA | 一行 | XStore Asset 六用例终态编码，行存探针展开式的 Total runtime 与 Filter 移除行数，带下界写法的 Total runtime 与 Filter 移除行数 |
 | XD | 一行 | XStore 往返下限 `exec_select_1` `params_select_int` `params_catalog` 的 p50，驱动基准 `list_first` `detail_64k` `detail_2m` 的 fetchall p50，`list_first` 的逐单元下限 p50 |
-| I | 八行 | 五组，组间用 `|` 分隔：quiet 的前台 list p50 p95 丢弃数；detail_2m 与 trace_long 的前台 list 丢弃数；batch_loop 的前台 list p50 p95 丢弃数及其中调度迟到的丢弃数；continuous_ingest 的前台 list p50 p95 丢弃数；batch_loop 干扰流 p50 与成功次数、continuous_ingest 干扰流的单 block p50 |
+| I | 八行 | 五组，组间用 `|` 分隔：quiet 的前台 list p50 p95 丢弃数；detail_2m 与 trace_long 的前台 list 丢弃数；batch_loop 的前台 list p50 p95 丢弃数及其中调度迟到的丢弃数；continuous_ingest 的前台 list p50 p95 丢弃数；batch_loop 干扰流 p50 与成功次数、continuous_ingest 干扰流的单 block p50。某个引擎只运行了部分布局时汇总缺失，该引擎各行改由 check 的 F2 行取数，未运行的布局整行为 NA |
 | CM | 四行 | ClickHouse `main` 的八个目标，顺序同 XM |
 | CE | 四行 | ClickHouse 两个等总字节 workload，顺序同 XE |
 | CW | 四行 | ClickHouse 写入合计，末轮库内空间 MB，末轮对象存储 MB |

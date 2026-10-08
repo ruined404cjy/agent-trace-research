@@ -256,8 +256,29 @@ def section_parts(source):
     return lines
 
 
+def _f2_layouts(source, prefix):
+    """汇总缺失时的回退：从 F2 行重建 {布局: {阶段: {流: 统计}}}，结构与 interference 汇总一致。"""
+    layouts = {}
+    for fields in source.check_lines("F2"):
+        # F2 <运行> <阶段> <流> <样本数> status=... dropped_by=... p50/p95/p99/max=...
+        if len(fields) < 7 or not fields[0].startswith(f"{prefix}-interference-"):
+            continue
+        status = dict(item.split(":") for item in fields[4].split("=", 1)[1].split(",") if item)
+        quantiles = fields[6].split("=", 1)[1].split("/")
+        values = [None if value == "None" else float(value) for value in quantiles[:2]]
+        layout = fields[0][len(f"{prefix}-interference-"):]
+        layouts.setdefault(layout, {}).setdefault(fields[1], {})[fields[2]] = {
+            "latency_ms": {"p50": values[0], "p95": values[1]},
+            "counts": {"dropped_requests": int(status.get("dropped", 0)),
+                       "successful_requests": int(status.get("success", 0))}}
+    return layouts
+
+
 def section_i(source):
-    """I：两个引擎各四布局的混合负载，八行，XStore 在前；字段分五组，组间用 | 分隔。"""
+    """I：两个引擎各四布局的混合负载，八行，XStore 在前；字段分五组，组间用 | 分隔。
+
+    汇总要求四个布局齐全；只跑了部分布局时汇总缺失，该引擎改用 check 的 F2 行逐运行取数。
+    """
     late = {}
     for fields in source.check_lines("F2"):
         # F2 <运行> <阶段> <流> ... dropped_by=arrival_deadline_missed:N,...
@@ -266,10 +287,14 @@ def section_i(source):
             late[fields[0]] = int(match.group(1)) if match else 0
     lines = []
     for engine, prefix in (("xstore", "xstore"), ("clickhouse", "ch")):
-        summary = _json(source.dir / "summary" / f"interference-{engine}.json") or {}
-        by_layout = {item["layout"]: item for item in summary.get("layouts", [])}
+        summary = _json(source.dir / "summary" / f"interference-{engine}.json")
+        if summary:
+            by_layout = {item["layout"]: {phase["phase"]: phase.get("streams", {}) for phase in item.get("phases", [])}
+                         for item in summary.get("layouts", [])}
+        else:
+            by_layout = _f2_layouts(source, prefix)
         for layout in LAYOUTS:
-            phases = {phase["phase"]: phase.get("streams", {}) for phase in (by_layout.get(layout) or {}).get("phases", [])}
+            phases = by_layout.get(layout) or {}
 
             def stream(phase, name):
                 return (phases.get(phase) or {}).get(name) or {}

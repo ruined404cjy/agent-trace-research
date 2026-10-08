@@ -109,6 +109,21 @@ class HandLinesTest(unittest.TestCase):
         _, rows = self.section(lines, "I")
         self.assertEqual(rows[4], "30 40 1|NA NA|31 60 20 3|NA NA NA|2100 140 NA")
 
+    def test_partial_interference_falls_back_to_check_lines(self):
+        # 汇总要求四布局齐全；缺布局时 I 节改用 F2 逐运行取数，未运行的布局为 NA。
+        checks = (self.dir / "followup" / "checks.txt").read_text(encoding="utf-8")
+        checks += (
+            "F2 xstore-interference-same_table quiet list 6000 status=dropped:3,success:5997 "
+            "dropped_by=worker_capacity_unavailable:3 p50/p95/p99/max=20.5/30.1/40/50 max_consecutive_dropped=1\n"
+            "F2 xstore-interference-same_table batch_loop batch_loop 170 status=success:170 "
+            "dropped_by= p50/p95/p99/max=1700.4/1800/1900/2000 max_consecutive_dropped=0\n"
+            "F2 NA xstore-interference-separate has no samples.jsonl\n")
+        (self.dir / "followup" / "checks.txt").write_text(checks, encoding="utf-8")
+        _, rows = self.section(hand.hand_lines(self.dir, "161", "2026-10-08"), "I")
+        self.assertEqual(rows[0], "20.5 30.1 3|NA NA|NA NA NA NA|NA NA NA|1700 170 NA")
+        self.assertEqual(rows[1], "NA NA NA|NA NA|NA NA NA NA|NA NA NA|NA NA NA")
+        self.assertEqual(rows[4], "30 40 1|NA NA|31 60 20 3|NA NA NA|2100 140 NA")
+
     def test_a_failing_section_is_reported_and_the_rest_continue(self):
         lines = hand.hand_lines(self.dir, "161", "2026-10-08")
         index = lines.index("CA ERR")
