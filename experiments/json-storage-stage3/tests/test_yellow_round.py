@@ -1,5 +1,6 @@
 import datetime
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -119,6 +120,39 @@ class HostCheckTest(unittest.TestCase):
         for expected in ("XSTORE_USER", "GAUSSDB_LIB_DIR", "XSTORE_NATIVE_ENGINE", "CH_NATIVE_PRODUCT_PATH",
                          "XSTORE_SOURCE_COMMIT", "CH_HTTP_PORT must be 18123", "frozen input"):
             self.assertIn(expected, joined)
+
+
+class SerialCheckTest(unittest.TestCase):
+    """串行检查只针对本实验账号的 XStore；共享主机上其他用户的数据库进程由主机检查记录。"""
+
+    def setUp(self):
+        self.commands = []
+        self.returncode = 1
+        original = driver.subprocess.run
+
+        def run(command, **kwargs):
+            self.commands.append(command)
+            return SimpleNamespace(returncode=self.returncode, stdout="", stderr="")
+
+        driver.subprocess.run = run
+        self.addCleanup(setattr, driver.subprocess, "run", original)
+
+    def test_clickhouse_phase_looks_only_at_the_run_accounts_gaussdb(self):
+        """其他用户的 gaussdb 实验无法停止，计入串行检查会让 clickhouse 阶段永远无法开始。"""
+        self.assertIsNone(driver.other_engine_running("clickhouse", 18123))
+        self.assertEqual(self.commands, [["pgrep", "-x", "-u", str(os.geteuid()), "gaussdb"]])
+        self.returncode = 0
+        self.assertIn("stop XStore", driver.other_engine_running("clickhouse", 18123))
+
+    def test_host_check_still_records_every_users_processes(self):
+        """放宽的只是串行判定；进程表仍按全机采集，其他用户的负载随 host-checks.txt 回传。"""
+        recorded = []
+        original = driver._command_output
+        driver._command_output = lambda command: recorded.append(command) or ""
+        self.addCleanup(setattr, driver, "_command_output", original)
+        with tempfile.TemporaryDirectory() as directory:
+            driver.host_check("before clickhouse phase", Path(directory), Path(directory) / "facts")
+        self.assertIn(["ps", "-eo", "pid,comm,pcpu,rss", "--sort=-pcpu"], recorded)
 
 
 if __name__ == "__main__":

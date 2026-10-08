@@ -15,6 +15,8 @@ import probe_row_storage as probe
 
 PROFILES = ("entropy_512k", "text_2m", "text_512k", "text_64k")
 EXPANDED_CURSOR = "AND (start_time > %s OR (start_time = %s AND event_id > %s))"
+# XStore adapter 实际发出的中间页游标：蕴含下界加展开式。
+BOUNDED_CURSOR = "AND start_time >= %s " + EXPANDED_CURSOR
 MIDDLE_QUERY = QuerySpec("list", {
     "project_id": "project-a", "start_time": "2030-01-01T00:00:00.000Z",
     "end_time": "2030-01-01T01:00:00.000Z", "cursor_time": "2030-01-01T00:30:00.000Z",
@@ -98,12 +100,12 @@ class FakeRowAdapter:
 
     def _query_statement(self, query):
         statement = ("SELECT event_id FROM " + self.schema + ".events WHERE project_id=%s "
-                     "AND start_time>=%s AND start_time<%s " + EXPANDED_CURSOR
+                     "AND start_time>=%s AND start_time<%s " + BOUNDED_CURSOR
                      + " ORDER BY start_time,event_id LIMIT %s")
         params = query.parameters
         return statement, (params["project_id"], params["start_time"], params["end_time"],
-                           params["cursor_time"], params["cursor_time"], params["cursor_id"],
-                           params["page_size"])
+                           params["cursor_time"], params["cursor_time"], params["cursor_time"],
+                           params["cursor_id"], params["page_size"])
 
     def cleanup(self):
         self.calls.append("cleanup")
@@ -135,10 +137,17 @@ class RowStorageProbeTest(unittest.TestCase):
                          {"relname": "events", "relkind": "r", "reltoastrelid": 0, "reloptions": None})
         forms = record["cursor_probe"]
         self.assertEqual(set(forms), {"expanded", "expanded_with_lower_bound"})
-        # 形式二只增加一条被 OR 条件蕴含的下界，绑定值随之插入 cursor_time，结果集不变。
-        self.assertIn("AND start_time >= %s " + EXPANDED_CURSOR, forms["expanded_with_lower_bound"]["statement"])
-        self.assertEqual(forms["expanded_with_lower_bound"]["values"][3:5],
-                         ["2030-01-01T00:30:00.000Z", "2030-01-01T00:30:00.000Z"])
+        # 两种形式只差一条被 OR 条件蕴含的下界及其绑定的 cursor_time；形式一由探针
+        # 去掉 adapter 语句中的下界得到，计划对照因此仍能说明下界的作用。
+        cursor_time = "2030-01-01T00:30:00.000Z"
+        expanded, bounded = forms["expanded"], forms["expanded_with_lower_bound"]
+        self.assertIn(BOUNDED_CURSOR, bounded["statement"])
+        self.assertEqual(bounded["values"][3:7], [cursor_time, cursor_time, cursor_time, "event-mid"])
+        self.assertIn(EXPANDED_CURSOR, expanded["statement"])
+        self.assertNotIn("start_time >= %s", expanded["statement"])
+        self.assertEqual(expanded["values"][3:6], [cursor_time, cursor_time, "event-mid"])
+        for form in (expanded, bounded):
+            self.assertEqual(form["statement"].count("%s"), len(form["values"]))
         self.assertTrue(forms["expanded"]["plan"].startswith("Limit"))
         explained = [sql for sql, _ in adapter.executed if sql.startswith("EXPLAIN (ANALYZE, BUFFERS)")]
         self.assertEqual(len(explained), 2)
@@ -167,9 +176,37 @@ class RowStorageProbeTest(unittest.TestCase):
             probe.probe_layout(adapter, "xstore", blocks(), MIDDLE_QUERY, ready_timeout=5)
         self.assertEqual(adapter.calls[-1], "cleanup")
 
-    def test_cursor_forms_reject_a_statement_without_the_expanded_cursor(self):
-        with self.assertRaisesRegex(ValueError, "expanded cursor"):
-            probe.cursor_forms("SELECT 1 WHERE (start_time,event_id)>(%s,%s)", ("a", "b"))
+    def test_cursor_forms_reject_a_statement_without_the_bounded_cursor(self):
+        """adapter 语句形态变化时探针报错，避免两种形式静默退化为同一条语句。"""
+        for statement, values in (
+            ("SELECT 1 WHERE (start_time,event_id)>(%s,%s)", ("a", "b")),
+            ("SELECT 1 WHERE project_id=%s AND start_time>=%s AND start_time<%s " + EXPANDED_CURSOR,
+             ("p", "s", "e", "c", "c", "i")),
+        ):
+            with self.subTest(statement=statement):
+                with self.assertRaisesRegex(ValueError, "bounded cursor"):
+                    probe.cursor_forms(statement, values)
+        # 三处 cursor_time 绑定不一致时两种形式的结果集不再相同，对照失去意义。
+        with self.assertRaisesRegex(ValueError, "cursor_time"):
+            probe.cursor_forms("SELECT 1 WHERE project_id=%s AND start_time>=%s AND start_time<%s "
+                               + BOUNDED_CURSOR + " LIMIT %s", ("p", "s", "e", "c", "c", "d", "i", 256))
+
+    def test_cursor_forms_follow_the_xstore_adapter_statement(self):
+        """探针对照的形式二就是 adapter 发出的语句，形式一只去掉下界。"""
+        import xstore
+        from assets import LocalAssetStore
+
+        with tempfile.TemporaryDirectory() as root:
+            adapter = xstore.XStoreAdapter(
+                "127.0.0.1", 29000, "", "jsons3_probe", "same_table",
+                Path(root), LocalAssetStore(Path(root) / "assets"), user="runner",
+            )
+            statement, values = adapter._query_statement(MIDDLE_QUERY)
+        forms = probe.cursor_forms(statement, values)
+        self.assertEqual(forms["expanded_with_lower_bound"], (statement, tuple(values)))
+        expanded, expanded_values = forms["expanded"]
+        self.assertEqual(expanded, statement.replace(BOUNDED_CURSOR, EXPANDED_CURSOR))
+        self.assertEqual(expanded_values, tuple(values[:3]) + tuple(values[4:]))
 
     def test_row_constructor_engine_records_cursor_probe_as_not_applicable(self):
         adapter = FakeRowAdapter("same_table")

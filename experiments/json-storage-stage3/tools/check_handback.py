@@ -4,26 +4,31 @@
 
     python experiments/json-storage-stage3/tools/yellow_round.py check --host <IP 末段>
 
-只读取 $YELLOW_OUTPUT 与回传目录，另在 XStore 上执行三条最小 SELECT；不重跑实验。
-结果写入回传目录的 followup/checks.txt，同时打印。五项输出，每行以编号开头：
+只读取 $YELLOW_OUTPUT 与回传目录，另在 XStore 上执行三条最小 SELECT，并在进程内运行驱动微基准；
+不重跑实验。结果写入回传目录的 followup/checks.txt，同时打印。六项输出，每行以编号开头：
 
 - F1 代码身份：非 HEAD 代码按运行目录与文件分组计数，列出全部 HEAD 运行与 local 文件副本。
   用于确认非 HEAD 代码只来自有意复用的运行，local 源文件都已随回传保留。
 - F2 干扰负载样本：按运行、阶段、请求流给出状态计数、丢弃原因、成功请求耗时分位与最长连续丢弃。
   用于区分持续处理能力不足（worker capacity unavailable 均匀分布）与少数长请求造成的集中卡顿。
-- F3 XStore 服务端时间：主矩阵每轮小查询计划中的 Total runtime 与顶层节点耗时，
-  以及 result.json 中同场景的客户端中位数。用于判断小查询的客户端耗时主要花在服务端执行还是执行之外。
+- F3 XStore 服务端时间：主矩阵每轮小查询计划中的 Total runtime、顶层节点耗时与 Rows Removed by Filter，
+  以及 result.json 中同场景的客户端中位数。用于判断小查询的客户端耗时主要花在服务端执行还是执行之外，
+  并确认中间页的游标下界使索引扫描从游标处开始（removed 应接近 0）。
 - F4 XStore 往返下限：同一连接上三类最小语句各 200 次的客户端耗时，连接方式与 runner 相同。
   用于判断小查询的固定耗时来自协议往返、参数绑定还是查询本身。XStore 未运行时该项写 NA 与原因。
 - F5 feedback.txt 的 B3 段原文。
+- F6 驱动微基准：bench_libpq_fetch.py 的输出，不连接数据库。用于确认驱动取数开销在本机的实际大小。
 
 出错时怎么办（给执行本脚本的 agent）：
 1. 某一项报错时，其余各项照常输出，该项写一行 `<编号> NA <错误>`；先看错误是否是字段名或路径与本机数据不符。
 2. 字段名不符时按上面的用途修正本脚本后重跑；修改后的脚本复制到 followup/ 下一并提交，回复中写明修改点。
 3. F4 需要 XSTORE_USER 与 GAUSSDB_LIB_DIR；端口取 XSTORE_PORT，默认与 runner 相同的 29000。
+4. F6 需要 GAUSSDB_LIB_DIR；GaussDB 的 libpq 缺少构造结果集的函数时该项写 NA 与原因，属于预期情况。
 """
 
 import collections
+import contextlib
+import io
 import json
 import os
 import re
@@ -38,7 +43,7 @@ sys.path.insert(0, str(STAGE_DIR / "report"))
 
 import pack_handback  # noqa: E402 - 固定目录名与打包脚本共用
 
-SMALL_SCENARIOS = ("list:first", "preview:first", "detail:text_64k")
+SMALL_SCENARIOS = ("list:first", "list:middle", "preview:first", "preview:middle", "detail:text_64k")
 ROUNDTRIP_CASES = (
     ("exec_select_1", "SELECT 1", None),
     ("params_select_int", "SELECT %s::int", (1,)),
@@ -132,9 +137,11 @@ def xstore_plan_lines(output_root):
                 plan = plan if isinstance(plan, str) else json.dumps(plan)
                 total = re.search(r"Total runtime: ([\d.]+) ms", plan)
                 top = re.search(r"actual time=[\d.]+\.\.([\d.]+)", plan)
+                removed = re.search(r"Rows Removed by Filter: (\d+)", plan)
                 lines.append(f"F3 server {layout} {manifest.parent.name} {validation['scenario']} "
                              f"total_runtime_ms {total.group(1) if total else 'NA'} "
-                             f"top_node_ms {top.group(1) if top else 'NA'}")
+                             f"top_node_ms {top.group(1) if top else 'NA'} "
+                             f"removed {removed.group(1) if removed else 0}")
     return lines
 
 
@@ -176,14 +183,27 @@ def b3_lines(feedback_dir):
     return ["F5 " + line for line in lines[lines.index("B3") + 1:lines.index("B4")]]
 
 
-def check(feedback_dir, output_root, connect=None):
-    """依次生成五项；单项失败写 NA 与错误，不影响其余各项。返回全部行。"""
+def bench_lines(run=None):
+    """F6：在进程内运行驱动微基准，逐行加编号；run 供测试替换，签名同 bench_libpq_fetch.main。"""
+    if run is None:
+        import bench_libpq_fetch
+
+        run = bench_libpq_fetch.main
+    buffer = io.StringIO()
+    with contextlib.redirect_stdout(buffer):
+        run([])
+    return ["F6 " + line for line in buffer.getvalue().splitlines() if line.strip()]
+
+
+def check(feedback_dir, output_root, connect=None, bench=None):
+    """依次生成六项；单项失败写 NA 与错误，不影响其余各项。返回全部行。"""
     lines = []
     for code, produce in (("F1", lambda: code_lines(feedback_dir)),
                           ("F2", lambda: interference_lines(output_root)),
                           ("F3", lambda: xstore_plan_lines(output_root)),
                           ("F4", lambda: roundtrip_lines(connect)),
-                          ("F5", lambda: b3_lines(feedback_dir))):
+                          ("F5", lambda: b3_lines(feedback_dir)),
+                          ("F6", lambda: bench_lines(bench))):
         try:
             lines += produce()
         except Exception as error:  # noqa: BLE001 - 每项的失败原因都要回传

@@ -696,6 +696,7 @@ def _gate_interference(child, formal, layout, engine="clickhouse"):
                     "format_version": 1, "status": "complete", "phase": phase.name,
                     "seed": SEED, "execution_scope": "formal",
                     "classification": "formal_complete", "layout": layout,
+                    "stream_execution": "process_per_stream",
                     "warmup_seconds": 30.0, "measurement_seconds": 300.0}
         if any(phase_manifest.get(key) != value for key, value in expected.items()) or any(
             not _is_int(phase_manifest.get(key)) for key in ("format_version", "seed")

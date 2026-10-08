@@ -1195,6 +1195,7 @@ def valid_interference_tree(output, layout="same_table"):
                     "format_version": 1, "status": "complete", "phase": phase.name,
                     "seed": 20260907, "execution_scope": "formal",
                     "classification": "formal_complete", "layout": layout,
+                    "stream_execution": "process_per_stream",
                     "namespace": f"jsons3_if_{phase.name}", "warmup_seconds": 30.0,
                     "measurement_seconds": 300.0, "schedules": schedules,
                     "execution_coverage": {"warmup_actual_seconds": 30.0,
@@ -1268,6 +1269,25 @@ class InterferenceProductionGateTests(unittest.TestCase):
         (output / evidence["artifacts"][-1]["path"]).write_text("replaced")
         with self.assertRaisesRegex(RuntimeError, "artifact.*changed"):
             run_stage3._verify_interference_artifacts(output, evidence["artifacts"])
+
+    def test_gate_rejects_phase_evidence_without_per_stream_processes(self):
+        """同进程多线程执行的请求流会把客户端争用计入延迟，其证据不能进入正式结果。"""
+        for value in (None, "injected_phase_runner"):
+            with self.subTest(stream_execution=value):
+                def mutate(output, root):
+                    phase = root["phases"][0]
+                    if value is None:
+                        phase.pop("stream_execution")
+                    else:
+                        phase["stream_execution"] = value
+                    run_stage3.write_manifest_atomic(
+                        output / "child" / phase["phase"] / "run-manifest.json", phase,
+                    )
+                    run_stage3.write_manifest_atomic(output / "child" / "run-manifest.json", root)
+
+                _, child = self.run_gate(mutate)
+                with self.assertRaisesRegex(RuntimeError, "interference phase manifest mismatch"):
+                    run_stage3._gate_interference(child, self.formal, "same_table")
 
     def test_gate_accepts_xstore_row_snapshots_and_unavailable_scan_bytes(self):
         """父进程按行存物理指标核验完整阶段，不借用 part 与 QueryFinish。"""

@@ -11,8 +11,8 @@ block 与水位载入 main workload，使用独立 namespace，无论成败都�
 2. 某条统计 SQL 在 XStore 上不被支持时，可在本地改写 payload_profile_sql 或 RELATIONS_SQL，
    保持返回列的含义与顺序不变（profile、行数、逻辑字节、存储字节；relname、relkind、
    reltoastrelid、reloptions），并提交到本地分支。
-3. 游标探针报 expanded cursor 不匹配时，说明 adapter 的中间页语句形态已变化，按新语句
-   调整 EXPANDED_CURSOR 常量，两种写法的差别仍只是一条 start_time >= cursor_time 下界。
+3. 游标探针报 bounded cursor 不匹配时，说明 adapter 的中间页语句形态已变化，按新语句
+   调整 BOUNDED_CURSOR 常量，两种写法的差别仍只是一条 start_time >= cursor_time 下界。
 4. 清理未确认删除时，手工删除输出中记录的 namespace 后删掉该 JSON 重跑。
 """
 
@@ -40,6 +40,8 @@ PAYLOAD_TABLES = {"same_table": "events", "separate": "event_payloads", "full_co
 # main workload 的载荷契约：四个 profile 各 40 个对象，由 validate_workload_contract 强制。
 MAIN_PROFILE_ROWS = {"entropy_512k": 40, "text_2m": 40, "text_512k": 40, "text_64k": 40}
 EXPANDED_CURSOR = "AND (start_time > %s OR (start_time = %s AND event_id > %s))"
+# XStore adapter 的中间页游标：被 OR 条件蕴含的下界加展开式。
+BOUNDED_CURSOR = "AND start_time >= %s " + EXPANDED_CURSOR
 RELATIONS_SQL = (
     "SELECT c.relname, c.relkind, c.reltoastrelid::bigint, c.reloptions "
     "FROM pg_class c JOIN pg_namespace n ON n.oid = c.relnamespace "
@@ -58,18 +60,20 @@ def payload_profile_sql(schema, table):
 def cursor_forms(statement, values):
     """由 adapter 的中间页语句派生契约第 5.1 节的两种游标写法。
 
-    入参为 adapter 生成的展开式语句与绑定值；返回 {形式名: (语句, 绑定值)}。
-    形式二在展开式之前增加一条被 OR 条件蕴含的下界 start_time >= cursor_time，结果集不变。
+    入参为 adapter 生成的带下界语句与绑定值；返回 {形式名: (语句, 绑定值)}。
+    形式二即 adapter 语句；形式一去掉被 OR 条件蕴含的下界 start_time >= cursor_time
+    及其绑定，两者结果集相同，计划差异只来自该下界。
     """
-    if statement.count(EXPANDED_CURSOR) != 1:
-        raise ValueError("statement does not contain exactly one expanded cursor predicate")
+    if statement.count(BOUNDED_CURSOR) != 1:
+        raise ValueError("statement does not contain exactly one bounded cursor predicate")
     values = tuple(values)
-    # 展开式绑定依次为 project_id、start_time、end_time、cursor_time、cursor_time、cursor_id、page_size。
-    cursor_time = values[3]
-    bounded = statement.replace(EXPANDED_CURSOR, "AND start_time >= %s " + EXPANDED_CURSOR)
+    # 带下界的绑定依次为 project_id、start_time、end_time、cursor_time×3、cursor_id、page_size。
+    if len(values) != 8 or not values[3] == values[4] == values[5]:
+        raise ValueError("bounded cursor bindings do not repeat one cursor_time")
+    expanded = statement.replace(BOUNDED_CURSOR, EXPANDED_CURSOR)
     return {
-        "expanded": (statement, values),
-        "expanded_with_lower_bound": (bounded, values[:3] + (cursor_time,) + values[3:]),
+        "expanded": (expanded, values[:3] + values[4:]),
+        "expanded_with_lower_bound": (statement, values),
     }
 
 

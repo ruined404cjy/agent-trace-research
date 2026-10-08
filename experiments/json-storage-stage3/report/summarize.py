@@ -158,6 +158,7 @@ INTERFERENCE_NAMESPACE_POLICY_FIELDS = frozenset({
     "strategy", "reuse", "phase_order", "namespace_prefix", "namespaces",
 })
 INTERFERENCE_CACHE_STATE = "warm-fixed-offered-load-no-os-cache-drop"
+INTERFERENCE_STREAM_EXECUTION = "process_per_stream"
 INTERFERENCE_NAMESPACE_STRATEGY = "runner-fixed-phase-unique"
 INTERFERENCE_NAMESPACE_PREFIX = "jsons3_if_<phase>_"
 INTERFERENCE_CHILD_FIELDS = frozenset({
@@ -2492,6 +2493,7 @@ def _validate_interference_phase(run, phase, manifest, layout, metadata, schedul
         "classification": INTERFERENCE_CLASSIFICATION,
         "layout": layout,
         "cache_state": INTERFERENCE_CACHE_STATE,
+        "stream_execution": INTERFERENCE_STREAM_EXECUTION,
         "warmup_seconds": segment_seconds["warmup"],
         "measurement_seconds": segment_seconds["measurement"],
     }

@@ -165,7 +165,7 @@ WHERE active AND database = {database:String} AND column = 'payload';
 |---|---|---|---|
 | 主矩阵四布局四 workload | 重跑 | 重跑 | 两台此前使用各自本地修改的 adapter，数据不可合并；本轮两台使用同一提交，两个引擎都在统一工具包下产出 |
 | part 状态控制 | 不适用 | 重跑 | XStore 不使用 part 组织数据。重跑以取得四个布局、四个状态的时延，此前只有 part 数 |
-| 混合负载 | 重跑 | 重跑 | 阶段快照改为按引擎实际报出的物理模型采集，行存记堆、索引与行外存储字节，part 积压记 0；前台时延与丢弃计数两侧同口径，物理旁证两侧各记各的，不横向对照 |
+| 混合负载 | 重跑 | 重跑 | 每个请求流在独立进程内运行，各流不共享解释器锁与调度线程，前台时延与丢弃计数只含数据库与本流客户端开销；phase manifest 的 `stream_execution` 字段记为 `process_per_stream`，汇总器只接受该值。阶段快照改为按引擎实际报出的物理模型采集，行存记堆、索引与行外存储字节，part 积压记 0；前台时延与丢弃计数两侧同口径，物理旁证两侧各记各的，不横向对照 |
 | Asset 故障六用例 | 重跑 | 重跑 | 结论为分类与状态转换，不产出时延 |
 
 主矩阵一次调用必须列出全部四个 workload，分次调用会覆盖同一 target 的产物，属无效运行。
@@ -173,25 +173,27 @@ WHERE active AND database = {database:String} AND column = 'payload';
 ### 5.1 分页游标形式的探针
 
 XStore 不支持行构造器比较，adapter 把 `(start_time,event_id) > (%s,%s)` 展开为
-`(start_time > %s OR (start_time = %s AND event_id > %s))`。展开式能否作为索引范围起点由
-优化器决定，本项由行存探针对两种写法各执行一次 EXPLAIN，结果决定是否需要调整，不要自行改写查询。
+`(start_time > %s OR (start_time = %s AND event_id > %s))`，并在其前增加被 OR 条件蕴含的
+下界 `start_time >= %s`（绑定游标时刻）。XStore 不把 OR 展开式用作索引范围起点，该下界进入
+Index Cond，使索引扫描从游标处开始，结果集不变。本项由行存探针对两种写法各执行一次 EXPLAIN，
+记录该下界对访问路径的作用。
 
 对 `same_table` 布局的中间页游标，分别对下列两条语句执行 `EXPLAIN (ANALYZE, BUFFERS)`，
 回传两份计划的访问节点类型与实际扫描行数：
 
 ```sql
--- 形式一：当前 adapter 使用的展开式
+-- 形式一：不带下界的展开式，由探针从 adapter 语句去掉下界得到
 ... AND (start_time > %s OR (start_time = %s AND event_id > %s))
 ORDER BY start_time,event_id LIMIT 256;
 
--- 形式二：补一条被 OR 条件蕴含的冗余下界，结果集不变
+-- 形式二：adapter 使用的形式，补一条被 OR 条件蕴含的下界，结果集不变
 ... AND start_time >= %s
     AND (start_time > %s OR (start_time = %s AND event_id > %s))
 ORDER BY start_time,event_id LIMIT 256;
 ```
 
-两者的实际扫描行数相同时保持形式一不变；形式二显著更少时回传该事实，由蓝区决定是否改包。
-该探针只做 EXPLAIN，不进入性能矩阵。
+形式二的 Index Cond 包含该下界；形式一的 Index Cond 只含窗口条件，由 Filter 逐行移除
+窗口起点到游标处的行。该探针只做 EXPLAIN，不进入性能矩阵。
 
 ### 5.2 XStore 混合负载修复与复测时间预算
 
@@ -217,6 +219,21 @@ XStore 的引擎接口、计划格式和执行成本由本机实测确认。当�
 按上述单项上限，XStore 部分在 161 的修复、诊断、试跑和四布局正式复测合计建议控制在
 9 小时 15 分钟内；162 的同布局验证和四布局正式复测建议控制在 7 小时 30 分钟内。
 到达总上限时完成当前受控清理并回传进度，由蓝区根据实测证据决定后续范围。
+
+### 5.3 修正后的增量重跑
+
+工具包在 `090e4b3` 及之后修正了 XStore 中间页游标、XStore 驱动结果转换与混合负载的进程模型。已在统一工具包下完成
+主矩阵、part 状态与 Asset 故障的主机，按下表增量重跑，其余结果沿用：
+
+| 运行 | XStore | ClickHouse |
+|---|---|---|
+| 主矩阵 | 重跑 | 沿用 `clickhouse-main` |
+| part 状态 | 不适用 | 沿用 `ch-part-states-*` |
+| 混合负载 | 重跑 | 重跑 |
+| Asset 故障 | 重跑 | 沿用 `ch-asset-failures` |
+| 行存探针 | 重跑 | 不适用 |
+
+重跑前把需要重跑的固定目录改名为 `<原名>.old-<日期>`，驱动脚本随后只执行缺失的步骤。
 
 ## 6. 回传前不得清理的路径
 
@@ -293,6 +310,87 @@ XStore 的引擎接口、计划格式和执行成本由本机实测确认。当�
 
 「按引擎与布局」与第 7.1 节的顺序相同。库内空间合计对 XStore 取各写目标的 `total_bytes` 之和，
 对 ClickHouse 取各写目标 active part 的压缩字节之和。
+
+### 7.4 手敲版 V2
+
+结果目录无法以文件形式离开本机时，按本节格式人工转述。V2 只收判读本轮修正所需的数值：XStore 的全部场景、
+两个引擎的混合负载、驱动与游标的验证证据，以及 ClickHouse 已有结果的摘要。格式由
+[hand_feedback.py](../../experiments/json-storage-stage3/report/hand_feedback.py) 生成，转述方照抄，不手工计算。
+
+**生成。** 在同一回传目录依次执行 `pack`、`check`、`hand`：
+
+```bash
+"$PYTHON" experiments/json-storage-stage3/tools/yellow_round.py hand --host <IP 末段> --date <回传目录日期>
+```
+
+输出写入回传目录的 `feedback-hand.txt` 并打印。`hand` 读取 `summary/`、`evidence/`、`facts/` 与
+`followup/checks.txt`，可在两者之后重复执行。
+
+**整体结构。**
+
+```text
+V2 <IP 末段> <日期>
+<节编号> <校验码>
+<数据行>
+...
+N
+N <备注>
+```
+
+1. 首行 `V2` 标明格式版本、主机与日期。
+2. 每节先单起一行写节编号与 4 位十六进制校验码，其后每行一个数据单元，行内字段只用空格分隔，不写表头与布局名。
+3. 节按下表的顺序出现；某节生成失败时节头写 `<节编号> ERR`，下一行为错误摘要，其余各节照常生成。
+4. 末尾 `N` 行之后是备注，每条一行、以 `N ` 开头、至多五条，写跳过的步骤、合并冲突、手工修复与异常；无备注时只保留单独的 `N`。
+5. 校验码是该节数据行的 CRC32 低 16 位，由脚本计算；转述方照抄节头，接收方用 `hand_feedback.py --verify <文件>` 定位抄错的节。
+
+**数值规则。** 小于 100 的值保留一位小数，大于等于 100 的值取整，去掉末尾的 `.0`；XQ 的服务端时间、XA 的探针时间与
+XD 的全部计时小于 10 时保留两位小数并去掉末尾的 0。空间单位为 MB（10^6 字节）。缺值写 `NA`，原因写在 N 节。
+时延单位均为 ms，p50 均为第 4.1 节的四轮轮级中位数。
+
+**布局行顺序。** 标为「四行」的节按 `same_table`、`separate`、`full_core`、`asset_ref` 排列；I 节八行，先 XStore 四行，
+再 ClickHouse 四行，布局顺序相同。
+
+| 节 | 行数 | 行内字段 |
+|---|---|---|
+| H | 一行 | XStore 构建标识，构建类型（R 为 release，D 为 debug），ClickHouse 版本，工具包 HEAD 短号，非 HEAD 代码的运行数，缺失运行数，汇总失败数，混合负载执行模型（P 为每流独立进程且两个引擎的汇总齐全，X 为其他），各阶段前 1 分钟负载的最小值-最大值，进入 ClickHouse 阶段时 CPU 超过 5% 的 gaussdb 进程数 |
+| XM | 四行 | XStore `main` 的 `list:first` `list:middle` `preview:middle` `detail:text_64k` `detail:entropy_512k` `detail:text_2m` `trace:p95` `batch:main` 应用可用 p50 |
+| XQ | 四行 | XStore `list:first` 查询完成 p50，`list:first` 服务端 Total runtime 中位数，`list:middle` 查询完成 p50，`list:middle` 服务端 Total runtime 中位数，`list:middle` 的 Rows Removed by Filter，`preview:middle` 的 Rows Removed by Filter |
+| XE | 四行 | XStore `batch:equal_total_few_large` `batch:equal_total_many_medium` 应用可用 p50 |
+| XW | 四行 | XStore 写入合计（第 4.2 节），末轮库内空间 MB，末轮对象存储 MB |
+| XA | 一行 | XStore Asset 六用例终态编码，行存探针展开式的 Total runtime 与 Filter 移除行数，带下界写法的 Total runtime 与 Filter 移除行数 |
+| XD | 一行 | XStore 往返下限 `exec_select_1` `params_select_int` `params_catalog` 的 p50，驱动基准 `list_first` `detail_64k` `detail_2m` 的 fetchall p50，`list_first` 的逐单元下限 p50 |
+| I | 八行 | 五组，组间用 `|` 分隔：quiet 的前台 list p50 p95 丢弃数；detail_2m 与 trace_long 的前台 list 丢弃数；batch_loop 的前台 list p50 p95 丢弃数及其中调度迟到的丢弃数；continuous_ingest 的前台 list p50 p95 丢弃数；batch_loop 干扰流 p50 与成功次数、continuous_ingest 干扰流的单 block p50 |
+| CM | 四行 | ClickHouse `main` 的八个目标，顺序同 XM |
+| CE | 四行 | ClickHouse 两个等总字节 workload，顺序同 XE |
+| CW | 四行 | ClickHouse 写入合计，末轮库内空间 MB，末轮对象存储 MB |
+| CP | 四行 | ClickHouse 碎片态、合并中、自然稳定态、单 part 态的 `list:first` p50 |
+| CA | 一行 | ClickHouse Asset 六用例终态编码 |
+
+**Asset 终态编码。** 六个用例按 missing、corrupt、metadata_mismatch、upload_then_db_failure、publish_failure、
+delete_failure 的顺序各占一个字母：`A` 为 available，`X` 为 absent，`F` 为 failed，`D` 为 deleting，符合设计时为
+`AAAXFD`。出现其他终态时整项改写为六个终态全称，以逗号分隔。
+
+**示例。** 数值与校验码只示意格式。
+
+```text
+V2 161 2026-10-08
+H fa91
+66de5983 R 23.3.10.5 090e4b3 0 0 0 P 50-71 3
+XQ dac3
+18.2 0.64 18.9 0.87 6 6
+...
+I eacd
+59.7 84.4 121|96 159|79.5 413 2134 2|61.5 120 405|1742 167 74.1
+...
+N
+N clickhouse 阶段的 ch-interference-separate 失败一次，重跑后完成
+```
+
+**回退。** 优先级依次为：
+
+1. 某节为 ERR：照抄 ERR 行，在 N 节写明原因，不手工补算该节。
+2. `hand` 整体无法运行：转述第 7.3 节的 `feedback-core.txt`，首行写 `V1 FALLBACK <错误摘要>`。
+3. 两者都无法生成：转述 `feedback.txt` 中与 V2 各节对应的项（A1–A6、B2–B4），首行写 `V0 FALLBACK <错误摘要>`。
 
 ## 8. 停止条件
 

@@ -8,6 +8,7 @@
     python experiments/json-storage-stage3/tools/yellow_round.py pack --host <IP 末段>
     python experiments/json-storage-stage3/tools/yellow_round.py core --host <IP 末段>   # 打印手敲精简版
     python experiments/json-storage-stage3/tools/yellow_round.py check --host <IP 末段>  # 补充核对，见 check_handback.py
+    python experiments/json-storage-stage3/tools/yellow_round.py hand --host <IP 末段>   # 手敲版 V2，见反馈契约第 7.4 节
 
 意图：
 - 每个实验步骤有固定输出名（见 plan_steps），打包脚本只按这些名字取数，不扫描其他目录。
@@ -235,9 +236,12 @@ def other_engine_running(phase, clickhouse_port):
     if phase == "xstore" and _port_open(clickhouse_port):
         return f"ClickHouse still listens on 127.0.0.1:{clickhouse_port}; stop it before the xstore phase"
     if phase == "clickhouse":
-        found = subprocess.run(["pgrep", "-x", "gaussdb"], capture_output=True, text=True)
+        # 只查运行账号自己的 XStore 实例；共享主机上其他用户的 gaussdb 无法停止，
+        # 其负载由 host_check 的全机进程表记录并随 host-checks.txt 回传。
+        found = subprocess.run(["pgrep", "-x", "-u", str(os.geteuid()), "gaussdb"],
+                               capture_output=True, text=True)
         if found.returncode == 0:
-            return "a gaussdb process is running; stop XStore before the clickhouse phase"
+            return "a gaussdb process of this account is running; stop XStore before the clickhouse phase"
     return None
 
 
@@ -317,7 +321,7 @@ def write_clickhouse_facts(facts, port, environment):
 
 def build_parser():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("phase", choices=("preflight", "xstore", "clickhouse", "pack", "core", "check"))
+    parser.add_argument("phase", choices=("preflight", "xstore", "clickhouse", "pack", "core", "check", "hand"))
     parser.add_argument("--output-root", type=Path, default=os.environ.get("YELLOW_OUTPUT"))
     parser.add_argument("--input", type=Path, default=(
         Path(os.environ["YELLOW_INPUT"]) / "json-storage-stage3-formal-input" if os.environ.get("YELLOW_INPUT")
@@ -345,7 +349,7 @@ def main(argv=None):
         code = write_preflight_facts(facts, os.environ)
         print(f"[preflight] unit tests exit {code}; output in {facts / 'unit-tests.txt'}")
         return 1 if problems or code else 0
-    if arguments.phase in {"pack", "core", "check"}:
+    if arguments.phase in {"pack", "core", "check", "hand"}:
         if not arguments.host:
             print(f"{arguments.phase} requires --host <last octet of the host IP>")
             return 2
@@ -356,6 +360,14 @@ def main(argv=None):
         if arguments.phase == "core":
             # 手敲精简版只读 pack 已生成的结果目录，可在 pack 之后任意次重新打印。
             return pack_handback.core_main([str(feedback)])
+        if arguments.phase == "hand":
+            # 手敲版 V2 读取 pack 与 check 的产物，可在两者之后任意次重新生成。
+            import hand_feedback
+
+            if not feedback.is_dir():
+                print(f"[hand] {feedback} does not exist; run pack first or pass --date <pack date>")
+                return 2
+            return hand_feedback.main([str(feedback), "--host", arguments.host, "--date", arguments.date])
         if arguments.phase == "check":
             import check_handback
 

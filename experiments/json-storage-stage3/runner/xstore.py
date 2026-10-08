@@ -65,7 +65,8 @@ error_category TEXT)""")
 XSTORE_DEVIATIONS = {
     "framework_nullable": "GaussDB 将空字符串视为 NULL，framework 列去掉 NOT NULL；"
                           "审计时把 NULL 还原为空字符串，逻辑记录不变",
-    "keyset_predicate": "行构造器比较不被支持，展开为等价的 OR 形式；该形式能否作为索引范围起点待实测",
+    "keyset_predicate": "行构造器比较不被支持，展开为等价的 OR 形式，并在其前增加被 OR 条件蕴含的"
+                        "下界 start_time >= cursor_time，使索引范围从游标处开始；结果集不变",
     "watermark_aggregate": "FILTER (WHERE ...) 不被支持，改用 count(CASE WHEN ...)",
     "connection": "经本地 Unix domain socket 的 trust 认证连接",
 }
@@ -126,6 +127,8 @@ class XStoreAdapter(OpenGaussAdapter):
 
         行构造器 (start_time,event_id)>(cursor_time,cursor_id) 等价于
         (start_time > cursor_time OR (start_time = cursor_time AND event_id > cursor_id))。
+        XStore 不把该 OR 形式用作索引范围起点，因此在其前增加被它蕴含的下界
+        start_time >= cursor_time，使 Index Cond 从游标处开始，结果集不变。
         """
         from opengauss import QuerySpec
         params = query.parameters
@@ -157,14 +160,15 @@ class XStoreAdapter(OpenGaussAdapter):
             cursor_time = params.get("cursor_time", "1900-01-01T00:00:00.000Z")
             cursor_id = params.get("cursor_id", "")
             if cursor_id:
-                # Non-empty cursor: use equivalent of row constructor
+                # Non-empty cursor: implied lower bound plus the row-constructor expansion
                 statement = (
                     f"SELECT {fields} FROM {source} WHERE project_id=%s AND start_time>=%s AND start_time<%s "
+                    f"AND {alias}start_time >= %s "
                     f"AND ({alias}start_time > %s OR ({alias}start_time = %s AND {alias}event_id > %s)) "
                     f"ORDER BY {alias}start_time,{alias}event_id LIMIT %s"
                 )
                 values = (params["project_id"], params["start_time"], params["end_time"],
-                          cursor_time, cursor_time, cursor_id, params.get("page_size", 256))
+                          cursor_time, cursor_time, cursor_time, cursor_id, params.get("page_size", 256))
             else:
                 # Empty cursor: skip cursor condition (GaussDB treats empty string as NULL)
                 statement = (
