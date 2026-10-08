@@ -92,6 +92,10 @@ def interference_lines(output_root):
             files = sorted(run.rglob("samples.jsonl"))
             if not files:
                 lines.append(f"F2 NA {run.name} has no samples.jsonl")
+            elif not (run / "run-manifest.json").is_file():
+                # 中止的运行没有顶层清单，阶段样本可能不完整，不参与统计。
+                lines.append(f"F2 NA {run.name} incomplete: no run-manifest.json")
+                continue
             for path in files:
                 streams = collections.defaultdict(list)
                 for line in path.read_text(encoding="utf-8").splitlines():

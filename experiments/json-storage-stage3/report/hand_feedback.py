@@ -14,6 +14,7 @@
   保留两位小数并去掉末尾的 0；缺值写 NA。
 - 校验码为该节数据行的 CRC32 低 16 位（4 位十六进制），转述方照抄，接收方据此定位抄错的节。
 - 某节生成失败时写 "<节编号> ERR"，其后一行为错误摘要，其余各节照常生成。
+- N 行之后先列脚本生成的 "N auto" 备注（缺失运行、非 HEAD 代码、I 节改用 F2），转述方照抄后再补写自己的备注。
 
 出错时怎么办（给执行本脚本的 agent）：
 1. 先确认 pack 与 check 已在同一回传目录执行；缺少 followup/checks.txt 时 XQ、XD、I 中的部分字段为 NA。
@@ -256,8 +257,29 @@ def section_parts(source):
     return lines
 
 
+def _f2_layouts(source, prefix):
+    """汇总缺失时的回退：从 F2 行重建 {布局: {阶段: {流: 统计}}}，结构与 interference 汇总一致。"""
+    layouts = {}
+    for fields in source.check_lines("F2"):
+        # F2 <运行> <阶段> <流> <样本数> status=... dropped_by=... p50/p95/p99/max=...
+        if len(fields) < 7 or not fields[0].startswith(f"{prefix}-interference-"):
+            continue
+        status = dict(item.split(":") for item in fields[4].split("=", 1)[1].split(",") if item)
+        quantiles = fields[6].split("=", 1)[1].split("/")
+        values = [None if value == "None" else float(value) for value in quantiles[:2]]
+        layout = fields[0][len(f"{prefix}-interference-"):]
+        layouts.setdefault(layout, {}).setdefault(fields[1], {})[fields[2]] = {
+            "latency_ms": {"p50": values[0], "p95": values[1]},
+            "counts": {"dropped_requests": int(status.get("dropped", 0)),
+                       "successful_requests": int(status.get("success", 0))}}
+    return layouts
+
+
 def section_i(source):
-    """I：两个引擎各四布局的混合负载，八行，XStore 在前；字段分五组，组间用 | 分隔。"""
+    """I：两个引擎各四布局的混合负载，八行，XStore 在前；字段分五组，组间用 | 分隔。
+
+    汇总要求四个布局齐全；只跑了部分布局时汇总缺失，该引擎改用 check 的 F2 行逐运行取数。
+    """
     late = {}
     for fields in source.check_lines("F2"):
         # F2 <运行> <阶段> <流> ... dropped_by=arrival_deadline_missed:N,...
@@ -266,10 +288,14 @@ def section_i(source):
             late[fields[0]] = int(match.group(1)) if match else 0
     lines = []
     for engine, prefix in (("xstore", "xstore"), ("clickhouse", "ch")):
-        summary = _json(source.dir / "summary" / f"interference-{engine}.json") or {}
-        by_layout = {item["layout"]: item for item in summary.get("layouts", [])}
+        summary = _json(source.dir / "summary" / f"interference-{engine}.json")
+        if summary:
+            by_layout = {item["layout"]: {phase["phase"]: phase.get("streams", {}) for phase in item.get("phases", [])}
+                         for item in summary.get("layouts", [])}
+        else:
+            by_layout = _f2_layouts(source, prefix)
         for layout in LAYOUTS:
-            phases = {phase["phase"]: phase.get("streams", {}) for phase in (by_layout.get(layout) or {}).get("phases", [])}
+            phases = by_layout.get(layout) or {}
 
             def stream(phase, name):
                 return (phases.get(phase) or {}).get(name) or {}
@@ -314,6 +340,22 @@ SECTIONS = (
 )
 
 
+def auto_notes(source):
+    """N 节的自动备注：缺失的运行、使用非 HEAD 代码的运行、I 节改用 F2 取数的引擎。"""
+    missing = {}
+    for name, present in (source.manifest.get("presence") or {}).items():
+        if not present:
+            group, _, item = name.rpartition("/")
+            missing.setdefault(group or item, []).append(item if group else "")
+    notes = [f"N auto missing {group} {','.join(item for item in items if item)}".rstrip()
+             for group, items in missing.items()]
+    stale = sorted({run["run"].split("/")[0] for run in source.manifest.get("code_runs", []) if not run["all_head"]})
+    notes += [f"N auto nonhead {run}" for run in stale]
+    notes += [f"N auto I-from-F2 {engine}" for engine in ("xstore", "clickhouse")
+              if not (source.dir / "summary" / f"interference-{engine}.json").is_file()]
+    return notes
+
+
 def hand_lines(feedback_dir, host, date):
     """返回手敲版 V2 的全部行。单节失败写 ERR 与错误摘要，不影响其余各节。"""
     source = Source(feedback_dir)
@@ -327,6 +369,10 @@ def hand_lines(feedback_dir, host, date):
         lines.append(f"{code} {crc(data)}")
         lines += data
     lines.append("N")
+    try:
+        lines += auto_notes(source)
+    except Exception as error:  # noqa: BLE001 - 备注失败不影响各节
+        lines.append(f"N auto ERR {type(error).__name__}")
     return lines
 
 
