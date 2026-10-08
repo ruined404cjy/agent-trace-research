@@ -1183,12 +1183,14 @@ S=experiments/json-storage-stage3/tools/yellow_round.py
 "$PYTHON" $S pack --host "$HOST_OCTET"  # HOST_OCTET 为本机 IP 末段；生成 docs/yellow-handback/<IP 末段>-<日期>/
 "$PYTHON" $S core --host "$HOST_OCTET"  # 打印手敲精简版，格式见反馈契约第 7.3 节
 "$PYTHON" $S check --host "$HOST_OCTET" # 补充核对，写入回传目录的 followup/checks.txt
+"$PYTHON" $S hand --host "$HOST_OCTET"  # 手敲版 V2，格式见反馈契约第 7.4 节
 ```
 
-`check` 只读取已有结果，另在 XStore 上执行三条最小 SELECT。它输出 F1 至 F5 五项：代码身份、
-干扰负载样本、XStore 服务端时间、XStore 往返下限、B3 原文，各项用途见
+`check` 只读取已有结果，另在 XStore 上执行三条最小 SELECT 并在进程内运行驱动微基准。它输出 F1 至 F6 六项：代码身份、
+干扰负载样本、XStore 服务端时间、XStore 往返下限、B3 原文、驱动微基准，各项用途见
 [check_handback.py](../../experiments/json-storage-stage3/tools/check_handback.py) 开头的说明。
-pack 与 check 不在同一天执行时，check 加 `--date <回传目录的日期>`。
+pack 与 check、hand 不在同一天执行时，后两者加 `--date <回传目录的日期>`。结果只能人工转述时，转述 `hand` 生成的
+`feedback-hand.txt`，格式见反馈契约第 7.4 节。
 
 | 运行 | 输出（相对 `$YELLOW_OUTPUT`） |
 |---|---|
