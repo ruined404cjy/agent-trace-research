@@ -14,7 +14,7 @@ Agent Trace 的公开调研、复现指南和实验设计。仓库当前重点�
 
 | 文档 | 状态与用途 |
 |---|---|
-| [文档分类索引](docs/README.md) | 按项目背景、JSON 存储和执行记录组织全部文档 |
+| [文档分类索引](docs/README.md) | 按项目背景与 JSON 存储组织全部文档 |
 | [JSON 存储原理](docs/json-storage/json-storage-principles-2026-09-09.md) | openGauss JSONB 与 ClickHouse Native JSON 的写入、物理存储、维护和查询流程 |
 | [JSON 存储阶段一机制报告](docs/json-storage/json-storage-stage1-report-2026-09-09.md) | 汇总阶段一背景与基线、openGauss/ClickHouse 引擎内实测、机制结论和阶段二入口 |
 | [JSON 存储阶段二报告](docs/json-storage/json-storage-stage2-report-2026-09-10.md) | 四种 JSON 表示、定向调优候选、访问路径证据和适用范围 |
