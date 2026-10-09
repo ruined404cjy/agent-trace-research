@@ -8,7 +8,7 @@
 >
 > 语料画像：nvidia/Open-SWE-Traces 抽样，9 个 config、3,600 条轨迹、586,851 条消息
 
-本文把[阶段一](json-storage-stage1-report-2026-09-09.md)、[阶段二](json-storage-stage2-report-2026-09-10.md)和阶段三（[x86 报告](json-storage-stage3-report-2026-09-20.md)、[XStore 报告](json-storage-stage3-xstore-report-2026-09-24.md)、[三台主机汇总](json-storage-stage3-pre-2026-10-08.md)）的实验结果，连同真实轨迹语料画像，收敛为一份可实施的存储设计。每条参数同时给出取值、支持它的证据和适用边界。[JSON 存储原理](json-storage-principles-2026-09-09.md)解释 TOAST、MergeTree part 和列式压缩的一般机制，[设计调研](json-storage-design-survey-2026-09-09.md)给出代表性系统的横向比较。
+本文把[阶段一](stage1-multifield-report.md)、[阶段二](stage2-representation-report.md)和阶段三（[x86 报告](stage3-payload-x86-report.md)、[XStore 报告](stage3-payload-xstore-report.md)、[三台主机汇总](stage3-payload-briefing.md)）的实验结果，连同真实轨迹语料画像，收敛为一份可实施的存储设计。每条参数同时给出取值、支持它的证据和适用边界。[JSON 存储原理](jsonb-native-json-principles.md)解释 TOAST、MergeTree part 和列式压缩的一般机制，[设计调研](design-survey.md)给出代表性系统的横向比较。
 
 ## 1. 设计概要
 
@@ -278,14 +278,14 @@ whowhen_pro 的观测与之一致：其 attributes canonical JSON 文本长度 p
 
 ## 参考资料
 
-- [JSON 存储原理](json-storage-principles-2026-09-09.md)
-- [JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)
-- [阶段一报告](json-storage-stage1-report-2026-09-09.md)
-- [阶段二报告](json-storage-stage2-report-2026-09-10.md)
-- [阶段三原理与设计](json-storage-stage3-principles-design-2026-09-24.md)
-- [阶段三实验报告（openGauss 与 ClickHouse 25.12）](json-storage-stage3-report-2026-09-20.md)
-- [阶段三 XStore 横向比较实验报告](json-storage-stage3-xstore-report-2026-09-24.md)
-- [阶段三组内汇报](json-storage-stage3-pre-2026-10-08.md)
+- [JSON 存储原理](jsonb-native-json-principles.md)
+- [JSON 存储设计调研](design-survey.md)
+- [阶段一报告](stage1-multifield-report.md)
+- [阶段二报告](stage2-representation-report.md)
+- [阶段三原理与设计](stage3-payload-principles.md)
+- [阶段三实验报告（openGauss 与 ClickHouse 25.12）](stage3-payload-x86-report.md)
+- [阶段三 XStore 横向比较实验报告](stage3-payload-xstore-report.md)
+- [阶段三组内汇报](stage3-payload-briefing.md)
 - [语料画像脚本](../../experiments/payload-profile/profile_open_swe.py)
 - [nvidia/Open-SWE-Traces](https://huggingface.co/datasets/nvidia/Open-SWE-Traces)
 - [OTel GenAI span content recording](https://github.com/open-telemetry/semantic-conventions/blob/main/docs/gen-ai/gen-ai-spans.md)

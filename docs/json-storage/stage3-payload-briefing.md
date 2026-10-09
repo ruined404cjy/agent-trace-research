@@ -6,7 +6,7 @@
 >
 > 被测引擎：XStore（GaussVector 103.0.0 release）、ClickHouse 23.3.10.5（ARM 主机 A、B）；openGauss 6.0.0、ClickHouse 25.12.11.4（x86 主机）
 
-本文汇总阶段三的原理、设计与两套环境的实验结果，按"背景—布局—引擎—外置对象的实现—方法—逐场景结果—跨场景结论"的顺序组织，供组内汇报使用。机制细节与完整证据见三份来源文档：[阶段三原理与设计](json-storage-stage3-principles-design-2026-09-24.md)（下文简称"原理与设计"）、[阶段三实验报告（openGauss 与 ClickHouse 25.12）](json-storage-stage3-report-2026-09-20.md)（下文简称"x86 报告"）、[阶段三 XStore 横向比较实验报告](json-storage-stage3-xstore-report-2026-09-24.md)（下文简称"XStore 报告"）。
+本文汇总阶段三的原理、设计与两套环境的实验结果，按"背景—布局—引擎—外置对象的实现—方法—逐场景结果—跨场景结论"的顺序组织，供组内汇报使用。机制细节与完整证据见三份来源文档：[阶段三原理与设计](stage3-payload-principles.md)（下文简称"原理与设计"）、[阶段三实验报告（openGauss 与 ClickHouse 25.12）](stage3-payload-x86-report.md)（下文简称"x86 报告"）、[阶段三 XStore 横向比较实验报告](stage3-payload-xstore-report.md)（下文简称"XStore 报告"）。
 
 **数据来源标注。** 表中按主机标注来源：**x86** 为 openGauss 6.0.0 与 ClickHouse 25.12 的结果；**主机 A** 为 ARM 主机 A 上 XStore 与 ClickHouse 23.3 的结果；**主机 B** 为 ARM 主机 B 的同组结果。主机 A 的首轮运行使用修正前的实验程序；实验程序针对首轮发现的问题修正后，主机 A 重新运行受影响的场景（第 6.6 节）。主机 A 的 XStore 主矩阵各表使用修正后的结果，首轮结果只在标明"首轮"处引用。
 
@@ -119,7 +119,7 @@ content_type, encoding, content_length, preview, sha256, payload
 
 ### 3.2 布局定义
 
-![四种长载荷布局的表组成与读取路径](assets/json-storage-stage3-layouts.svg)
+![四种长载荷布局的表组成与读取路径](assets/stage3-layouts.svg)
 
 | 布局 | 写目标 | 列表与预览读取 | 详情、Trace 与批量读取 | 载荷位置 |
 |---|---|---|---|---|
@@ -167,7 +167,7 @@ content_type, encoding, content_length, preview, sha256, payload
 
 列表与预览是本实验中不读取载荷的查询。长载荷通过两条途径影响它们，布局通过改变这两条途径起作用。
 
-![长载荷影响列表与预览的两条途径](assets/json-storage-stage3-payload-paths.svg)
+![长载荷影响列表与预览的两条途径](assets/stage3-payload-paths.svg)
 
 | 途径 | 含义 | 行存 | ClickHouse |
 |---|---|---|---|
@@ -356,7 +356,7 @@ WHERE asset_id = {asset_id:String} SETTINGS mutations_sync = 2;
 └── <root>/<sha256 前两位>/<sha256>：一个载荷对象，文件名为其 SHA-256
 ```
 
-![asset_ref 的写入四步、目录状态与解析核对](assets/json-storage-stage3-asset-sidecar-flow.svg)
+![asset_ref 的写入四步、目录状态与解析核对](assets/stage3-asset-sidecar-flow.svg)
 
 ### 5.2 内容寻址与原子发布
 
@@ -1204,11 +1204,11 @@ part 状态控制的一次运行
 
 ## 参考资料
 
-- [阶段三原理与设计](json-storage-stage3-principles-design-2026-09-24.md)
-- [阶段三实验报告（openGauss 与 ClickHouse 25.12）](json-storage-stage3-report-2026-09-20.md)
-- [阶段三 XStore 横向比较实验报告](json-storage-stage3-xstore-report-2026-09-24.md)
-- [阶段三实验设计](json-storage-stage3-experiment-design-2026-09-09.md)
-- [JSON 存储原理](json-storage-principles-2026-09-09.md)
+- [阶段三原理与设计](stage3-payload-principles.md)
+- [阶段三实验报告（openGauss 与 ClickHouse 25.12）](stage3-payload-x86-report.md)
+- [阶段三 XStore 横向比较实验报告](stage3-payload-xstore-report.md)
+- [阶段三实验设计](stage3-payload-design.md)
+- [JSON 存储原理](jsonb-native-json-principles.md)
 - [openGauss 6.0 TOAST 阈值与外置结构定义](https://github.com/opengauss-mirror/openGauss-server/blob/v6.0.0/src/include/access/tuptoaster.h)
 - [ClickHouse MergeTree](https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/mergetree)
 - [ClickHouse 稀疏主键索引与自适应 index granularity](https://clickhouse.com/docs/guides/best-practices/sparse-primary-indexes)

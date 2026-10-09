@@ -2,9 +2,9 @@
 
 > 日期：2026-09-11
 >
-> 详细证据：[阶段二报告](json-storage-stage2-report-2026-09-10.md)
+> 详细证据：[阶段二报告](stage2-representation-report.md)
 >
-> 原理说明：[JSON 存储原理](json-storage-principles-2026-09-09.md)
+> 原理说明：[JSON 存储原理](jsonb-native-json-principles.md)
 
 ## 1. 核心结论
 
@@ -58,4 +58,4 @@ Native JSON 的稀疏 Sidecar 是本实验自定义结构，用于补回 JSON nu
 
 稳定、高频且类型明确的字段继续使用普通强类型列。openGauss 动态属性分析保留 JSONB 候选，并按低匹配率标量等值、containment 和 Trace 定位分别评估表达式 B-tree、GIN 和普通复合 B-tree。ClickHouse 路径分析保留 Native JSON 候选，完整文档读取频繁时同时保留 String JSON 对照。
 
-后续测试优先补充小标量投影、同一路径在 type hint、dynamic path 和 shared data 间的受控对照、keyset pagination，以及固定 offered load 下的持续写入与 merge backlog。详细数字、访问计划和限制见[阶段二报告](json-storage-stage2-report-2026-09-10.md)。
+后续测试优先补充小标量投影、同一路径在 type hint、dynamic path 和 shared data 间的受控对照、keyset pagination，以及固定 offered load 下的持续写入与 merge backlog。详细数字、访问计划和限制见[阶段二报告](stage2-representation-report.md)。

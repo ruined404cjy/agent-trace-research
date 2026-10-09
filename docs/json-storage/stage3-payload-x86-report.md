@@ -6,7 +6,7 @@
 >
 > 数据库版本：openGauss 6.0.0 build `aee4abd5`；ClickHouse 25.12.11.4
 
-配套的[JSON 存储原理](json-storage-principles-2026-09-09.md)解释 TOAST、MergeTree part 与列式压缩的一般机制。本文集中说明长 payload 的四种物理布局在实验契约、场景、结果和结论上的差异。
+配套的[JSON 存储原理](jsonb-native-json-principles.md)解释 TOAST、MergeTree part 与列式压缩的一般机制。本文集中说明长 payload 的四种物理布局在实验契约、场景、结果和结论上的差异。
 
 ## 1. 结论
 
@@ -315,7 +315,7 @@ ClickHouse 的读取量与朴素预期相反。保留 payload 列的 `events` �
 | `full_core` | `events_core` | 6 | 17 | 11 | 48,534 | 4,412 | 38,912 |
 | `asset_ref` | `events_analytics` | 6 | 17 | 11 | 48,534 | 4,412 | 38,912 |
 
-granule 的行数上限与字节上限同时生效，宽表的 payload 列使字节上限先达到，granule 因此更多，机制见[JSON 存储原理](json-storage-principles-2026-09-09.md)。运行清单的 `access.plans` 记录的 EXPLAIN 计划给出各表的 granule 总数：`events` 为 18，`events_core` 与 `events_analytics` 为 11，`event_payloads` 为 17；mark 数为 granule 数加每个 part 的一个终止 mark，6 个 part 下为 24、17 和 23，与第 4.1 节记录的 mark 数一致。按 48,534 行折算，宽表每个 granule 约 2,696 行，窄表约 4,412 行；granule 覆盖的主键区间越窄，主键裁剪越细，一页 keyset 结果读入的行数越少。计划给出的选中 granule 数属于计划期结果，运行期 `read_rows` 属于执行期结果，两者不相乘推算扫描行数。本轮运行清单未记录 `index_granularity_bytes` 的实际取值，mark 数、granule 数和扫描行数三项均为实测值。
+granule 的行数上限与字节上限同时生效，宽表的 payload 列使字节上限先达到，granule 因此更多，机制见[JSON 存储原理](jsonb-native-json-principles.md)。运行清单的 `access.plans` 记录的 EXPLAIN 计划给出各表的 granule 总数：`events` 为 18，`events_core` 与 `events_analytics` 为 11，`event_payloads` 为 17；mark 数为 granule 数加每个 part 的一个终止 mark，6 个 part 下为 24、17 和 23，与第 4.1 节记录的 mark 数一致。按 48,534 行折算，宽表每个 granule 约 2,696 行，窄表约 4,412 行；granule 覆盖的主键区间越窄，主键裁剪越细，一页 keyset 结果读入的行数越少。计划给出的选中 granule 数属于计划期结果，运行期 `read_rows` 属于执行期结果，两者不相乘推算扫描行数。本轮运行清单未记录 `index_granularity_bytes` 的实际取值，mark 数、granule 数和扫描行数三项均为实测值。
 
 `payload_selected` 在四种布局下均为 false，扫描字节也低于分层布局，两项证据共同排除“宽表因读取 payload 而扫描更多”的解释。该效应属于列存的 granule 划分，不适用于 openGauss：后者通过 `(project_id,start_time,event_id)` 复合索引在四种布局下均精确扫描 256 行，与表宽度无关。
 
@@ -891,7 +891,7 @@ WHERE asset_id = :asset_id;
 
 ### 5.2 长载荷对非载荷查询的影响
 
-列表与 preview 不读取 payload。长载荷通过两条途径影响它们：**读放大**（read amplification），即列表来源表含 payload 时，取回同样的行要经过更多数据；**资源争用**（resource contention），即同时发生的 payload 读写占用共享资源。两条途径的机制见[阶段三原理与设计](json-storage-stage3-principles-design-2026-09-24.md)第 3.6 节。混合负载的结果来自 ClickHouse。
+列表与 preview 不读取 payload。长载荷通过两条途径影响它们：**读放大**（read amplification），即列表来源表含 payload 时，取回同样的行要经过更多数据；**资源争用**（resource contention），即同时发生的 payload 读写占用共享资源。两条途径的机制见[阶段三原理与设计](stage3-payload-principles.md)第 3.6 节。混合负载的结果来自 ClickHouse。
 
 | 途径 | 引擎 | 比较 | 结果 | 判断 |
 |---|---|---|---|---|
@@ -905,7 +905,7 @@ WHERE asset_id = :asset_id;
 
 本工作负载上，长载荷对非载荷查询的显著影响只出现在持续批量读取与前台并发时。同表存放本身不拖慢列表：openGauss 未分辨，ClickHouse 的 `same_table` 反而读取更少。`batch_loop` 相中 `separate` 与 `full_core` 的前台调度丢弃高于 `same_table`（653、582 对 477），把 payload 移入同一引擎内的另一张表不提供前台隔离；`asset_ref` 把 payload 读取移出数据库后前台 list p95 为 28.14 ms，接近 quiet 相的 24.67 ms，代价是自身批量恢复变慢（第 5.3 节）。
 
-混合负载在前台请求流与干扰流共用一个客户端进程时测得：数据库内布局的批量结果需要在该进程内解析约 128 MB 的 JSON，客户端工作量的差别与数据库负载的差别方向相同，资源争用的幅度以各请求流分进程运行后的重新测量为准。ARM 主机上的分进程重新测量中，ClickHouse 23.3 四种布局在 `batch_loop` 阶段的前台丢弃为 0–2 次，布局之间没有隔离差异（[阶段三组内汇报](json-storage-stage3-pre-2026-10-08.md)第 14 节）。
+混合负载在前台请求流与干扰流共用一个客户端进程时测得：数据库内布局的批量结果需要在该进程内解析约 128 MB 的 JSON，客户端工作量的差别与数据库负载的差别方向相同，资源争用的幅度以各请求流分进程运行后的重新测量为准。ARM 主机上的分进程重新测量中，ClickHouse 23.3 四种布局在 `batch_loop` 阶段的前台丢弃为 0–2 次，布局之间没有隔离差异（[阶段三组内汇报](stage3-payload-briefing.md)第 14 节）。
 
 以上结论成立于 0.33% 的 payload 密度、可完全驻留内存的数据集与每条前台流 2 个 worker。payload 密度升高或数据超出内存时，行存主 tuple 中残留的 payload 字节与缓冲池竞争会加重读放大与资源争用，该情形不在本实验覆盖范围内。
 
@@ -1006,11 +1006,11 @@ Asset 分层必须实现独立的内容核对。第 4.10 节的三类故障在�
 
 ## 参考资料
 
-- [JSON 存储原理](json-storage-principles-2026-09-09.md)
-- [阶段一报告](json-storage-stage1-report-2026-09-09.md)
-- [阶段二报告](json-storage-stage2-report-2026-09-10.md)
-- [阶段三实验设计](json-storage-stage3-experiment-design-2026-09-09.md)
-- [JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)
+- [JSON 存储原理](jsonb-native-json-principles.md)
+- [阶段一报告](stage1-multifield-report.md)
+- [阶段二报告](stage2-representation-report.md)
+- [阶段三实验设计](stage3-payload-design.md)
+- [JSON 存储设计调研](design-survey.md)
 - [ClickHouse MergeTree](https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/mergetree)
 - [ClickHouse 自适应 index granularity](https://clickhouse.com/docs/guides/best-practices/sparse-primary-indexes)
 - [ClickHouse OPTIMIZE](https://clickhouse.com/docs/reference/statements/optimize)

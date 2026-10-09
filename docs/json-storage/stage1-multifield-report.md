@@ -4,7 +4,7 @@
 > 实验完成日期：2026-09-07；文档修订日期：2026-09-09
 > 实验与代码基线：2026-09-07 · `b8a112c`
 > 范围：openGauss 6.0.0、ClickHouse 25.12.11.4、多字段 JSON、长 payload
-> 原理说明：[openGauss JSONB 与 ClickHouse Native JSON](json-storage-principles-2026-09-09.md)
+> 原理说明：[openGauss JSONB 与 ClickHouse Native JSON](jsonb-native-json-principles.md)
 
 ## 1. 结论
 
@@ -54,7 +54,7 @@ OpenTelemetry Span 的 intrinsic 信息、Attributes 和 Agent payload 具有不
 
 调研覆盖 PostgreSQL/openGauss JSONB、ClickHouse Native JSON、Grafana Tempo dedicated columns、Langfuse Full/Core 与 field overflow，以及 Parquet Variant、Doris Variant、Elasticsearch flattened、Snowflake/BigQuery/Databricks 半结构化类型。
 
-列式半结构化存储研究覆盖 Dremel、Sinew 和 AsterixDB。各项目机制和来源见[JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)。
+列式半结构化存储研究覆盖 Dremel、Sinew 和 AsterixDB。各项目机制和来源见[JSON 存储设计调研](design-survey.md)。
 
 本地准备并审计了以下数据：
 
@@ -243,7 +243,7 @@ ClickHouse Native JSON（类型提示，预算 1000）随独立动态路径从 5
 
 提高动态路径预算需要针对实际访问路径。`5000×1%` 中从 100 提高到 1000 个动态路径没有改变两个显式查询的数量级，却使类型提示存储结构的载入吞吐降至 2,309 rows/s，压缩空间增至 22.230 MiB。稳定热点应使用强类型列或 type hint；预算外长尾留在 shared data。该结论适用于本次合成数据和直接子列查询，不替代真实 Trace 分布审计。
 
-当前 `metadata_raw` 只承担实验 canonical 对账和逻辑 metadata 恢复。需要字节级审计和重放时，摄入层应在首次解析前保存完整原始输入 bytes，并记录长度、内容摘要、内容类型、编码和保留策略。原始 bytes 已经存在时，canonical 内容可以按需重新生成。详细机制和跨项目设计比较见[JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)。
+当前 `metadata_raw` 只承担实验 canonical 对账和逻辑 metadata 恢复。需要字节级审计和重放时，摄入层应在首次解析前保存完整原始输入 bytes，并记录长度、内容摘要、内容类型、编码和保留策略。原始 bytes 已经存在时，canonical 内容可以按需重新生成。详细机制和跨项目设计比较见[JSON 存储设计调研](design-survey.md)。
 
 ## 4. 机制差异与阶段一边界
 
@@ -273,7 +273,7 @@ ClickHouse 等宽实验包含时间范围裁剪与分组计数，仍采用一次
 4. 分别定义 missing、JSON null、SQL NULL、类型冲突、数组顺序、路径转义和重建规则。
 5. 长、高基数字段使用适合的压缩编码或独立物理层，控制常规分析的读取量。
 
-Tempo 的 intrinsic/dedicated columns、Parquet Variant shredding、Sinew 的物理列与 reservoir、ClickHouse dynamic paths 与 shared data 都体现分层存储。完整项目与论文比较见 [JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)。
+Tempo 的 intrinsic/dedicated columns、Parquet Variant shredding、Sinew 的物理列与 reservoir、ClickHouse dynamic paths 与 shared data 都体现分层存储。完整项目与论文比较见 [JSON 存储设计调研](design-survey.md)。
 
 字段提升的具体信号具有不同证据等级：
 
@@ -284,7 +284,7 @@ Tempo 的 intrinsic/dedicated columns、Parquet Variant shredding、Sinew 的物
 | 类型稳定性 | typed column、type hint 和 Variant shredding 都需要类型契约；冲突值通常回落到动态属性表示 |
 | 基数和值长 | Sinew、Tempo 等用其判断列化、字典编码和 blob 编码成本；具体阈值属于实现与查询负载参数 |
 
-因此，查询频率参与本项目的查询负载收益评估，但不能单独称为公认的自动提升指标。ClickHouse 当前 merge 按非 null 值数量选择动态路径，并不读取查询日志。各项目的具体机制和来源见[JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)。
+因此，查询频率参与本项目的查询负载收益评估，但不能单独称为公认的自动提升指标。ClickHouse 当前 merge 按非 null 值数量选择动态路径，并不读取查询日志。各项目的具体机制和来源见[JSON 存储设计调研](design-survey.md)。
 
 ### 5.2 多字段与长字段结论
 
@@ -315,11 +315,11 @@ Tempo 的 intrinsic/dedicated columns、Parquet Variant shredding、Sinew 的物
 
 ## 7. 后续阶段
 
-[阶段二实验](json-storage-stage2-experiment-design-2026-09-09.md)已在 48,534 行固定 Trace 数据上，统一比较 openGauss JSONB、ClickHouse String JSON、ClickHouse Map 和 ClickHouse Native JSON。
+[阶段二实验](stage2-representation-design.md)已在 48,534 行固定 Trace 数据上，统一比较 openGauss JSONB、ClickHouse String JSON、ClickHouse Map 和 ClickHouse Native JSON。
 
-统一契约覆盖输入、分批写入、时间窗口、查询返回、正确性、原文恢复和三轮统计。结果见[阶段二横向实验报告](json-storage-stage2-report-2026-09-10.md)。
+统一契约覆盖输入、分批写入、时间窗口、查询返回、正确性、原文恢复和三轮统计。结果见[阶段二横向实验报告](stage2-representation-report.md)。
 
-Full/Core、长 payload 和 asset reference 纳入[阶段三实验设计](json-storage-stage3-experiment-design-2026-09-09.md)。阶段三独立记录写放大、空间、列表与详情读取、原文恢复和 asset 故障结果。
+Full/Core、长 payload 和 asset reference 纳入[阶段三实验设计](stage3-payload-design.md)。阶段三独立记录写放大、空间、列表与详情读取、原文恢复和 asset 故障结果。
 
 ## 8. 发布范围
 
@@ -330,11 +330,11 @@ Full/Core、长 payload 和 asset reference 纳入[阶段三实验设计](json-s
 ### 9.1 本地证据
 
 - [第一阶段实验基础设施与结果](../../experiments/json-storage-stage1/README.md)
-- [JSON 存储原理](json-storage-principles-2026-09-09.md)
-- [JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)
-- [阶段一实验设计](json-storage-stage1-experiment-design-2026-09-09.md)
-- [阶段二实验设计](json-storage-stage2-experiment-design-2026-09-09.md)
-- [阶段三实验设计](json-storage-stage3-experiment-design-2026-09-09.md)
+- [JSON 存储原理](jsonb-native-json-principles.md)
+- [JSON 存储设计调研](design-survey.md)
+- [阶段一实验设计](stage1-multifield-design.md)
+- [阶段二实验设计](stage2-representation-design.md)
+- [阶段三实验设计](stage3-payload-design.md)
 
 ### 9.2 官方资料与论文
 

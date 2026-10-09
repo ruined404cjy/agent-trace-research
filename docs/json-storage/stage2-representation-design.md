@@ -3,8 +3,8 @@
 > 状态：已完成，六轮正式实验、18 个存储结构结果通过门禁
 > 实验完成日期：2026-09-07；文档修订日期：2026-09-09
 > 数据路径：独立载入程序
-> 原理说明：[openGauss JSONB 与 ClickHouse Native JSON](json-storage-principles-2026-09-09.md)
-> 上游边界：[阶段一报告](json-storage-stage1-report-2026-09-09.md)第 6、7 节
+> 原理说明：[openGauss JSONB 与 ClickHouse Native JSON](jsonb-native-json-principles.md)
+> 上游边界：[阶段一报告](stage1-multifield-report.md)第 6、7 节
 
 ## 1. 目标与证据边界
 
@@ -25,7 +25,7 @@
 
 trace-synthesis 已增加跨 backend 的并发模式、QPS 口径和可比性设计；当前 database 与 Langfuse backend 的 event policy 仍不一致。阶段二采用这些设计中的同输入、同参数计划、同并发模式、阶段屏障、连接复用、计时边界和全成功样本门禁，不复用尚未满足统一语义的系统级结果。
 
-Full/Core、长 payload 和 asset reference 属于独立的物理分层问题，顺延到[阶段三实验设计](json-storage-stage3-experiment-design-2026-09-09.md)。阶段二只回答动态属性存储的跨引擎差异。
+Full/Core、长 payload 和 asset reference 属于独立的物理分层问题，顺延到[阶段三实验设计](stage3-payload-design.md)。阶段二只回答动态属性存储的跨引擎差异。
 
 ## 2. 产物与目录
 
@@ -40,7 +40,7 @@ experiments/json-storage-stage2/
   tests/
 ```
 
-运行产物位于 gitignored 的 `docs/temp/json-storage-stage2/`。每个产物目录最后写入 `run-manifest.json`；只有状态为 `complete` 且全部门禁通过的运行进入统计。有效结果位于 `formal-20260907-retry-3/`，结果见[阶段二横向报告](json-storage-stage2-report-2026-09-10.md)。
+运行产物位于 gitignored 的 `docs/temp/json-storage-stage2/`。每个产物目录最后写入 `run-manifest.json`；只有状态为 `complete` 且全部门禁通过的运行进入统计。有效结果位于 `formal-20260907-retry-3/`，结果见[阶段二横向报告](stage2-representation-report.md)。
 
 ## 3. 真实 Trace 分布审计
 
@@ -224,9 +224,9 @@ ClickHouse 每条测量查询使用唯一 query ID，HTTP 响应完整读取后�
 
 ## 8. 参考资料
 
-- [JSON 存储原理](json-storage-principles-2026-09-09.md)
-- [阶段一报告](json-storage-stage1-report-2026-09-09.md)
-- [JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)
+- [JSON 存储原理](jsonb-native-json-principles.md)
+- [阶段一报告](stage1-multifield-report.md)
+- [JSON 存储设计调研](design-survey.md)
 - [trace-synthesis 跨 backend 可比性分析](https://github.com/zfwang2021/trace-synthesis/blob/ef3be141cc17415de9fb5a9d8003c16a4cd679ac/docs/design/benchmark/cross-backend-comparability-analysis.md)
 - [trace-synthesis 并发模式统一设计](https://github.com/zfwang2021/trace-synthesis/blob/ef3be141cc17415de9fb5a9d8003c16a4cd679ac/docs/design/benchmark/concurrency-mode-unification-design.md)
 - [trace-synthesis QPS 指标统一设计](https://github.com/zfwang2021/trace-synthesis/blob/ef3be141cc17415de9fb5a9d8003c16a4cd679ac/docs/design/benchmark/qps-metric-unification-design.md)

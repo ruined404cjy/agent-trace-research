@@ -8,9 +8,9 @@
 >
 > 数据库版本：openGauss 6.0.0；ClickHouse 25.12.11.4
 >
-> 原理说明：[openGauss JSONB 与 ClickHouse Native JSON](json-storage-principles-2026-09-09.md)
+> 原理说明：[openGauss JSONB 与 ClickHouse Native JSON](jsonb-native-json-principles.md)
 >
-> 上游证据：[阶段一报告](json-storage-stage1-report-2026-09-09.md)、[阶段二报告](json-storage-stage2-report-2026-09-10.md)
+> 上游证据：[阶段一报告](stage1-multifield-report.md)、[阶段二报告](stage2-representation-report.md)
 
 ## 1. 目标与范围
 
@@ -309,9 +309,9 @@ run manifest 至少记录 run ID、状态、完整复现命令、输入与 truth
 
 ## 11. 参考资料
 
-- [JSON 存储原理](json-storage-principles-2026-09-09.md)
-- [阶段一报告](json-storage-stage1-report-2026-09-09.md)
-- [阶段一实验设计](json-storage-stage1-experiment-design-2026-09-09.md)
-- [阶段二报告](json-storage-stage2-report-2026-09-10.md)
-- [阶段二补充实验设计](json-storage-stage2-sup-experiment-design-2026-09-10.md)
-- [JSON 存储设计调研](json-storage-design-survey-2026-09-09.md)
+- [JSON 存储原理](jsonb-native-json-principles.md)
+- [阶段一报告](stage1-multifield-report.md)
+- [阶段一实验设计](stage1-multifield-design.md)
+- [阶段二报告](stage2-representation-report.md)
+- [阶段二补充实验设计](stage2-tuning-design.md)
+- [JSON 存储设计调研](design-survey.md)

@@ -8,7 +8,7 @@
 >
 > 契约：`json-storage-tuned-matrix-v2`
 >
-> 原理说明：[JSON 存储原理](json-storage-principles-2026-09-09.md)
+> 原理说明：[JSON 存储原理](jsonb-native-json-principles.md)
 
 ## 1. 目标
 
@@ -21,7 +21,7 @@
 3. openGauss 索引和 ClickHouse 物理路径/排序键是否被执行器实际采用；
 4. 调优收益伴随的写入、空间和维护成本，以及后台 merge 对载入和查询的影响。
 
-跨引擎结果表示固定软硬件下的完整存储方案，不用于分离 JSON 类型的单因素成本。正式结论见[阶段二报告](json-storage-stage2-report-2026-09-10.md)。
+跨引擎结果表示固定软硬件下的完整存储方案，不用于分离 JSON 类型的单因素成本。正式结论见[阶段二报告](stage2-representation-report.md)。
 
 ## 2. 数据契约
 
@@ -134,6 +134,6 @@ docs/temp/json-storage-stage2-sup/
 
 ## 参考资料
 
-- [阶段二报告](json-storage-stage2-report-2026-09-10.md)
-- [JSON 存储原理](json-storage-principles-2026-09-09.md)
-- [阶段一报告](json-storage-stage1-report-2026-09-09.md)
+- [阶段二报告](stage2-representation-report.md)
+- [JSON 存储原理](jsonb-native-json-principles.md)
+- [阶段一报告](stage1-multifield-report.md)

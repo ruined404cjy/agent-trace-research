@@ -1,7 +1,7 @@
 # Agent Trace JSON 存储阶段三执行指南
 
 本目录实现并执行 openGauss 6.0.0 与 ClickHouse 25.12.11.4 的四种长 payload 布局比较。实验设计见
-[阶段三实验设计](../../docs/json-storage/json-storage-stage3-experiment-design-2026-09-09.md)。
+[阶段三实验设计](../../docs/json-storage/stage3-payload-design.md)。
 
 ## 四种布局与证据边界
 

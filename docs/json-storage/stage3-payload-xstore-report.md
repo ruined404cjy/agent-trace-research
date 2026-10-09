@@ -2,13 +2,13 @@
 
 > 日期：2026-09-24
 >
-> 状态：ARM 主机 A 第一次运行的正式结果已纳入；实验程序修正后主机 A 的重新运行与 ARM 主机 B 的结果见[阶段三组内汇报](json-storage-stage3-pre-2026-10-08.md)
+> 状态：ARM 主机 A 第一次运行的正式结果已纳入；实验程序修正后主机 A 的重新运行与 ARM 主机 B 的结果见[阶段三组内汇报](stage3-payload-briefing.md)
 >
 > 适用版本：XStore（GaussVector 103.0.0 build 66de5983，release）、ClickHouse 23.3.10.5；参照结果为 x86 主机的 openGauss 6.0.0 与 ClickHouse 25.12.11.4
 
-本报告给出四种长载荷布局在 ARM 主机 A 上的实测结果：同机运行 XStore 与 ClickHouse 23.3，两个引擎串行。布局定义、两类引擎中的物理组织、外置对象组件（Sidecar）的实现、场景与查询语句见[阶段三原理与设计](json-storage-stage3-principles-design-2026-09-24.md)（下文简称"原理与设计"），本报告只保留判读结果所需的定义并引用其章节。x86 主机的参照结果见[阶段三实验报告](json-storage-stage3-report-2026-09-20.md)（下文简称"x86 报告"）。
+本报告给出四种长载荷布局在 ARM 主机 A 上的实测结果：同机运行 XStore 与 ClickHouse 23.3，两个引擎串行。布局定义、两类引擎中的物理组织、外置对象组件（Sidecar）的实现、场景与查询语句见[阶段三原理与设计](stage3-payload-principles.md)（下文简称"原理与设计"），本报告只保留判读结果所需的定义并引用其章节。x86 主机的参照结果见[阶段三实验报告](stage3-payload-x86-report.md)（下文简称"x86 报告"）。
 
-文中事实按来源标注：**契约**指冻结输入与实验程序的定义；**x86 实测**指 x86 报告已验证的结果；**主机 A 实测**指主机 A 本轮运行返回的证据。实验程序修正后的重新运行与 ARM 主机 B 的结果汇总在[阶段三组内汇报](json-storage-stage3-pre-2026-10-08.md)（下文简称"组内汇报"）。本轮运行存在四项已识别的测量因素：主机背景负载、XStore 中间页游标写法、XStore 客户端驱动开销、混合负载的客户端进程争用。它们的来源、影响范围与处理方法集中写在第 3.3 节，并在受影响的结果处就地标注。
+文中事实按来源标注：**契约**指冻结输入与实验程序的定义；**x86 实测**指 x86 报告已验证的结果；**主机 A 实测**指主机 A 本轮运行返回的证据。实验程序修正后的重新运行与 ARM 主机 B 的结果汇总在[阶段三组内汇报](stage3-payload-briefing.md)（下文简称"组内汇报"）。本轮运行存在四项已识别的测量因素：主机背景负载、XStore 中间页游标写法、XStore 客户端驱动开销、混合负载的客户端进程争用。它们的来源、影响范围与处理方法集中写在第 3.3 节，并在受影响的结果处就地标注。
 
 字节量按二进制单位表示，1 MiB 为 1,048,576 字节；表中 MB 为 10^6 字节。
 
@@ -414,7 +414,7 @@ ClickHouse 23.3 上 `separate` 的哈希连接先整表读取右表，与请求�
 
 ## 参考资料
 
-- [阶段三原理与设计](json-storage-stage3-principles-design-2026-09-24.md)
-- [阶段三实验报告（openGauss 与 ClickHouse 25.12）](json-storage-stage3-report-2026-09-20.md)
-- [JSON 存储原理](json-storage-principles-2026-09-09.md)
-- [阶段三实验设计与证据契约](json-storage-stage3-experiment-design-2026-09-09.md)
+- [阶段三原理与设计](stage3-payload-principles.md)
+- [阶段三实验报告（openGauss 与 ClickHouse 25.12）](stage3-payload-x86-report.md)
+- [JSON 存储原理](jsonb-native-json-principles.md)
+- [阶段三实验设计与证据契约](stage3-payload-design.md)

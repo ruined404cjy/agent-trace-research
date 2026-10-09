@@ -1,6 +1,6 @@
 # JSON 存储阶段二调优矩阵
 
-本目录使用固定 Agent Trace 输入比较 openGauss JSON/JSONB、ClickHouse String/Native JSON，并验证 openGauss 索引、Native JSON 数值 type hint、ClickHouse 排序键和 merge 状态。设计和结果分别见[实验设计](../../docs/json-storage/json-storage-stage2-sup-experiment-design-2026-09-10.md)与[阶段二报告](../../docs/json-storage/json-storage-stage2-report-2026-09-10.md)。
+本目录使用固定 Agent Trace 输入比较 openGauss JSON/JSONB、ClickHouse String/Native JSON，并验证 openGauss 索引、Native JSON 数值 type hint、ClickHouse 排序键和 merge 状态。设计和结果分别见[实验设计](../../docs/json-storage/stage2-tuning-design.md)与[阶段二报告](../../docs/json-storage/stage2-representation-report.md)。
 
 ## 环境与输入
 

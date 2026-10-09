@@ -15,15 +15,15 @@ Agent Trace 的公开调研、复现指南和实验设计。仓库当前重点�
 | 文档 | 状态与用途 |
 |---|---|
 | [文档分类索引](docs/README.md) | 按项目背景与 JSON 存储组织全部文档 |
-| [JSON 存储原理](docs/json-storage/json-storage-principles-2026-09-09.md) | openGauss JSONB 与 ClickHouse Native JSON 的写入、物理存储、维护和查询流程 |
-| [JSON 存储阶段一机制报告](docs/json-storage/json-storage-stage1-report-2026-09-09.md) | 汇总阶段一背景与基线、openGauss/ClickHouse 引擎内实测、机制结论和阶段二入口 |
-| [JSON 存储阶段二报告](docs/json-storage/json-storage-stage2-report-2026-09-10.md) | 四种 JSON 表示、定向调优候选、访问路径证据和适用范围 |
-| [JSON 存储阶段二汇报辅助材料](docs/json-storage/json-storage-stage2-sup-pre-2026-09-10.md) | 两引擎流程、Sidecar 与四结构场景化比较摘要 |
-| [JSON 存储设计调研](docs/json-storage/json-storage-design-survey-2026-09-09.md) | 代表性系统、论文、现有项目状态、工程结论与遗留问题 |
-| [JSON 存储阶段一实验设计](docs/json-storage/json-storage-stage1-experiment-design-2026-09-09.md) | 阶段一多字段机制实验及顺延目标的数据、workload、指标和门槛 |
-| [JSON 存储阶段二实验设计](docs/json-storage/json-storage-stage2-experiment-design-2026-09-09.md) | 真实 Trace 审计与 openGauss/ClickHouse 动态属性统一横向实验 |
-| [JSON 存储阶段二调优矩阵实验设计](docs/json-storage/json-storage-stage2-sup-experiment-design-2026-09-10.md) | 数据派生、七类查询、单变量调优候选和正确性门禁 |
-| [JSON 存储阶段三实验设计](docs/json-storage/json-storage-stage3-experiment-design-2026-09-09.md) | 同表内联、独立 payload 表、Full/Core 与 asset reference 实验 |
+| [JSON 存储原理](docs/json-storage/jsonb-native-json-principles.md) | openGauss JSONB 与 ClickHouse Native JSON 的写入、物理存储、维护和查询流程 |
+| [JSON 存储阶段一机制报告](docs/json-storage/stage1-multifield-report.md) | 汇总阶段一背景与基线、openGauss/ClickHouse 引擎内实测、机制结论和阶段二入口 |
+| [JSON 存储阶段二报告](docs/json-storage/stage2-representation-report.md) | 四种 JSON 表示、定向调优候选、访问路径证据和适用范围 |
+| [JSON 存储阶段二汇报辅助材料](docs/json-storage/stage2-representation-briefing.md) | 两引擎流程、Sidecar 与四结构场景化比较摘要 |
+| [JSON 存储设计调研](docs/json-storage/design-survey.md) | 代表性系统、论文、现有项目状态、工程结论与遗留问题 |
+| [JSON 存储阶段一实验设计](docs/json-storage/stage1-multifield-design.md) | 阶段一多字段机制实验及顺延目标的数据、workload、指标和门槛 |
+| [JSON 存储阶段二实验设计](docs/json-storage/stage2-representation-design.md) | 真实 Trace 审计与 openGauss/ClickHouse 动态属性统一横向实验 |
+| [JSON 存储阶段二调优矩阵实验设计](docs/json-storage/stage2-tuning-design.md) | 数据派生、七类查询、单变量调优候选和正确性门禁 |
+| [JSON 存储阶段三实验设计](docs/json-storage/stage3-payload-design.md) | 同表内联、独立 payload 表、Full/Core 与 asset reference 实验 |
 | [OTel 与 Langfuse 学习指南](docs/project-background/otel-langfuse-study-guide.md) | OTel、Collector、GenAI 语义和 Langfuse 摄入链路 |
 | [标准 openGauss 行存复现指南](docs/project-background/trace-ingestion-demo-blue-zone-guide.md) | 历史固定版本的 openGauss row profile 复现 |
 | [GV xstore 复现指南](docs/project-background/trace-ingestion-demo-yellow-zone-guide.md) | 历史固定版本的 GV xstore 复现 |

@@ -6,7 +6,7 @@
 >
 > 数据库版本：openGauss 6.0.0 build `aee4abd5`；ClickHouse 25.12.11.4
 
-配套的[JSON 存储原理](json-storage-principles-2026-09-09.md)解释 JSONB 与 Native JSON 的写入、物理存储、后台维护和查询机制。本文集中说明实验契约、场景、结果和结论。
+配套的[JSON 存储原理](jsonb-native-json-principles.md)解释 JSONB 与 Native JSON 的写入、物理存储、后台维护和查询机制。本文集中说明实验契约、场景、结果和结论。
 
 ## 1. 结论
 
@@ -649,10 +649,10 @@ ClickHouse 排序键按主导过滤前缀设计。后台 merge 的资源成本�
 
 ## 参考资料
 
-- [JSON 存储原理](json-storage-principles-2026-09-09.md)
-- [阶段一报告](json-storage-stage1-report-2026-09-09.md)
-- [阶段二实验设计](json-storage-stage2-experiment-design-2026-09-09.md)
-- [阶段二补充实验设计](json-storage-stage2-sup-experiment-design-2026-09-10.md)
+- [JSON 存储原理](jsonb-native-json-principles.md)
+- [阶段一报告](stage1-multifield-report.md)
+- [阶段二实验设计](stage2-representation-design.md)
+- [阶段二补充实验设计](stage2-tuning-design.md)
 - [ClickHouse JSON 数据类型](https://clickhouse.com/docs/reference/data-types/newjson)
 - [ClickHouse MergeTree](https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/mergetree)
 - [ClickHouse OPTIMIZE](https://clickhouse.com/docs/reference/statements/optimize)
