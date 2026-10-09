@@ -1,0 +1,143 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1500" height="700" viewBox="0 0 1500 700" role="img" aria-labelledby="title desc">
+  <title id="title">四类代表性方案的关键流程</title>
+  <desc id="desc">四行分别展示离线批量归纳（IBM Trajectory-Informed Memory）、两阶段抽取与整合（Codex CLI）、增量维护（ACE）与 trace 平台挖掘（Clio、PostHog、LangSmith Engine）从输入到记忆产物的处理步骤。</desc>
+  <defs>
+    <style>
+      .lane-bg { fill:#fbfcfe; stroke:#d7dee8; stroke-width:1.4; }
+      .step { fill:#ffffff; stroke:#52657a; stroke-width:1.8; }
+      .in { fill:#eef8f1; stroke:#397554; stroke-width:1.8; }
+      .out { fill:#fff3e6; stroke:#b86a1f; stroke-width:1.8; }
+      .title { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:25px; font-weight:700; fill:#1f2933; text-anchor:middle; }
+      .lane-title { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:17px; font-weight:700; fill:#334155; }
+      .label { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:15px; font-weight:700; fill:#1f2933; text-anchor:middle; }
+      .text { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:13px; fill:#44515f; text-anchor:middle; }
+      .note { font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif; font-size:14px; fill:#44515f; }
+      .arrow { stroke:#52657a; stroke-width:2; fill:none; marker-end:url(#arrow); }
+    </style>
+    <marker id="arrow" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#52657a"/>
+    </marker>
+  </defs>
+
+  <rect width="1500" height="700" fill="#ffffff"/>
+  <text x="750" y="42" class="title">四类代表性方案的关键流程</text>
+
+  <!-- Lane 1: IBM -->
+  <rect x="20" y="64" width="1460" height="138" rx="12" class="lane-bg"/>
+  <text x="36" y="90" class="lane-title">离线批量归纳：IBM Trajectory-Informed Memory（2603.10600）</text>
+  <rect x="36" y="104" width="250" height="84" rx="8" class="in"/>
+  <text x="161" y="132" class="label">已存轨迹</text>
+  <text x="161" y="154" class="text">逐步记录调用、thought、动作</text>
+  <text x="161" y="174" class="text">可附评测标签</text>
+  <rect x="322" y="104" width="250" height="84" rx="8" class="step"/>
+  <text x="447" y="132" class="label">结果分型</text>
+  <text x="447" y="154" class="text">干净成功 / 低效成功</text>
+  <text x="447" y="174" class="text">失败后恢复 / 失败</text>
+  <rect x="608" y="104" width="250" height="84" rx="8" class="step"/>
+  <text x="733" y="132" class="label">决策归因与生成</text>
+  <text x="733" y="154" class="text">直接原因、近因、根因</text>
+  <text x="733" y="174" class="text">按结果类型生成三类 tip</text>
+  <rect x="894" y="104" width="250" height="84" rx="8" class="step"/>
+  <text x="1019" y="132" class="label">聚类合并</text>
+  <text x="1019" y="154" class="text">子任务描述泛化后层次聚类</text>
+  <text x="1019" y="174" class="text">余弦约 0.85，簇内去重与综合</text>
+  <rect x="1180" y="104" width="284" height="84" rx="8" class="out"/>
+  <text x="1322" y="132" class="label">tip 库</text>
+  <text x="1322" y="154" class="text">触发条件、步骤、优先级</text>
+  <text x="1322" y="174" class="text">保留全部源轨迹 ID</text>
+  <path d="M286 146 L318 146" class="arrow"/>
+  <path d="M572 146 L604 146" class="arrow"/>
+  <path d="M858 146 L890 146" class="arrow"/>
+  <path d="M1144 146 L1176 146" class="arrow"/>
+
+  <!-- Lane 2: Codex -->
+  <rect x="20" y="214" width="1460" height="138" rx="12" class="lane-bg"/>
+  <text x="36" y="240" class="lane-title">两阶段抽取与整合：Codex CLI memories</text>
+  <rect x="36" y="254" width="250" height="84" rx="8" class="in"/>
+  <text x="161" y="282" class="label">会话选取</text>
+  <text x="161" y="304" class="text">空闲 ≥6 小时、10 天内</text>
+  <text x="161" y="324" class="text">每次启动至多 2 个</text>
+  <rect x="322" y="254" width="250" height="84" rx="8" class="step"/>
+  <text x="447" y="282" class="label">阶段一：逐会话抽取</text>
+  <text x="447" y="304" class="text">分层预算、允许空输出</text>
+  <text x="447" y="324" class="text">任务分诊、认知状态标注</text>
+  <rect x="608" y="254" width="250" height="84" rx="8" class="step"/>
+  <text x="733" y="282" class="label">作业表</text>
+  <text x="733" y="304" class="text">每会话一行抽取结果</text>
+  <text x="733" y="324" class="text">租约、水位、重试</text>
+  <rect x="894" y="254" width="250" height="84" rx="8" class="step"/>
+  <text x="1019" y="282" class="label">阶段二：整合 agent</text>
+  <text x="1019" y="304" class="text">按使用次数取前 256 条</text>
+  <text x="1019" y="324" class="text">以 git diff 驱动增删</text>
+  <rect x="1180" y="254" width="284" height="84" rx="8" class="out"/>
+  <text x="1322" y="282" class="label">Markdown 记忆</text>
+  <text x="1322" y="304" class="text">回答引用回写使用次数</text>
+  <text x="1322" y="324" class="text">30 天未使用退出整合</text>
+  <path d="M286 296 L318 296" class="arrow"/>
+  <path d="M572 296 L604 296" class="arrow"/>
+  <path d="M858 296 L890 296" class="arrow"/>
+  <path d="M1144 296 L1176 296" class="arrow"/>
+
+  <!-- Lane 3: ACE -->
+  <rect x="20" y="364" width="1460" height="138" rx="12" class="lane-bg"/>
+  <text x="36" y="390" class="lane-title">增量维护：ACE（2510.04618）</text>
+  <rect x="36" y="404" width="250" height="84" rx="8" class="in"/>
+  <text x="161" y="432" class="label">执行轨迹与反馈</text>
+  <text x="161" y="454" class="text">标准答案或执行成败</text>
+  <text x="161" y="474" class="text">本次使用的条目 ID</text>
+  <rect x="322" y="404" width="250" height="84" rx="8" class="step"/>
+  <text x="447" y="432" class="label">Reflector 诊断</text>
+  <text x="447" y="454" class="text">错误识别、根因、正确做法</text>
+  <text x="447" y="474" class="text">条目标注有用 / 有害</text>
+  <rect x="608" y="404" width="250" height="84" rx="8" class="step"/>
+  <text x="733" y="432" class="label">Curator 增量</text>
+  <text x="733" y="454" class="text">只输出缺失的新条目</text>
+  <text x="733" y="474" class="text">不重写整份文档</text>
+  <rect x="894" y="404" width="250" height="84" rx="8" class="step"/>
+  <text x="1019" y="432" class="label">程序合并</text>
+  <text x="1019" y="454" class="text">确定性写入</text>
+  <text x="1019" y="474" class="text">embedding 相似度去重</text>
+  <rect x="1180" y="404" width="284" height="84" rx="8" class="out"/>
+  <text x="1322" y="432" class="label">playbook</text>
+  <text x="1322" y="454" class="text">带 ID 与有用 / 有害计数的条目</text>
+  <text x="1322" y="474" class="text">整体注入上下文</text>
+  <path d="M286 446 L318 446" class="arrow"/>
+  <path d="M572 446 L604 446" class="arrow"/>
+  <path d="M858 446 L890 446" class="arrow"/>
+  <path d="M1144 446 L1176 446" class="arrow"/>
+
+  <!-- Lane 4: platforms -->
+  <rect x="20" y="514" width="1460" height="138" rx="12" class="lane-bg"/>
+  <text x="36" y="540" class="lane-title">trace 平台挖掘：Clio、PostHog Clusters、LangSmith Engine</text>
+  <rect x="36" y="554" width="250" height="84" rx="8" class="in"/>
+  <text x="161" y="582" class="label">trace 渲染</text>
+  <text x="161" y="604" class="text">带行号的 span 树文本</text>
+  <text x="161" y="624" class="text">超长时均匀下采样</text>
+  <rect x="322" y="554" width="250" height="84" rx="8" class="step"/>
+  <text x="447" y="582" class="label">逐条摘要</text>
+  <text x="447" y="604" class="text">按 facet 生成短文本</text>
+  <text x="447" y="624" class="text">占总成本约 92%（Clio）</text>
+  <rect x="608" y="554" width="250" height="84" rx="8" class="step"/>
+  <text x="733" y="582" class="label">向量化与聚类</text>
+  <text x="733" y="604" class="text">embedding → UMAP</text>
+  <text x="733" y="624" class="text">→ HDBSCAN 或 k-means</text>
+  <rect x="894" y="554" width="250" height="84" rx="8" class="step"/>
+  <text x="1019" y="582" class="label">命名与归并</text>
+  <text x="1019" y="604" class="text">LLM 命名、层次归并</text>
+  <text x="1019" y="624" class="text">或归入已有 issue</text>
+  <rect x="1180" y="554" width="284" height="84" rx="8" class="out"/>
+  <text x="1322" y="582" class="label">主题与 issue</text>
+  <text x="1322" y="604" class="text">跨运行追加证据与频次</text>
+  <text x="1322" y="624" class="text">转为评估器或项目级记忆</text>
+  <path d="M286 596 L318 596" class="arrow"/>
+  <path d="M572 596 L604 596" class="arrow"/>
+  <path d="M858 596 L890 596" class="arrow"/>
+  <path d="M1144 596 L1176 596" class="arrow"/>
+
+  <rect x="36" y="666" width="18" height="14" rx="3" class="in"/>
+  <text x="62" y="678" class="note">输入</text>
+  <rect x="112" y="666" width="18" height="14" rx="3" class="step"/>
+  <text x="138" y="678" class="note">处理步骤</text>
+  <rect x="220" y="666" width="18" height="14" rx="3" class="out"/>
+  <text x="246" y="678" class="note">记忆产物。各行按论文、源码或官方文档描述的默认流程绘制；开源实现与论文的差异见第 5.5 节。</text>
+</svg>

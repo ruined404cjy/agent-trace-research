@@ -1,6 +1,6 @@
 # Agent Trace Research 文档索引
 
-正式文档按主题分为项目背景与 JSON 存储两组。实验代码和复现入口位于仓库的 `experiments/`（语料画像脚本位于 `experiments/payload-profile/`），运行数据与内部证据保存在 gitignored 的 `docs/temp/`。
+正式文档按主题分为项目背景、JSON 存储与记忆生成三组。实验代码和复现入口位于仓库的 `experiments/`（语料画像脚本位于 `experiments/payload-profile/`），运行数据与内部证据保存在 gitignored 的 `docs/temp/`。
 
 ## 项目背景
 
@@ -22,6 +22,15 @@
 | 汇报材料 | [阶段二组内汇报辅助材料](json-storage/stage2-representation-briefing.md) · [阶段三组内汇报](json-storage/stage3-payload-briefing.md) | 核心流程与场景化比较摘要；阶段三三台主机的原理、环境、逐场景结果与跨主机对照 |
 
 JSON 存储流程图位于 `json-storage/assets/`，由原理文档、报告和汇报材料共同使用。
+
+## 记忆生成
+
+| 类型 | 文档 | 内容 |
+|---|---|---|
+| 调研 | [基于 Agent Trace 生成记忆：调研索引](memory-generation/research/README.md) | 研究问题与范围、三份调研报告的分工与跨报告的主要发现 |
+| 调研 | [生成方法调研（研究、实现与产品）](memory-generation/research/memory-generation-methods-2026-10-09.md) | 从轨迹生成经验记忆的研究、开源组件与实现、产品中的记忆机制与相邻可迁移方向，含完整术语与记忆分类 |
+| 调研 | [信号与选样调研（trace 挖掘、归因评估、用户偏好、data agent）](memory-generation/research/memory-generation-signals-2026-10-09.md) | trace 库挖掘与近似 trace 归类、失败归因与评估、用户偏好与纠正、data agent 的经验记忆 |
+| 调研 | [输入、存储与评测调研](memory-generation/research/memory-generation-input-storage-evaluation-2026-10-09.md) | trace 预处理、trace 标识与内容采集、生成侧模型接口、存储溯源与生命周期、评测与公开数据集分析 |
 
 ## 临时资料
 
