@@ -117,7 +117,7 @@ XStore 把空字符串视为 NULL，可能为空的文本列（如 `framework`�
 |---|---|---|
 | openGauss | 超过约 2 KiB 的值压缩后移入 TOAST，主行只留指针，`same_table` 主表 heap 10.85 MB | 无，列表四布局都精确扫描 256 行 |
 | ClickHouse | 按列存放，`payload` 列以 ZSTD 压缩 | 列裁剪不读取 payload 列；同表 granule 更窄，列表读取更少（ARM 主机 A 第一页 10,541 对 32,768 行） |
-| XStore | 不压缩，存放在主表 heap 内，`same_table` 主表 heap 186.5 MB，无 payload 的窄表 11.0 MB | 按索引取一页不受影响；回表过滤大量行慢 2.1 倍，全表 `MAX` 聚合慢约 3.5 倍 |
+| XStore | 不压缩，存放在主表 heap 内，`same_table` 主表 heap 186.5 MB，无 payload 的窄表 11.0 MB | 按索引取一页不受影响；回表过滤大量行慢 2.1 倍，全表 `MAX` 聚合慢约 2.6–2.9 倍 |
 
 目标负载以过滤、分组、计数和分位数统计为主（第 2 节），这些查询在 XStore 上逐行访问大量行，同表 payload 使其读取的页数随 heap 膨胀而增加。XStore 因此把 payload 移出列表与统计查询读取的表。
 
