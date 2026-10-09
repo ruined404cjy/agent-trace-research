@@ -1,38 +1,40 @@
 # Agent Trace Research
 
-Agent Trace 的公开调研、复现指南和实验设计。仓库当前重点是多字段 JSON、JSON/JSONB、长字段和多模态大 payload 的存储方案。
+Agent Trace 的公开调研、复现指南和实验设计。仓库当前重点是 Trace 中多字段 JSON、动态属性和长 payload 的存储方案，覆盖 openGauss、XStore 与 ClickHouse。
 
 ## 实验
 
 | 实验 | 状态与用途 |
 |---|---|
-| [JSON 存储第一阶段实验基础设施](experiments/json-storage-stage1/README.md) | 生成正确性与路径组织数据，并记录 openGauss JSONB 与 ClickHouse Native JSON 实验结果 |
-| [JSON 存储阶段二横向实验](experiments/json-storage-stage2/README.md) | 已完成真实输入审计、六轮动态属性实验、正确性与原文恢复验证 |
-| [JSON 存储阶段二调优矩阵](experiments/json-storage-stage2-sup/README.md) | 四种 JSON 表示、openGauss 定向索引与 ClickHouse Native JSON 调优候选的复现入口 |
+| [JSON 存储阶段一](experiments/json-storage-stage1/README.md) | 已完成；生成正确性与路径组织数据，记录 openGauss JSONB 与 ClickHouse Native JSON 的引擎内机制 |
+| [JSON 存储阶段二横向实验](experiments/json-storage-stage2/README.md) | 已完成；真实输入审计、六轮动态属性实验、正确性与原文恢复验证 |
+| [JSON 存储阶段二调优矩阵](experiments/json-storage-stage2-sup/README.md) | 已完成；四种 JSON 表示、openGauss 定向索引与 ClickHouse Native JSON 调优候选的复现入口 |
+| [JSON 存储阶段三](experiments/json-storage-stage3/README.md) | 已完成；四种长 payload 布局在 openGauss 与 ClickHouse 25.12 上的写入、读取、混合负载与对象故障实验 |
+| [语料画像](experiments/payload-profile/profile_open_swe.py) | Open-SWE-Traces 真实轨迹的 payload 大小分布、压缩比与 instrumentation 写放大 |
+
+ARM 主机上 XStore 与 ClickHouse 23.3 的阶段三实验程序与回传工具位于分支 `stage3/xstore-yellow-handoff`。
 
 ## 文档
 
-| 文档 | 状态与用途 |
+全部文档的分类索引见 [docs/README.md](docs/README.md)。
+
+| 文档 | 用途 |
 |---|---|
-| [文档分类索引](docs/README.md) | 按项目背景与 JSON 存储组织全部文档 |
-| [JSON 存储原理](docs/json-storage/jsonb-native-json-principles.md) | openGauss JSONB 与 ClickHouse Native JSON 的写入、物理存储、维护和查询流程 |
-| [JSON 存储阶段一机制报告](docs/json-storage/stage1-multifield-report.md) | 汇总阶段一背景与基线、openGauss/ClickHouse 引擎内实测、机制结论和阶段二入口 |
-| [JSON 存储阶段二报告](docs/json-storage/stage2-representation-report.md) | 四种 JSON 表示、定向调优候选、访问路径证据和适用范围 |
-| [JSON 存储阶段二汇报辅助材料](docs/json-storage/stage2-representation-briefing.md) | 两引擎流程、Sidecar 与四结构场景化比较摘要 |
-| [JSON 存储设计调研](docs/json-storage/design-survey.md) | 代表性系统、论文、现有项目状态、工程结论与遗留问题 |
-| [JSON 存储阶段一实验设计](docs/json-storage/stage1-multifield-design.md) | 阶段一多字段机制实验及顺延目标的数据、workload、指标和门槛 |
-| [JSON 存储阶段二实验设计](docs/json-storage/stage2-representation-design.md) | 真实 Trace 审计与 openGauss/ClickHouse 动态属性统一横向实验 |
-| [JSON 存储阶段二调优矩阵实验设计](docs/json-storage/stage2-tuning-design.md) | 数据派生、七类查询、单变量调优候选和正确性门禁 |
-| [JSON 存储阶段三实验设计](docs/json-storage/stage3-payload-design.md) | 同表内联、独立 payload 表、Full/Core 与 asset reference 实验 |
+| [JSON 存储设计决策](docs/json-storage/design-decision.md) | openGauss、XStore 与 ClickHouse 的逻辑模型、参数取值与判据、真实语料画像和证据缺口 |
+| [JSON 存储设计调研](docs/json-storage/design-survey.md) | 代表性系统、论文、项目现状与设计方向 |
+| [openGauss JSONB 与 ClickHouse Native JSON 原理](docs/json-storage/jsonb-native-json-principles.md) | 四种 JSON 存储结构的写入、物理存储、维护和查询流程 |
+| 阶段一：多字段 JSON | [实验设计](docs/json-storage/stage1-multifield-design.md) · [报告](docs/json-storage/stage1-multifield-report.md) |
+| 阶段二：JSON 表示比较 | [实验设计](docs/json-storage/stage2-representation-design.md) · [调优矩阵设计](docs/json-storage/stage2-tuning-design.md) · [报告](docs/json-storage/stage2-representation-report.md) · [组内汇报](docs/json-storage/stage2-representation-briefing.md) |
+| 阶段三：长 payload 布局 | [实验设计](docs/json-storage/stage3-payload-design.md) · [原理与设计](docs/json-storage/stage3-payload-principles.md) · [x86 报告](docs/json-storage/stage3-payload-x86-report.md) · [XStore 报告](docs/json-storage/stage3-payload-xstore-report.md) · [三台主机组内汇报](docs/json-storage/stage3-payload-briefing.md) |
 | [OTel 与 Langfuse 学习指南](docs/project-background/otel-langfuse-study-guide.md) | OTel、Collector、GenAI 语义和 Langfuse 摄入链路 |
 | [标准 openGauss 行存复现指南](docs/project-background/trace-ingestion-demo-blue-zone-guide.md) | 历史固定版本的 openGauss row profile 复现 |
 | [GV xstore 复现指南](docs/project-background/trace-ingestion-demo-yellow-zone-guide.md) | 历史固定版本的 GV xstore 复现 |
 
 ## 当前状态
 
-- 资料修订日期：2026-09-11；阶段二调优矩阵完成日期：2026-09-11。
-- 阶段二主结果位于 `docs/temp/json-storage-stage2-sup/final-matrix-20260911/`、`isolation-matrix-20260911/` 和 `text-baseline-matrix-20260911/`；七个单变量目标的确定性汇总位于 `final-matrix-20260911/final-summary.json`。
-- ClickHouse 大值路径的独立输出控制位于 `docs/temp/json-storage-stage2-sup/clickhouse-projection-controls-20260910/`。
+- 资料修订日期：2026-10-09。JSON 存储三个阶段的实验与报告均已完成，结论收敛于[设计决策](docs/json-storage/design-decision.md)；待定项与后续实验见其第 7 节。
+- 阶段三覆盖 x86 主机（openGauss 6.0.0、ClickHouse 25.12.11.4）与两台 ARM 主机（XStore、ClickHouse 23.3.10.5）。
+- 运行数据与内部证据保存在 gitignored 的 `docs/temp/`，不随仓库发布。
 - exporter 远端 main：2026-09-07 · `81b55be`；SPEC v1.8 仍冻结 18 列最小 OTel schema。
 - trace-synthesis 远端 main：2026-09-07 · `ef3be14`；v4 database catalog revision 仍为 `2026-09-02.3`、28 列。
 - 已验证历史配对：benchmark `9529c8f`、exporter `54ca553`。
