@@ -2,7 +2,7 @@
 
 > 状态：调研报告
 >
-> 调研日期：2026-10-09
+> 调研日期：2026-10-09（第四阶段方向 4 补充于 2026-10-10）
 >
 > 范围：从已存 agent trace 生成供同一 agent 使用的记忆——从轨迹生成经验记忆的研究、开源组件与实现、产品中的记忆机制、相邻与可迁移方向
 >
@@ -18,18 +18,19 @@ Agent 运行时产生的 trace（模型调用、工具调用与返回、用户�
 
 本报告是"基于 Agent Trace 生成记忆"调研的三份报告之一，覆盖生成方法：从轨迹生成经验记忆的研究（第 4 节）、开源组件与实现（第 5 节）、产品中的记忆机制（第 6 节）、相邻与可迁移方向（第 7 节），综合分析与证据边界见第 8、9 节。信号与选样（trace 库挖掘、失败归因与评估、用户偏好、data agent）见《信号与选样调研》；输入、存储与评测（trace 预处理、trace 标识、模型接口、存储与溯源、评测、公开数据集分析）见《输入、存储与评测调研》。三份报告的调研过程与证据分级相同，概述如下。
 
-调研分四个阶段，检索截至 2026-10-09（第 3 节）。第一阶段做广度覆盖，包括从轨迹生成经验记忆的论文、开源记忆组件、产品记忆机制、trace 库挖掘与失败归因、存储溯源与评测、data agent、与评估归因的耦合七个方向；第二阶段针对第一阶段的空白拓展 trace 预处理与结果判定、用户偏好、近似 trace 与选样、开源实现源码深读、评测方法五个方向；第三阶段补充 trace 标识与内容采集、生成侧模型接口两项基础事实；第四阶段回到全文与一手来源核实约 30 项被结论引用的说法，并补充相邻方向与 2026 年 7–10 月的新工作。方法包括阅读 arXiv 全文、在固定 commit 上只读源码、阅读官方文档与 changelog、在 Open-SWE-Traces 与 Who&When Pro 等公开数据集上做统计。证据分为原文或源码核实、据摘要、二手资料、未核实与公开数据统计五级（第 3.6 节），据摘要、二手资料、未核实三级在句末括注，公开数据统计注明样本与方法；与第四阶段核实结果冲突的说法按核实后的口径书写。
+调研分四个阶段，检索截至 2026-10-09（第 3 节）。第一阶段做广度覆盖，包括从轨迹生成经验记忆的论文、开源记忆组件、产品记忆机制、trace 库挖掘与失败归因、存储溯源与评测、data agent、与评估归因的耦合七个方向；第二阶段针对第一阶段的空白拓展 trace 预处理与结果判定、用户偏好、近似 trace 与选样、开源实现源码深读、评测方法五个方向；第三阶段补充 trace 标识与内容采集、生成侧模型接口两项基础事实；第四阶段回到全文与一手来源核实约 30 项被结论引用的说法，补充相邻方向与 2026 年 7–10 月的新工作，并就写入前验证、生成模型的选择与开源组件补充（OpenViking、Mem0）做专题调研（该专题的材料读取于 2026-10-10）。方法包括阅读 arXiv 全文、在固定 commit 上只读源码、阅读官方文档与 changelog、在 Open-SWE-Traces 与 Who&When Pro 等公开数据集上做统计。证据分为原文或源码核实、据摘要、二手资料、未核实与公开数据统计五级（第 3.6 节），据摘要、二手资料、未核实三级在句末括注，公开数据统计注明样本与方法；与第四阶段核实结果冲突的说法按核实后的口径书写。
 
 ### 1.3 主要发现
 
 1. 2026 年出现一批直接以已存轨迹为输入、离线批量运行的工作（IBM 2603.10600、WISE-Flow、Trace2Skill、SkillBoost、CONTRAMEM 等），设计重点集中在选样、分组、对比、合并、验证门控与溯源六个环节；表 4-2 收录的 74 项工作中，未见以多层 span 树为输入或以 span 为溯源锚点的工作（第 4.5、4.8.5 节）。
 2. 批量方式有直接对比：按任务聚合多条轨迹归纳比逐轨迹归纳成功率约高 6%（WISE-Flow，原文未说明为绝对差还是相对差）；并行提议加层次合并 65.83%、约 3 分钟，逐条顺序更新 61.83%、约 60 分钟（Trace2Skill）；流式反复合并比整池一次合并低 17–38 个百分点（2605.12978）（第 4.8.4 节）。
 3. 选样上，含失败轨迹的反馈更常产生被采纳的更新（Feedback Dynamics 中 11 次被选中的更新全部来自含失败的条件，据摘要；ReasoningBank 加入失败轨迹 46.5→49.7），仅用成功轨迹归纳流程同样有大幅收益（LEGOMem、AMD，据摘要）（第 4.8.1 节）。
-4. 验证门控有独立价值：去掉门控后 EDGE 为 72.3，低于不用经验的 82.1；OpsHarness 末段 0.33，低于不演化的 0.43；Crystallization 无门控的卡片库比无记忆低 2.03 个百分点（第 4.7 节、《信号与选样调研》第 5.4、7.7 节）。
+4. 验证门控（候选条目或修订生效前的验证与准入判断）在技能、harness 与 prompt 演化研究中已普遍采用：检索范围内 15 组有 / 无门控消融方向一致（均为作者自报），其中 5 组去掉门控后低于或持平于基线——EDGE 72.3 低于不用经验的 GRPO 82.1（该门控决定经验是否进入 RL 损失与蒸馏，作用于训练信号）、OpsHarness 末段 0.33 低于不演化的 0.43、Crystallization 无门控的卡片库比无记忆低 2.03 个百分点、WebXSkill 55.2 低于无技能 59.7、GRASP（K=1）40.1 与无技能 40.6 持平。在可检索经验条目的生成工作与产品中，候选级门控仍是少数做法；验证集只有 10–14 题时门控近似保守的噪声过滤（Recuris），验证消耗可占优化预算的一半（第 4.7、4.8.6 节、《信号与选样调研》第 5.4、7.7 节）。
 5. 自动构建与检索的记忆在编码任务上多数没有收益：VibeMemBench 中 12 组有 11 组未超过无记忆基线，直接注入已验证经验的 1.1–4.5 个百分点增益置信区间均跨零；已报告增益多在 1–5 个百分点，检出需要数百至上千个配对运行（估算）；整合质量分与真实迁移不相关（ρ=−0.24，n=12，置信区间跨零，据摘要）（第 4.6、4.7 节、《输入、存储与评测调研》第 8.3、8.8 节）。
-6. 开源实现均先把 trace 压平为文本；溯源最细到 span_id（altk-evolve），且在合并后丢失；论文中的结果分型、去重、计数与门控在源码中多处缺失或失效（ACE 去重只写日志、ReMe 0.2 去重读错字段、SkillBoost 零增益候选可通过门控）（第 5.4、5.5 节）。
+6. 开源实现均先把 trace 压平为文本；溯源最细到 span_id（altk-evolve），且在合并后丢失；论文中的结果分型、去重、计数与门控在源码中多处缺失或失效（ACE 去重只写日志、ReMe 0.2 去重读错字段、SkillBoost 零增益候选可通过门控）（第 5.4、5.5 节）。开源组件中 OpenViking（v0.5.0）给出"轨迹 → 操作契约 → 可泛化经验"的两级抽取模板与"经验 → 轨迹"的版本提交溯源，相应功能默认关闭；Mem0 2.x 的开源写入只做 ADD 且跳过 tool 消息，常作为会话事实记忆的对照基线（第 5.2、5.3 节）。
 7. 产品中 Codex CLI 的"逐会话抽取 + 全局整合"流水线公开最完整（会话选取条件、作业租约与水位、diff 驱动遗忘、使用回写）；以外部结果信号驱动规则晋升的有 Cursor Bugbot 与 Augment Code Review Memory，晋升与停用齐全的只有 Bugbot；Bugbot 整体 resolution rate 自 2025-07 的 52% 升至约 78%（自报），Learned Rules 的单独贡献未报告；个人偏好出现由批量整合转向会话中即时写入的案例（Claude.ai 2026-08 改版）（第 6 节）。
 8. 相邻方向（过程挖掘、AIOps 与案例推理、trace 驱动的 prompt 与程序优化、参数化固化、Agent Skills 生态、软件工程经验挖掘、查询日志挖掘）都采用"选样 → 归一化 → 归并 → 泛化 → 验证门控 → 反馈淘汰"的结构，可迁移做法多数处在归一化、分组与门控三个环节；外置记忆在未见任务与需要删除、溯源的内容上优于参数化，技能与系统提示受描述预算与过拟合约束（第 7.8、7.9 节）。
+9. 生成记忆的模型按部署形态分化：会话内即时写入由会话模型完成；后台或离线流水线均把生成模型与会话模型解耦、单独配置，默认配置集中在"廉价档模型逐条抽取、中档或强模型跨会话整合"（Codex 阶段一 `gpt-5.6-luna`、阶段二 `gpt-5.6-terra`；Clio 与 LangSmith Engine 以 Haiku 档做逐条抽取或筛查；13 个给出默认值的开源组件中 8 个默认 mini / haiku 档），Managed Agents Dreams 只支持 Opus、Sonnet、Fable 档；研究实验多让同一模型兼任执行者与生成者。生成模型更强时记忆通常更好，收益随使用方能力递减：使用方为 GPT-3.5 或 7B 级时换用强模型生成提升 7.0（ExpeL）至 47.4 个百分点（SkillRL），使用方较强时为 0.2–3.3 点（ACE、ReMe、SkillRL）；自生成记忆对来源模型略优，跨模型迁移多数仍为正（Memory Transfer Learning、Trace2Skill）（第 4.8.7、5.6、6.4 节）。
 
 ### 1.4 主要倾向
 
@@ -40,12 +41,14 @@ Agent 运行时产生的 trace（模型调用、工具调用与返回、用户�
 | 环节 | 更可取的做法 | 适用条件 |
 |---|---|---|
 | 生成 | 逐 trace 抽取（可并行、可缓存）加分组后一次性整合；并行提议、层次合并，LLM 只输出增量操作与归属关系，合并由程序执行；输入保留回查原始 span 的能力；偏好条目保留原话、来源与适用条件 | 抽取结果按 trace 缓存；生成接口以 `json_object` 加客户端校验为公共子集 |
-| 验证 | 新条目先处于候选状态，经环境只读核验、历史 trace 重放不退化或留出集对照后生效；data agent 以执行结果门控；操作级质量分只用于过滤 | 有只读环境、可重放环境或留出集；验证成本可占预算的一半 |
+| 验证 | 新条目先处于候选状态，经环境只读核验、历史 trace 重放不退化或留出集对照后生效；data agent 以执行结果门控；只有离线 trace 时组合使用对照源 trace 的依据校验、trace 内已记录的执行侧信号、跨 trace 的独立支持与按时间切分的影子回放；同模型自评与操作级质量分只用于过滤 | 有只读环境、可重放环境或留出集；验证集需有代表性（小验证集上门控近似随机拒绝）；验证成本可占预算的一半 |
+| 生成模型 | 逐 trace 抽取用廉价档模型并行、可缓存，跨 trace 整合与冲突消解用中档或强模型、单写者执行；成败判定用执行侧信号；生成模型 ID 与 prompt 版本记入溯源 | 使用方为小模型时生成侧换用更强模型收益最大；使用方已较强时同档或低一档即可（推论） |
 
 ### 1.5 主要开放问题
 
 - 多层 span 树作为生成输入的收益、压缩对抽取质量的影响，均无直接消融。
-- 无标签 trace 上 judge 误差对记忆质量的影响，以及纯离线 trace 库上三类门控方式的效果比较，缺少实证。
+- 无标签 trace 上 judge 误差对记忆质量的影响，以及纯离线 trace 库上各类门控方式（依据校验、执行侧信号 verifier、跨 trace 独立支持、影子回放、只读环境核验）的效果比较，缺少实证；经验条目类工作中逐条门控的证据只有少数几项。
+- 在 code agent 与 data agent 的生产 trace 上，"会话内同一模型即时写入"与"离线独立模型批量生成"之间、离线抽取模型档位之间，均无公开对照；产品的生成模型选型理由未公开。
 - 整合环节的投毒（少量一致记录即可越过频次门槛）与代码库、schema 演化后的记忆失效，缺少成熟方案。
 
 ## 2. 问题与术语
@@ -146,7 +149,7 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 
 ### 3.1 总体安排
 
-调研分四个阶段进行，检索截至 2026-10-09。第一阶段做广度覆盖，第二阶段针对第一阶段暴露的空白做拓展与聚焦，第三阶段补充 trace 侧与模型侧两项基础事实，第四阶段做可信度核实并补充相邻方向与最新工作。
+调研分四个阶段进行，检索截至 2026-10-09，第四阶段方向 4 截至 2026-10-10。第一阶段做广度覆盖，第二阶段针对第一阶段暴露的空白做拓展与聚焦，第三阶段补充 trace 侧与模型侧两项基础事实，第四阶段做可信度核实并补充相邻方向与最新工作。
 
 表 3-1 调研阶段与方向
 
@@ -155,9 +158,9 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 | 第一阶段：广度调研 | 1 从轨迹生成经验记忆的论文；2 开源记忆组件；3 产品记忆机制；4 trace 库挖掘、聚类与失败归因；5 存储、溯源、生命周期与评测；6 data agent 的经验记忆；7 记忆生成与评估、归因的耦合 | 论文、源码、产品文档、规范、公开数据集 |
 | 第二阶段：拓展与聚焦 | 1 trace 预处理与结果判定；2 用户偏好与纠正挖掘；3 近似 trace 判定、分组归纳与选样；4 开源实现源码深读；5 评测方法 | 论文、源码、公开数据集统计 |
 | 第三阶段：补充 | 1 trace 标识与内容采集；2 生成侧的模型接口 | 规范、源码、服务文档 |
-| 第四阶段：补充 | 1 可信度核实；2 相邻方向；3 2026 年 7–10 月新工作与覆盖缺口 | 论文全文、官方文档与 changelog、固定 commit 源码 |
+| 第四阶段：补充 | 1 可信度核实；2 相邻方向；3 2026 年 7–10 月新工作与覆盖缺口；4 写入前验证、生成模型、评测方法与组件补充（截至 2026-10-10） | 论文全文、官方文档与 changelog、固定 commit 源码 |
 
-本报告涉及第一阶段方向 1–3、第二阶段方向 4 与第四阶段方向 1–3，下文只展开这些方向；其余方向见《信号与选样调研》与《输入、存储与评测调研》第 3 节。
+本报告涉及第一阶段方向 1–3、第二阶段方向 4 与第四阶段方向 1–4，下文只展开这些方向；其余方向见《信号与选样调研》与《输入、存储与评测调研》第 3 节。
 
 ### 3.2 第一阶段：广度调研
 
@@ -179,6 +182,8 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 
 **方向 3：2026 年 7–10 月新工作与覆盖缺口。** 要回答的问题：前三阶段之后出现了哪些相关论文；隐私、删除、投毒与注入策略方面有哪些覆盖缺口。方法为逐篇阅读 arXiv 摘要页，按相关度记录；删除与投毒方向检索 2026 年 2–10 月的工作。发现：同任务多模型轨迹对比（CONTRAMEM，2608.22533）、只读环境中核验候选记忆后再写入（2609.11060）、技能的版本化与回放不退化门控（Skill-V，2610.11781）等新工作；源数据删除后派生记忆仍可见的级联问题及其修复（MEMOREPAIR，2605.07242；Agentic Unlearning，2602.17692）；两篇新综述（2607.10113、2608.03392）。限制：该方向证据多为摘要级；ICLR 2027 投稿尚未被索引，2026 年 10 月上旬的覆盖可能不全。详见第 4、7 节、《输入、存储与评测调研》第 7 节。
 
+**方向 4：写入前验证、生成模型、评测方法与组件补充。** 由前述方向遗留的三个问题引出：验证门控的证据集中在少数工作，哪些研究线把门控作为常规环节、只有离线 trace 时有哪些可行方式尚不清楚；记忆由会话模型、独立模型、教师模型还是训练的小模型生成，各产品与组件如何配置；OpenViking 等 2026 年受关注的组件未纳入第一、二阶段。检索范围为以"gate / verification / admission / probation"为关键词的 2025–2026 年论文、prompt 与程序优化和代码审查工具中的同类机制、产品官方文档；生成模型方面为改变生成模型或教师模型的消融、跨模型迁移实验，以及 18 个开源仓库与 Codex 源码中的默认模型配置。方法为阅读 arXiv HTML 全文（约 40 篇，其余据摘要）、在固定 commit 上只读源码与提交记录（2026-10-10 读取）、阅读官方文档。发现：写入前门控在技能与 harness 演化研究中已是常规环节，在经验条目类工作与产品中不是；Grounding Agent Memory 摘要中的"39%→73%"为"无记忆 → 带环境探测的记忆"，探测本身的增量约 3 个百分点；后台与离线流水线均单独配置生成模型，默认集中在廉价档抽取加中档整合。详见第 4.5、4.8.6、4.8.7、5.2、5.6、6.4 节。
+
 ### 3.5 方向之间的衔接
 
 表 3-2 方向之间的衔接
@@ -190,6 +195,7 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 | 结论引用了只据摘要或二手资料的数字 | 第四阶段方向 1（可信度核实） |
 | 经验载体的分配、晋升与固化 | 第四阶段方向 2（优化、参数化、Agent Skills） |
 | 删除级联、投毒与注入时机覆盖不足；2026 年下半年新工作 | 第四阶段方向 3 |
+| 门控证据集中在少数工作，离线可行的验证方式不明；生成模型的配置与影响未系统整理；OpenViking 未覆盖 | 第四阶段方向 4 |
 
 ### 3.6 证据分级与核对方法
 
@@ -231,7 +237,8 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 |---|---|
 | 选取策略 | 哪些轨迹进入生成，以及成败如何判定（GT 为 ground truth，即标准答案或测试结果） |
 | 跨轨迹归纳 | 把多条轨迹或多条候选条目合并为更一般的条目，对应综述 2605.06716 中的 Experience 阶段 |
-| 验证门控 | 候选条目或候选修订经独立检查（重放、留出集、环境查询）通过后才生效 |
+| 验证门控 | 写入前的验证与准入判断：候选条目或候选修订经独立检查（重放、留出集、执行、环境查询、依据校验、人工确认）通过后才生效；只按结果筛选输入轨迹的"来源筛选"不计入（第 4.8.6 节） |
+| 生成模型 | 执行抽取、反思、整合等生成环节的模型，可与使用记忆的 agent 模型相同或不同（第 4.8.7 节） |
 | 溯源 | 记忆条目到源轨迹、源 step 的关联 |
 | 相关度 | 1–5，衡量与"对已存 trace 有策略地批量生成经验记忆"的契合程度 |
 
@@ -298,11 +305,11 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 | QCR | 2026 | 2608.12847 | 完整轨迹 | 仅 checker 通过 | 原轨迹 + 查询时笔记 | 每轨迹；近重复去除 | 向量 | 审计元数据 | 3 | 原文 |
 | EDGE | 2026 | 2608.21946 | 完整轨迹 | 薄弱类别一成一败 | 条件原则 | 每步 ≤3 条；Δe 剪枝 | 向量 | 无 | 4 | 原文 |
 | CONTRAMEM | 2026 | 2608.22533 | 同任务多模型轨迹 | 正确性/效率/恢复/失败对比 | Function / Skill Card | 离线分批；局部编辑 | 卡片文本 | 未述 | 5 | 摘要 |
-| Recuris | 2026 | 2608.24876 | 结构化执行证据 | 失败归因到记忆组件 | Skill Memory | 局部更新，先验证 | 未述 | 未述 | 3 | 摘要 |
-| HarnessEvolve | 2026 | 2609.00829 | 失败轨迹 + 参考轨迹 | 对齐参考轨迹 | prompt/skill/工具/逻辑 | batch/epoch；失败模式聚类 | 快照 | 快照版本 | 4 | 摘要 |
+| Recuris | 2026 | 2608.24876 | 结构化执行证据 | 失败归因到记忆组件 | Skill Memory | 局部更新，dev 集验证 | 未述 | 未述 | 3 | 原文 |
+| HarnessEvolve | 2026 | 2609.00829 | 失败轨迹 + 参考轨迹 | 对齐参考轨迹 | prompt/skill/工具/逻辑 | batch/epoch；失败模式聚类 | 快照 | 快照版本 | 4 | 原文 |
 | APEx | 2026 | 2609.02253 | 交互历史 | RL 训练 | 轨迹记忆 + 流程 skill | 实例级 + 类别级 | 未述 | 未述 | 3 | 摘要 |
 | AgentBrew | 2026 | 2609.05837 | 未过滤原始轨迹 | 无验证器 | 权重 | 批量 | 权重 | — | 3 | 摘要 |
-| Grounding Agent Memory | 2026 | 2609.11060 | 任务结束后完整轨迹 | 全部进入候选 | 环境事实 + 操作经验 | 异步；环境核验 | 未述 | 作者称可审计 | 5 | 摘要 |
+| Grounding Agent Memory | 2026 | 2609.11060 | 任务结束后完整轨迹 | 全部进入候选 | 环境事实 + 操作经验 | 异步；环境只读探测 | 未述 | 作者称可审计 | 5 | 原文 |
 | EchoPath | 2026 | 2609.16635 | 已验证 GUI 轨迹 | 仅已验证 | 参数化可重放过程 | 每轨迹 | 过程库 | 验证溯源 | 5 | 摘要 |
 | EvoSkill-GUI | 2026 | 2609.17653 | 失败轨迹 | 隔离 critic 诊断 | 多文件技能包 | 每失败 | 文件 | 失败案例 | 4 | 摘要 |
 | DENSE | 2026 | 2609.21423 | step 级轨迹 | 不用结果标签 | 证据锚定子任务树 | 单轨迹内层次化 | 结构化文本 | action ID | 3 | 原文 |
@@ -312,10 +319,10 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 | SkillVine | 2026 | 2609.32731 | skill 演化轨迹 | — | skill 库 | 主干 / 分支图搜索 | 版本化库 | 版本级 | 3 | 摘要 |
 | Epistemics of Agent Memory | 2026 | 2609.33013 | agent traces | 学习 episode 边界 | 保留/压缩/抽象/遗忘 | 预算化提升 | 未述 | 未述 | 5 | 摘要 |
 | MATE | 2026 | 2609.35808 | 检索到的轨迹 | — | 条件—动作—效果 | 确定性转换，无 LLM | — | — | 3 | 摘要 |
-| SkillSpec | 2026 | 2610.00704 | 优化轨迹（含被拒候选） | 配对评估一致通过 | skill 结构 | flat / graph / hybrid | 未述 | 未述 | 3 | 摘要 |
+| SkillSpec | 2026 | 2610.00704 | 优化轨迹（含被拒候选） | 配对评估一致通过 | skill 结构 | flat / graph / hybrid | 未述 | 未述 | 3 | 原文（机制）；数字据摘要 |
 | SAGA | 2026 | 2610.06964 | 交互轨迹 | 未述 | 情景 / 流程 / 原则三层 | 在线 | 未述 | 每层链接执行证据 | 4 | 摘要 |
-| Skill-V | 2026 | 2610.11781 | 任务结果 + 契约评估 | 失败触发新建 | 版本化契约 skill | 历史重放不退化 | 版本化库 | 版本级 | 4 | 摘要 |
-| SkillForge | 2026 | 2610.09832 | rollout + fitness | 基础模型预淘汰 | skill | 四状态生命周期 | 未述 | 淘汰事件 | 4 | 摘要 |
+| Skill-V | 2026 | 2610.11781 | 任务结果 + 契约评估 | 失败触发新建 | 版本化契约 skill | 历史重放不退化 | 版本化库 | 版本级 | 4 | 原文 |
+| SkillForge | 2026 | 2610.09832 | rollout + fitness | 基础模型预淘汰 | skill | 四状态生命周期 | 未述 | 淘汰事件 | 4 | 原文 |
 | SkillMorph | 2026 | 2610.11858 | 多运行多任务成败轨迹 | 成败均取 | code agent skill 修订 | 按演化轮次 | 文件 | 证据→内容链接 | 4 | 摘要 |
 
 另有相关度 ≤2 的工作未列入：MEM1（2506.15841）与 MemAct（2510.12635）为单 episode 内工作记忆压缩；Multi-Agent Transactive Memory（2606.19911）存原始 5 步片段；DecentMem（2605.22721）为 agent 私有的探索 / 利用双池记忆。
@@ -326,7 +333,7 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 
 **Reflexion**（2303.11366）。同一任务失败后，把完整 ReAct 轨迹与结果信号（精确匹配 EM、启发式、LLM 判定或自生成单测）转为第一人称反思，滑动窗口保留 1–3 条，无检索与跨任务归纳。ALFWorld 134 个任务完成 130 个，比 ReAct 高 22%。该工作给出"失败轨迹 → 反思文本"的基础算子。
 
-**ExpeL**（2308.10144）。训练任务用 Reflexion 最多重试 3 次，收集成功与失败轨迹，轨迹以 (o, a, o′, r) 逐步元组表示。抽取输入有两类：同任务（成功, 失败）对，以及不同任务成功轨迹的分块（L=8 或 4），成败由 GT 判定。生成为离线批量遍历，对一个全局 insight 列表执行 ADD / EDIT / UPVOTE / DOWNVOTE：新 insight 重要度为 2，投票增减，降到 0 删除，用于抵消"成功轨迹也可能次优"。官方仓库 prompt 的要点为："Do not mention the trials in the rules"；"Do at most 4 operations and each existing rule can only get a maximum of 1 operation"；规则满时 "Focus on REMOVE rules first"。insight 全量注入 prompt，成功轨迹存 Faiss 作 few-shot 检索，insight 无溯源。HotpotQA 28.0→39.0，ALFWorld 40.0→59.0（Table 3）；只用 ReAct 收集、没有成败对时效果更差（Fig. 6）。ExpeL 是"已存经验池 → 成败对比 → 带投票的增量规则表"的原型。
+**ExpeL**（2308.10144）。训练任务用 Reflexion 最多重试 3 次，收集成功与失败轨迹，轨迹以 (o, a, o′, r) 逐步元组表示。抽取输入有两类：同任务（成功, 失败）对，以及不同任务成功轨迹的分块（L=8 或 4），成败由 GT 判定。生成为离线批量遍历，对一个全局 insight 列表执行 ADD / EDIT / UPVOTE / DOWNVOTE：新 insight 重要度为 2，投票增减，降到 0 删除，用于抵消"成功轨迹也可能次优"。官方仓库 prompt 的要点为："Do not mention the trials in the rules"；"Do at most 4 operations and each existing rule can only get a maximum of 1 operation"；规则满时 "Focus on REMOVE rules first"。insight 全量注入 prompt，成功轨迹存 Faiss 作 few-shot 检索，insight 无溯源。HotpotQA 28.0→39.0，ALFWorld 40.0→59.0（Table 3）；只用 ReAct 收集、没有成败对时效果更差（Fig. 6）。执行 agent 为 gpt-3.5-turbo，insight 由 GPT-4 抽取；改由 gpt-3.5-turbo 自行抽取时 HotpotQA 为 32.0（Table 3），作者据此认为抽取模型更强更有利（生成模型的比较见第 4.8.7 节）。ExpeL 是"已存经验池 → 成败对比 → 带投票的增量规则表"的原型。
 
 **CLIN**（2310.10134）。每个 trial 后用受约束句式生成因果抽象，如 "X is NECESSARY to Y"、"X DOES NOT CONTRIBUTE to Y"，以 may / should 表达不确定性。跨环境时取各 episode 最佳 trial 的记忆连同 reward 合成 meta-memory（prompt 要点："Consider all learning lists and combine them…for a NEW TASK"）。ScienceWorld 平均 48.6→69.5（Table 1）；改为自由格式建议后下降 6.2 分，说明句式约束有效。
 
@@ -358,13 +365,13 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 
 **Dynamic Cheatsheet**（2504.07952）。单轮问答场景，curator 自评答案后整块改写 cheatsheet，可存代码片段，无轨迹结构与溯源。GPT-4o Game of 24 10.0→99.0（Table 1）。
 
-**ACE**（2510.04618）。Generator、Reflector、Curator 由同一 LLM 担任。Reflector 输出 `reasoning / error_identification / root_cause_analysis / correct_approach / key_insight / bullet_tags`，并对本次用到的每条 bullet 标 helpful / harmful / neutral。Curator 的 prompt 要点为 "Identify ONLY the NEW insights … MISSING from the current playbook"、"Do NOT regenerate the entire playbook"，输出 `operations:[{type:"ADD", section, content}]`。增量 delta 由确定性非 LLM 逻辑合并；grow-and-refine 用 embedding 合并相似 bullet，阈值取 50% / 70% / 90% 影响小。bullet 形如 `[ctx-00263] helpful=1 harmful=0 :: content`，Generator 输出所用 `bullet_ids`，因此记录"被哪次执行使用及效果"，不记录"由哪条轨迹生成"。offline 模式在训练集上最多 5 epoch。AppWorld ReAct 42.4 → offline + GT 59.4、无 GT 57.2，同条件 Dynamic Cheatsheet 51.9（Table 1）；相对 GEPA 延迟降 82.3%（Table 4）。
+**ACE**（2510.04618）。Generator、Reflector、Curator 由同一 LLM 担任。Reflector 输出 `reasoning / error_identification / root_cause_analysis / correct_approach / key_insight / bullet_tags`，并对本次用到的每条 bullet 标 helpful / harmful / neutral。Curator 的 prompt 要点为 "Identify ONLY the NEW insights … MISSING from the current playbook"、"Do NOT regenerate the entire playbook"，输出 `operations:[{type:"ADD", section, content}]`。增量 delta 由确定性非 LLM 逻辑合并；grow-and-refine 用 embedding 合并相似 bullet，阈值取 50% / 70% / 90% 影响小。bullet 形如 `[ctx-00263] helpful=1 harmful=0 :: content`，Generator 输出所用 `bullet_ids`，因此记录"被哪次执行使用及效果"，不记录"由哪条轨迹生成"。offline 模式在训练集上最多 5 epoch。AppWorld ReAct 42.4 → offline + GT 59.4、无 GT 57.2，同条件 Dynamic Cheatsheet 51.9（Table 1）；相对 GEPA 延迟降 82.3%（Table 4）。主实验三个角色均为 DeepSeek-V3.1；固定 Generator 与 Curator、只更换 Reflector 时，FiNER 上 GPT-OSS-120B、DeepSeek-V3.1、GPT-5.1 分别为 76.6、78.3、78.5，基线 70.7（Table 16）。
 
 **G-Memory**（2506.07398）。面向多 agent 系统，三层图：interaction graph（稀疏化原轨迹，要求 "strictly follow the original trajectory"）、query graph、insight graph（insight 文本 + 支持它的 query 集合 Ω）。insight 主要由相似任务的一败一成对比得出，另有 merge-rules prompt 把相似 insight 合并为有限条规则。溯源链完整：insight → Ω → query → interaction graph。GPT-4o-mini AutoGen 平均 48.27→57.18（Table 1）。
 
 **H²R**（2509.12810）。用 hindsight 反推成功轨迹的子目标序列并切分子轨迹；高层 insight 由同任务 τ+ / τ− 对比得出，沿用 ExpeL 的 add / modify / upvote / downvote，低层 insight 按子目标抽取。AlfWorld / PDDLGame 成功率 ExpeL 72.4 / 72.2 → 75.9 / 80.5（Table I），评测规模小（每环境 3 episode × 3 次）。任务—子目标两层与根 span—子 span 结构对应。
 
-**EvolveR**（2510.16079）。成功轨迹产出 guiding principle，失败轨迹产出 cautionary principle，原则由一句自然语言与 (s, p, o) 三元组组成。归纳分三层：同一问题多条采样由模型两两判语义等价后保留一条；与库内原则余弦 ≥0.85 时再由 LLM 二元判定，等价则把新轨迹并入已有原则；质量分 s(p)=(c_succ+1)/(c_use+2)，定期剪除 <0.3 的原则。合并时记录 τ_src→p*。Qwen2.5-3B 在 7 个 QA 上平均 0.382，Search-R1 为 0.325（Table 1）。
+**EvolveR**（2510.16079）。成功轨迹产出 guiding principle，失败轨迹产出 cautionary principle，原则由一句自然语言与 (s, p, o) 三元组组成。归纳分三层：同一问题多条采样由模型两两判语义等价后保留一条；与库内原则余弦 ≥0.85 时再由 LLM 二元判定，等价则把新轨迹并入已有原则；质量分 s(p)=(c_succ+1)/(c_use+2)，定期剪除 <0.3 的原则。合并时记录 τ_src→p*。Qwen2.5-3B 在 7 个 QA 上平均 0.382，Search-R1 为 0.325（Table 1）。自蒸馏与 GPT-4o-mini 教师蒸馏的对比（Table 2，EM）：0.5B 为 0.150 vs 0.220，1.5B 为 0.270 vs 0.290，3B 为 0.382 vs 0.370，作者把 3B 时自蒸馏略优归因于模型自身原则与策略的一致性。
 
 **Training-Free GRPO**（2510.08191）。每个 query 生成 G 条 rollout（数学 5、web 3），逐条做 step 级摘要；只有组内同时有成功和失败时才计算"语义优势"并提炼经验；一个 batch 汇总后统一做 Add / Delete / Modify / Keep，每条 ≤32 词。100 道题、3 epoch 成本约 18 美元。AIME25 67.9→73.3（Table 1）。前提是同任务多次 rollout。
 
@@ -372,13 +379,13 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 
 **Evo-Memory**（2511.20857）。流式基准，10 个数据集、10 余种记忆模块；记忆增益与数据集内任务相似度正相关（r=0.717 / 0.563，Fig. 3）。
 
-**ReMe**（2512.10696）。每个训练 query 采样 8 条轨迹，按 reward 排序后走三路：成功模式识别、失败分析（"determine the earliest key step that leads to suboptimal outcomes"）、同任务高低 reward 对比；LLM judge 只用于校验抽出的经验（<0.3 判无效）。条目为 ⟨使用场景 ω, 内容, 关键词, 置信度, 所用工具⟩，keypoint 级（成功 1–3、失败 1–3、对比 1–2 条）；embedding 去重，记录检索次数 f 与有效次数 u，f≥5 且 u/f≤0.5 删除；以 ω 的 embedding 为检索键。Qwen3-8B 在 BFCL-V3 + AppWorld 上 Avg@4 / Pass@4（4 次采样的平均成功率 / 4 次中至少一次成功的比例）27.65 / 46.20 → 34.94 / 55.03（Table 1）；keypoint 级优于轨迹级（Table 2）；仅加成功经验优于全加（44.33 vs 40.83，Table 3）。
+**ReMe**（2512.10696）。每个训练 query 采样 8 条轨迹，按 reward 排序后走三路：成功模式识别、失败分析（"determine the earliest key step that leads to suboptimal outcomes"）、同任务高低 reward 对比；LLM judge 只用于校验抽出的经验（<0.3 判无效）。条目为 ⟨使用场景 ω, 内容, 关键词, 置信度, 所用工具⟩，keypoint 级（成功 1–3、失败 1–3、对比 1–2 条）；embedding 去重，记录检索次数 f 与有效次数 u，f≥5 且 u/f≤0.5 删除；以 ω 的 embedding 为检索键。Qwen3-8B 在 BFCL-V3 + AppWorld 上 Avg@4 / Pass@4（4 次采样的平均成功率 / 4 次中至少一次成功的比例）27.65 / 46.20 → 34.94 / 55.03（Table 1）；keypoint 级优于轨迹级（Table 2）；仅加成功经验优于全加（44.33 vs 40.83，Table 3）。主实验中摘要模型与执行模型相同；执行模型固定为 Qwen3-8B、摘要模型换为 8B / 14B / 32B 时，BFCL-V3 Avg@4 为 44.50 / 46.33 / 47.83（Table 5，无标准差）。
 
 **AgentRR**（2505.17716）。记录 UI 操作、API 调用与每步状态，重放验证后总结为低层参数化脚本与高层"状态—下一步"描述，并生成 check function（前置条件、顺序约束、安全不变量）。属立场性工作，无定量评测。
 
 **SWE-Exp**（2507.23361）。从 MCTS 修复过程的 (指令, 动作, 仓库状态, 环境反馈) 序列中，成功与失败分别抽取 comprehension 与 modification 两类经验，键为 `issue_type` 与 `description`；检索时排除同仓库或时间更晚的经验以防泄漏，记录源 issue ID。SWE-Bench Verified DeepSeek-V3 35.4→42.0（Table 1）；注入 1 条经验最佳，库规模约 300 条后饱和。
 
-**ASI 与 SkillWeaver**。ASI（2504.06821）把判为成功的 episode 清洗（删执行出错的 step，thought 由平均 87.9 token 压缩到 13.4），归纳为 Python 函数，再把原轨迹改写为调用新技能的版本重放，三项检查通过才入库，通过率 15.6%；WebArena SR 40.4，AWM 为 36.3（Table 1）。SkillWeaver（2504.07079）在主动探索中合成 Playwright API，docstring 带 Usage Log；WebArena GPT-4o 22.6→29.8。
+**ASI 与 SkillWeaver**。ASI（2504.06821）把判为成功的 episode 清洗（删执行出错的 step，thought 由平均 87.9 token 压缩到 13.4），归纳为 Python 函数，再把原轨迹改写为调用新技能的版本重放，三项检查（重放结果正确、使用了新技能、每次调用都改变环境）通过才入库，通过率 15.6%；WebArena SR 40.4，AWM 为 36.3（Table 1）。验证的作用见 shopping 子集的表 3：未验证的文本技能 32.6，已验证的程序技能 36.4，已验证的文本技能 39.0；正文称执行验证提升 4.2 个点，与表中 32.6→36.4 的差值 3.8 不一致，本报告以表为准。SkillWeaver（2504.07079）在主动探索中合成 Playwright API，docstring 带 Usage Log；WebArena GPT-4o 22.6→29.8。
 
 **MemEvolve**（2512.18746，ICML 2026）。把记忆系统拆为 Encode / Store / Retrieve / Manage 四模块，在统一框架中实现 12 个系统，外环以成功率、成本、延迟做 Pareto 选择并改写记忆架构。结论为无单一最佳架构，手工设计系统表现不稳定（DILU 在 GAIA 上低于无记忆），演化结果倾向分层组织与多级抽象。
 
@@ -390,19 +397,19 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 
 | 工作 | 机制 | 数字 | 证据 |
 |---|---|---|---|
-| Memory-R1（2508.19828） | Memory Manager 执行 ADD / UPDATE / DELETE / NOOP，要点 "keep the version with more detail"；奖励为冻结 Answer Agent 的 EM，仅 152 条 QA 训练；输入为对话 | LoCoMo LLaMA-3.1-8B F1 45.02，Mem0 30.41（Table 1） | 原文 |
-| Mem-α（2509.25911） | RL 学习写入 core / semantic / episodic 三类记忆；奖励 = QA 正确率 + 格式 + β·压缩率 + γ·LLM 判定的操作有效性 | 去掉有效性项 0.642→0.543（Table 4） | 原文 |
+| Memory-R1（2508.19828） | Memory Manager 执行 ADD / UPDATE / DELETE / NOOP，要点 "keep the version with more detail"；奖励为冻结 Answer Agent 的 EM，仅 152 条 QA 训练；输入为对话 | LoCoMo LLaMA-3.1-8B F1 45.02，Mem0 30.41（Table 1）；以 GPT-4o-mini 作管理器时 Answer Agent 增益 +19.72，LLaMA-3.1-8B 管理器 +10.10 | 原文 |
+| Mem-α（2509.25911） | Qwen3-4B 以 RL 学习写入 core / semantic / episodic 三类记忆，回答由冻结的 Qwen3-32B 完成；奖励 = QA 正确率 + 格式 + β·压缩率 + γ·LLM 判定的操作有效性 | 验证集均分：未训练 Qwen3-4B 0.389，gpt-4.1-mini 0.517，Mem-α 0.642（Table 3）；去掉有效性项 0.642→0.543（Table 4） | 原文 |
 | MemSkill（2602.02474） | 演化对象为抽取技能；困难样本 KMeans 聚类后按 (1−reward)×失败次数排序，失败归为 storage / retrieval / memory quality 三类；每 100 步至多改 3 处，保留快照可回滚 | LoCoMo L-J（LLM-as-Judge 判定的答案正确率）53.82，A-MEM 49.71（Table 1） | 原文 |
 | MemRL（2601.03192） | 成功写 3–5 步 script，失败写反思并单列 "FAILED MEMORIES (for caution)"；Q←Q+0.3(r−Q)；按 0.5·相似度 + 0.5·Q 重排；不做合并 | 10 轮平均 CSR（累计成功率，cumulative success rate）0.798，MemP 0.760（Table 1） | 原文 |
 | OPD-Evolver（2606.17628） | traj / tip / skill / tool 四层；每 30 个任务做 lookup / merge / delete 维护；记忆价值 = 同组"被检索且被选中"与"被检索未被选中"的平均回报差 × (1 − 1/√(1+N⁺)) | 相对 ReasoningBank 至多 +11.5% | 原文；数字据摘要 |
-| EDGE（2608.21946） | 每步挑成功率 <0.4 的类别，一成一败对比生成 `{title, principle, when_to_apply}`，要点 "Each experience must be state-aware, not a generic tip"；每步 ≤3 条；组内一半带经验一半不带，Δe 的 EMA < −0.1 剪除 | ALFWorld 90.4，GRPO 82.1；去掉增益门控 72.3（Table 1、3） | 原文 |
+| EDGE（2608.21946） | 每步挑成功率 <0.4 的类别，一成一败对比生成 `{title, principle, when_to_apply}`，要点 "Each experience must be state-aware, not a generic tip"；每步 ≤3 条，经去重后写入经验库。同组 rollout 一半带经验、一半不带，增益 Δe 为两者平均回报之差：Δe>0 时带经验的 rollout 计入 RL 损失并触发向策略权重的蒸馏，Δe≤0 时带经验的 rollout 从损失中剔除、退化为 GRPO（增益门控）；经验库条目按 Δe 的 EMA（μ=0.5）低于 −0.1 剪除 | ALFWorld（Qwen2.5-7B-Instruct）90.4，GRPO 82.1；去掉增益门控 72.3，去掉剪除 86.7，去掉蒸馏 83.6（Table 1、3） | 原文 |
 | PMD（2607.01480） | Experience（每题 ≤5 成功 + ≤3 失败，新颖度门控）→ Insight（成败对比，正则检测捷径污染，比例约 39%→3%）→ Behavior（每 K 步按题目聚类抽象跨题指令）；最终自蒸馏写入权重 | Qwen3-8B LiveCodeBench 47.9→51.7（Table 2） | 原文 |
-| SkillRL（2602.08234） | 教师模型（o3）读成败轨迹生成通用 + 类别技能；验证集成功率 <0.4 的类别触发再生成，每次 ≤3 条，更新为并集 | ALFWorld 89.9，GRPO 77.6；去掉技能库 61.7 | 原文 |
+| SkillRL（2602.08234） | 教师模型（o3）读成败轨迹生成通用 + 类别技能；验证集成功率 <0.4 的类别触发再生成，每次 ≤3 条，更新为并集 | ALFWorld 89.9，GRPO 77.6；去掉技能库 61.7。Qwen2.5-7B 以自身作教师时 ALFWorld 42.5、WebShop 19.6，以 o3 作教师 89.9、72.7；Kimi-K2.5 自身作教师 88.5、73.4，o3 作教师 91.4、77.6（Table 5） | 原文 |
 | APEx（2609.02253） | Executor / Distiller / Planner 三阶段 GRPO，实例级轨迹记忆 + 类别级流程 skill | 7 个基准比 GPT-5.4 高 14.7，比最强记忆基线高 3.0 | 摘要 |
 | SciConsolidate（2607.24459） | 已验证成功与失败执行对比，归纳跨任务流程，开发集验证门，具体化为代码后 SFT | SciCode：27B 注入 +6.26；9B 注入几乎无收益，SFT 后 +11.25 | 摘要 |
 | AgentBrew（2609.05837） | 未过滤原始轨迹，无验证器；回溯推断任务指令，以 PMI（点互信息）逐动作分配信用，产出权重 | MCP 任务 Qwen3-32B +8.7，拒绝采样 +5.9 | 摘要 |
 
-两点共同观察：一是效用信号（EDGE 的 Δe、OPD-Evolver 的选中回报差、MemRL 的 Q 值）依赖"有 / 无该记忆"的对照或使用日志；二是 SciConsolidate 显示同一份经验对小模型以注入方式几乎无效、以训练方式有效，经验载体的选择与模型规模相关（参数化固化的边界见第 7.4 节）。
+三点共同观察：一是效用信号（EDGE 的 Δe、OPD-Evolver 的选中回报差、MemRL 的 Q 值）依赖"有 / 无该记忆"的对照或使用日志；二是 EDGE 的增益门控决定的是经验能否进入 RL 损失与蒸馏，作用对象为训练信号，入库不以 Δe 为条件，把它的消融（去掉门控后低于 GRPO）用作推理期记忆写入门控的证据时需注明这一差别；三是 SciConsolidate 显示同一份经验对小模型以注入方式几乎无效、以训练方式有效，经验载体的选择与模型规模相关（参数化固化的边界见第 7.4 节）。
 
 ### 4.5 面向存量轨迹的离线批量生成（2026）
 
@@ -415,20 +422,22 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 - 生成：Trajectory Intelligence Extractor 把 thought 分为 analytical / planning / validation / reflection；Decision Attribution Analyzer 沿推理步骤反向追溯导致结果的决策，区分 immediate / proximate / root cause；Contextual Learning Generator 按类别产出 strategy tip（干净成功）、recovery tip（失败后恢复）、optimization tip（低效成功），每子任务 2–4 条。字段含 category、content、purpose、implementation steps、trigger condition、可选 negative example、priority、source trajectory ID、source outcome。
 - 分组与合并：子任务描述先泛化（实体抽象、动作动词规范化），再做 embedding 层次凝聚聚类（cosine 约 0.85），簇内去重、冲突消解（成功来源优先、已验证 recovery tip 保留）、综合，并生成簇的 canonical description 作为检索键。
 - 溯源：合并后的 tip 保留全部 source trajectory ID，子任务记录保留原轨迹 step 区间。
-- 效果：AppWorld test-normal（GPT-4.1）TGC / SGC（任务目标完成率 / 场景目标完成率，场景指同一场景下的一组任务全部完成）69.6 / 50.0 → 73.2 / 64.3（subtask 级 + LLM 选择，Table 1）；难度 3 的 SGC 19.1→47.6；task 级 + τ≥0.5 top-3 低于基线（Table 3），检索阈值敏感。只有一个基准、一个模型。
+- 效果：AppWorld test-normal（GPT-4.1）TGC / SGC（任务目标完成率 / 场景目标完成率，场景指同一场景下的一组任务全部完成）69.6 / 50.0 → 73.2 / 64.3（subtask 级 + LLM 选择，Table 1）；难度 3 的 SGC 19.1→47.6；task 级 + τ≥0.5 top-3 低于基线（Table 3），检索阈值敏感。只有一个基准、一个模型；agent 与 tip 抽取均用 GPT-4.1，正文称两个阶段可用不同模型。
 - 公开情况：论文只有 v1，无附录与 prompt 原文；生成、子任务切分与合并 prompt 位于开源实现 altk-evolve（`altk_evolve/llm/guidelines/prompts/`），与论文实验版本是否一致无法确认。生成 prompt 声明无 GT，要求 "Self-reported success is not evidence"、"An empty list is a valid and preferred result"；默认关闭子任务切分，代码注释给出的理由是切分边界可能落在"失败尝试"与"随后修正"之间，使失败段产出自信但错误的 guideline。四类结果分型、归因分析器、聚类阈值与合并后溯源在源码中的实际行为见第 5.2、5.5 节。
 
 中间件化版本 **Memory as Middleware**（2609.32091）补充了 gist + 原文指针、support count、控制面批量合并、add / update / merge / supersede / quarantine / reject 写操作与 append-only 使用审计，评测数字与 2603.10600 为同一实验；merge / supersede / quarantine / reject 在 altk-evolve 当前源码中未找到。论文把合并后的完整血缘列为开放问题。
 
 **WISE-Flow**（2601.08158）。输入为服务对话事件流，每个事件为 (来源 ∈ {user, assistant, environment}, 内容)，含工具调用、工具输出、API 返回码与错误信息。同一任务的轨迹分为 clean success（无工具错误）、recovered success、failure，每条 clean success 与 recovered success 或 failure 配对成对比块。按任务聚合多条轨迹生成一个 JSON workflow（任务描述、有序 milestones、入口步骤、计划步骤，每个 action block 带全局与场景级 prerequisites 及基于环境反馈的条件跳转），分三遍：分析目标一致的动作序列与关键失败反馈 → 起草 → 反思修订（逐条核对步骤、前置条件、分支是否有轨迹支持，删除无依据项），三遍优于一遍（App. A.2.1）。τ²-bench telecom Claude 3.7 pass^1（单次运行的成功率；pass^k 为同一任务 k 次运行全部成功的比例）0.462→0.564（Table 2）；ToolSandbox 上完整 trace 优于仅对话文本（SR 93.5% vs 89.6%，Table 3）；结构化 workflow 优于原始日志与纯文本 workflow（one-shot SR 85.0% vs 71.6% / 70.9%，Table 4）；按任务聚合比逐轨迹归纳 SR 高约 6%（Sec. 5.4，原文未说明为绝对差还是相对差）。workflow 不链接源轨迹。prompt 只出现在附录图中（Fig. 4、6–9），文字可从 arXiv 源码包的矢量图 PDF 提取；未发布代码。
 
-**Trace2Skill**（2603.25158）。每条轨迹按 GT 标成败；论文设置下 128 个子 agent 并行，success analyst 单遍分析，error analyst 以 agentic loop 对照 GT 验证修复后再提出 patch。层次合并每次至多合并 32 个 patch，层数 ⌈log₃₂|P|⌉；在多个独立 patch 中重复出现的编辑视为普遍模式保留，只出现一两次的视为特例丢弃；确定性护栏拒绝引用不存在文件或同区间冲突的 patch。产物为 SKILL.md + scripts / references 目录。SpreadsheetBench-Verified 比人写技能高 21.5 个百分点（Table 1）；并行 + 层次合并 65.83%、约 3 分钟，逐条顺序更新 61.83%、约 60 分钟（Table 4）；同设置 ReasoningBank 56.00%（Table 5）。官方仓库（Qwen-Applications/Trace2Skill）的合并批大小、频次保留方式与最终技能的溯源与论文描述存在差异（第 5.5 节）。
+**Trace2Skill**（2603.25158）。每条轨迹按 GT 标成败；论文设置下 128 个子 agent 并行，success analyst 单遍分析，error analyst 以 agentic loop 对照 GT 验证修复后再提出 patch。层次合并每次至多合并 32 个 patch，层数 ⌈log₃₂|P|⌉；在多个独立 patch 中重复出现的编辑视为普遍模式保留，只出现一两次的视为特例丢弃；确定性护栏拒绝引用不存在文件或同区间冲突的 patch。产物为 SKILL.md + scripts / references 目录。SpreadsheetBench-Verified 比人写技能高 21.5 个百分点（Table 1）；并行 + 层次合并 65.83%、约 3 分钟，逐条顺序更新 61.83%、约 60 分钟（Table 4）；同设置 ReasoningBank 56.00%（Table 5）。聚合环节默认不设验证门控：在 32 题验证集上逐个贪心挑选 patch 的各条曲线都低于"全部 patch 合并"，作者归因于 patch 之间的副作用回归与语义重叠；按子集做贝叶斯优化选择时 Vrf 65.83→69.83，但需要逐子集物化并评估。论文设置为"100% self-evolution"，同一模型（Qwen3.5-122B-A10B 或 35B-A3B）产生轨迹、提出 patch 并编辑技能；以 Claude Opus 4.6 驱动的 Anthropic skill-creator 作外部基线时，SpreadsheetBench Vrf 平均 23.33，低于 Trace2Skill 的 48.63 与原技能的 29.00（Deepening 模式，Table 14）。官方仓库（Qwen-Applications/Trace2Skill）的合并批大小、频次保留方式与最终技能的溯源与论文描述存在差异（第 5.5 节）。
 
-**SkillBoost**（2607.26643）。离线整集运行；失败轨迹回溯到首个偏离规则的 step，按根因聚类，区分策略缺陷与能力缺口；每簇生成 N=4 个修复候选，接收条件为 "a candidate must fix more cases than it breaks"；技能文件版本化并关联诊断与回测报告。去掉接收门控 BFCL 48.5→37.7（Table V）。官方仓库（HQ-Lin/SkillBoost）定义 failureCluster（`case_ids`、7 类 `defect_class`、`earliest_causal_error`、`root_cause`、`counterfactual`、`competing_hypothesis` 等）与 repairAction（operator ∈ ADD / REFINE / REORDER / PRUNE / DECOMPOSE，含 `applicability`、`non_applicability`、`falsification_check`）；溯源链为 case → cluster → action → parent_skill.sha256；门控默认阈值与论文表述的差异见第 5.5 节。
+**SkillBoost**（2607.26643）。离线整集运行；失败轨迹回溯到首个偏离规则的 step，按根因聚类，区分策略缺陷与能力缺口；每簇生成 N=4 个修复候选，接收条件为 "a candidate must fix more cases than it breaks"；技能文件版本化并关联诊断与回测报告。去掉接收门控（每轮接受在失败集上修好最多的候选、跳过全集回测）后 BFCL 48.5→37.7（Claude-opus-4-6，Table V），仍高于无技能的 27.1；三个模型、两个基准上去门控均下降。作者举例：一次把规则从 87 行扩到 150 行的修改修好 20 例、改坏 23 例，被门控拒绝。任务模型冻结，只执行与打分；归因与变异由独立的演化模型完成，仓库默认以非交互方式启动 Claude Code 担任。官方仓库（HQ-Lin/SkillBoost）定义 failureCluster（`case_ids`、7 类 `defect_class`、`earliest_causal_error`、`root_cause`、`counterfactual`、`competing_hypothesis` 等）与 repairAction（operator ∈ ADD / REFINE / REORDER / PRUNE / DECOMPOSE，含 `applicability`、`non_applicability`、`falsification_check`）；溯源链为 case → cluster → action → parent_skill.sha256；门控默认阈值与论文表述的差异见第 5.5 节。
 
-**CONTRAMEM**（2608.22533）。对同一任务收集多个模型的完整轨迹，由 Reflector 按正确性、效率、错误恢复、失败模式对比，离线分批构建 app 级 Function Card 与 task 级 Skill Card；更新为局部编辑，不整体重写、不无限追加。GAIA2 / ARE 留出集 26.2%→55.3%（GPT-5.5 27.5→61.0，Sonnet 4.6 28.0→52.5，DeepSeek V4 Pro 23.0→52.5），未参与构建的 Qwen3.7 Plus 18.5→35.5；同等轨迹预算下多模型多样性优于同模型自采样（据摘要）。
+**CONTRAMEM**（2608.22533）。对同一任务收集多个模型的完整轨迹，由 Reflector 按正确性、效率、错误恢复、失败模式对比，离线分批构建 app 级 Function Card 与 task 级 Skill Card；更新为局部编辑，不整体重写、不无限追加。GAIA2 / ARE 留出集 26.2%→55.3%（GPT-5.5 27.5→61.0，Sonnet 4.6 28.0→52.5，DeepSeek V4 Pro 23.0→52.5），未参与构建的 Qwen3.7 Plus 18.5→35.5；同等轨迹预算下多模型多样性优于同模型自采样（据摘要）。Reflector 所用模型摘要未写明。
 
-**Grounding Agent Memory**（2609.11060）。任务结束后由异步 curator 处理完整轨迹；curator 持有只读、最小权限的环境工具，对候选记忆核验、限定适用范围、刷新后写入。CLBench pass 39%→73%，单题查询 8.8→4.7，成本 $3.38→1.68；APEX 18/18 对比为正，工具调用减少 16%–75%（据摘要）。该工作给出无可重放环境时以"环境只读查询"做验证门控的做法。
+**Grounding Agent Memory**（2609.11060，Microsoft，基于 GitHub Copilot SDK harness）。任务结束后由异步 curator 按"提议—探测—提交"（propose–probe–commit）处理完整轨迹：curator 持有任务工具中只读、最小权限的子集，对不确定的候选或已有记录发起定向查询（环境探测），据此新建、修订、收窄、删除或跳过。探测类型包括区分偶然答案与可复用关系、比较更短路径、在另一数据切片上检验所称关系、检查前置条件、查看轨迹遗漏的状态、怀疑漂移时重查；探测不改变环境、不进入任务轨迹、不消耗任务 agent 的预算。
+
+CLBench 漂移设置（GPT-5.4，40 题，第 20 题后 schema 迁移，5 次配对运行，均值 ± 95% 置信区间，原文表 1a）的结果依次为：无记忆 pass 39 ± 4%、reward 8.60、单题查询 8.8、任务 agent 成本 $3.38；全量轨迹放入上下文（Full ICL）61 ± 11%、21.39、3.0、$2.01；仅轨迹整理的记忆 70 ± 16%、20.00、5.6、$1.99；带环境探测的记忆 73 ± 5%、22.60、4.7、$1.68。摘要中的"39%→73%"对应"无记忆 → 带环境探测的记忆"。记忆本身带来约 31 个百分点；环境探测在仅轨迹整理之上的增量为 pass 约 3 个百分点、reward +2.60，两者置信区间重叠，探测的作用主要表现为区间收窄（±16 → ±5）与查询数、成本下降。任务 agent 成本不含整理与蒸馏阶段，后者单独记账，正文表格未给。无漂移的 30 题上，reward 在 Sonnet 4.6 为 0.673（仅整理）与 0.748（带探测），Opus 4.7 为 0.696 与 0.721（表 1b，标准差口径）。改编 APEX 的 6 个 world × 3 种记忆系统共 18 组对比全部为正，带探测的配置在 5 个 world 中单位任务 agent 成本的 reward 增益最高，任务 agent 工具调用比无记忆减少 16%–75%。作者把探测的收益解释为"轨迹留下未解决的连接、文件位置或流程时最有用"，属于机制解释，未作为已确证的分组效应。该工作给出无可重放环境时以环境只读查询做验证的做法。
 
 其余 2026 年工作按六个环节列于表 4-4。
 
@@ -436,18 +445,18 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 
 | 工作 | 选样 | 分组 / 对比 | 合并 | 验证门控 | 溯源 | 数字 |
 |---|---|---|---|---|---|---|
-| SkillOpt（2605.23904） | 成功、失败 rollout 分别组成 minibatch | 成败提案分别合并后组合 | 16 个 analyst 并行出 append / insert_after / replace / delete；按"文本学习率"截断编辑数 | held-out selection 分数严格提高才接受，被拒编辑进缓冲 | 编辑报告 | SpreadsheetBench 41.8→80.7（Table 1） |
+| SkillOpt（2605.23904） | 成功、失败 rollout 分别组成 minibatch | 成败提案分别合并后组合 | 16 个 analyst 并行出 append / insert_after / replace / delete；按"文本学习率"截断编辑数 | held-out selection 分数严格提高才接受（平局拒绝），被拒编辑进缓冲；无去门控消融 | 编辑报告 | SpreadsheetBench 41.8→80.7（Table 1）；在 SkillBoost 的比较表中，Qwen-3.7-max、Qwen-3.6-plus 上的 BFCL 为 32.7、31.3，低于无技能的 49.3、50.7 |
 | EvoSOP（2607.07321） | 不区分成败 | 每 5 条日志一个 mini-batch，识别 2–5 个耦合工具调用 | Merger 合并功能重叠 SOP | Reviewer 把每次调用标为 Optimal / Partial / Neutral / Negative / Defect 并剪枝 | 源工具调用消息编号 | ACEBench Multi-Step 80.8→85.8，τ²-bench telecom 37.1→43.3（Table 1） |
 | WebXSkill（2604.13318） | 成功与失败合成轨迹 | 挖 3–6 步参数化技能 | 三级查重：同名 → 同站 Jaccard → 全库 embedding top-20 交 LLM 判 new / update / skip | 执行验证不通过即丢弃 | start_url | WebArena GPT-5 59.7→69.5；去掉执行验证 55.2（Table 2） |
 | DENSE（2609.21423） | 不用结果标签 | 单轨迹内压缩为子任务树，节点含 shortcut、dead-end、open issue | — | — | 每条内容引用源 action / 节点 ID | Terminal-Bench 2.1 DeepSeek V4 Pro 51.44→67.08（Table 2）；面向同任务重试 |
 | QCR（2608.12847） | 仅环境 checker 认可的成功轨迹（623 条） | 使用时针对目标查询生成四字段笔记 | 近重复去除 | checker | 审计元数据；历史 ID、路径视为 "source-side evidence" | 三环境平均 QCR 62.3%，完整轨迹 51.6%，离线通用摘要 47.9%（Table 1） |
-| HarnessEvolve（2609.00829） | 失败轨迹对齐参考轨迹 | 错误信号聚类为系统性失败模式 | 按 batch / epoch 修改 prompt、skill、工具 | 质量门（防泄漏、防 prompt 膨胀）+ 不退化近期 batch；留出集选快照 | 快照版本 | 摘要无数字 |
+| HarnessEvolve（2609.00829） | 失败轨迹对齐参考轨迹 | 错误信号聚类为系统性失败模式 | 按 batch / epoch 修改 prompt、skill、工具 | 质量门（防泄漏、防 prompt 膨胀）+ 当前 batch 改善且近期 batch 不退化；epoch 末在留出集上选快照 | 快照版本 | CloudCoreNetwork-QA（Qwen3.6-27B）去掉质量门（保留性能门）86.9→80.1 |
 | SkillPivot（2609.29154） | 失败轨迹 | 定位有效前缀与错误后缀的分叉点，教师从同一前缀续写成功轨迹，对比两条后缀 | 局部条件化编辑 | 未述 | 未述 | 摘要无数字 |
 | SkillMorph（2610.11858） | 多运行多任务成败轨迹 + 轮次间差异 | 证据关联到 skill 具体内容 | 定位后修订 | 未述 | 证据→内容链接 | 优于原 skill 与 4 种演化方法；6 个修订 PR 被真实团队接受（据摘要） |
 | AMD（2608.07169） | 教师（GPT-5-mini）成功轨迹 | Workflow / Subtask / Function 三层 | 无训练蒸馏 | 未述 | 未述 | 4–8B 学生 AppWorld +27.2pp，BFCL V3 +11.2，ToolSandbox +3.4；Subtask 层贡献最大（据摘要） |
 | SAGA（2610.06964） | 交互轨迹 | 情景描述、可复用流程、带适用条件的原则三层 | 在线 | 未述 | 每层链接回执行证据 | 摘要无数字 |
 | Tool-Making（2607.08010） | 生产执行轨迹中重复出现的 SOP 步骤 | 结合后端 schema 与实际值 | 编译为带版本工具 | 用标注用例修复后部署 | 版本化 | 生产 p50 延迟 −42%；1,500 条历史告警错误率最多 −53%（据摘要） |
-| Recuris（2608.24876） | 结构化执行证据 | Meta-Agent 把失败归因到具体记忆组件 | 局部更新 | 先验证再接受 | 未述 | 37 组中 35 组提升；tau-bench +15.6（据摘要） |
+| Recuris（2608.24876） | 结构化执行证据 | Meta-Agent 把失败归因到具体记忆组件 | 局部更新 | 补丁须修好源失败任务并在留出 dev 集锚点任务上满足回归判据；dev 集 10–14 题时同一补丁包两次运行相差 [−12.1, +11.1] 点，被拒的 18 个候选区间全部含零，不执行 dev 门控的运行仍 +14.5 至 +18.0 | 未述 | 37 组中 35 组提升；tau-bench +15.6（据摘要） |
 | MACE（2609.21533） | 多 agent 协作轨迹全部 | 功能单元子图（条件、动作、输出），单元间 support / conflict / repair 关系 | 按使用结果更新分数与关系 | 记忆预算 | 记录每次选中单元与结果 | 8 个基准均值 81.11%，SAGE 78.97%（据摘要） |
 | MERIT（2608.05906） | oracle 验证的修正 + 失败方向 | 确定性失败类型分类 | — | 只检索已结束 episode | 未述 | Spider 66.34→69.79，BIRD 47.35→48.44；与无类型检索差异不显著（据摘要） |
 
@@ -461,9 +470,9 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 
 | 工作 | 机制 | 数字 | 证据 |
 |---|---|---|---|
-| SkillForge（2610.09832，NeurIPS 2026） | trial / active / stable / retired 四状态，按 fitness 迁移；用基础模型 rollout 预先淘汰低分 skill；发布 SkillFurnace（5k+ 条，含淘汰事件与失败类别） | 比最强基线最高相对 +7.8% | 摘要 |
-| Skill-V（2610.11781） | skill 为带版本、可证伪的契约；失败触发新建，契约评估与任务结果不一致触发修订；修订须保持受保护约束并在历史重放上不退化 | ALFWorld 95.3%，WebShop 85.9%，库更紧凑 | 摘要 |
-| SkillSpec（2610.00704） | 多次配对评估一致通过才提交；按优化轨迹（含被拒候选）决定 flat / graph / hybrid 组织 | 6 个基准比 SkillOpt 平均 +6.89% | 摘要 |
+| SkillForge（2610.09832，NeurIPS 2026） | trial / active / stable / retired 四状态：新技能与变异子技能进入 trial，使用次数达阈值即转 active（只按次数）；active 且成功率 f<0.4、使用达阈值则 retired（种子技能保护阈值更高）；f≥0.7 为 stable；种子技能先用基础模型 rollout 预淘汰（f̂<0.3 且使用 ≥3）；发布 SkillFurnace（5k+ 条，含淘汰事件与失败类别） | 比最强基线最高相对 +7.8%（据摘要）；去掉整个生命周期在 WebShop 上相对 −7.4%，预淘汰为单项贡献最大 | 原文 |
+| Skill-V（2610.11781） | skill 为带版本、可证伪的契约；失败触发新建，契约评估与任务结果不一致触发修订；修订须保持受保护约束，并在与该更新关联的已观测证据池上做影子回放（shadow replay：用修订后的契约重新判定历史轨迹，与环境结果比较 Disc、FNR、BAcc，不重新执行环境），三项不变差且改动硬条件时至少一项严格改善 | ALFWorld 95.3%，WebShop 85.9%，库更紧凑；去掉证据门控 ALFWorld 75.0，提交的 46 次修订中 9 次在回放指标上退化；作者说明环境规则变化后历史轨迹不再代表正确行为 | 原文 |
+| SkillSpec（2610.00704） | 同一验证集上逐例配对比较、重复 K 次，合计净增益 ≥G_pool 且每次 ≥G_min（默认 0）才提交；按优化轨迹（含被拒候选）决定 flat / graph / hybrid 组织；无去门控消融 | 6 个基准比 SkillOpt 平均 +6.89%（据摘要） | 原文（机制） |
 | SkillVine（2609.32731） | 库演化建模为图搜索，主干与分支并行，库带版本号 | 10 组中 9 组最优 | 摘要 |
 | SkillOps（2605.13716） | 技能契约 + 层次生态图，按效用、兼容性、风险、验证四维诊断"技能技术债"，规则化维护，维护阶段几乎不调用 LLM | ALFWorld 79.5%，+8.8pp | 摘要 |
 | SkillGraph（2605.12039） | 使用 ≥20 次且成功率 <0.15 的技能标记弃用 | — | 二手资料 |
@@ -472,7 +481,7 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 
 两篇综述给出分类框架。Dynamic Agent Skills: A Lifecycle Survey（2607.10113，TMLR）覆盖 124 篇，把 skill 生命周期分为证据、提议、验证准入、存储、检索、维护、蒸馏、治理与溯源回滚 8 个阶段，并给出 skill 记录 schema 与 10 种库更新操作。Self-Evolving Coding Agents 综述（2608.03392）按演化对象分为框架、记忆、skill、工具、workflow、上下文六类，列出可逆性与反馈可靠性两项挑战。EvoPathBench（2609.24663）按 checkpoint 冻结产物评测泛化、保持与规则适应，指出瓶颈在候选的评估与选择（以上三项均据摘要）。
 
-这一组工作的共同点是：更新以候选形式提出，经重放、配对评估或 fitness 判定后才进入稳定状态，并保留版本以便回滚。Epistemics 的 ρ=−0.24（n=12，置信区间跨零，据摘要）说明操作级质量分不能代替端到端迁移评测；Prompt-side Playbooks（2608.05778）在 TAU2-Bench 上 135 个路由级效应中只有 1 个通过 Holm 校正（据摘要），说明离线评测需要多重比较校正（评测方法见《输入、存储与评测调研》第 8.5 节）。
+这一组工作的共同点是：更新以候选形式提出，经重放、配对评估或 fitness 判定后才进入稳定状态，并保留版本以便回滚；门控的分类、消融与离线可行方式见第 4.8.6 节。Epistemics 的 ρ=−0.24（n=12，置信区间跨零，据摘要）说明操作级质量分不能代替端到端迁移评测；Prompt-side Playbooks（2608.05778）在 TAU2-Bench 上 135 个路由级效应中只有 1 个通过 Holm 校正（据摘要），说明离线评测需要多重比较校正（评测方法见《输入、存储与评测调研》第 8.5 节）。
 
 ### 4.7 风险与负面结果
 
@@ -490,8 +499,9 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 | 组合风险 | EvoBreak（2608.01759） | 多条各自良性的蒸馏经验组合后突破安全边界 | 摘要无数字 | 摘要 |
 | 技能提取 | SigLeak（2607.25560） | 只用普通 query 的执行轨迹，对比开 / 关 skill 的轨迹迭代精炼，黑盒重建专有 skill，不使用成功标签 | +6.88pp | 摘要 |
 | 权限塌缩 | AuthMem-Bench（2608.01679）、TMA-NM（2606.24322） | 整合保留声明内容、丢失来源权限；agent 自身总结、可信工具回显、伪造佐证三条把低权限内容提升为高权限的通道（洗白，laundering） | 49 个配置中 48 个出现；持久化权限标签后越权率 16.9%→0.0%；TMA-NM 在 8 个模型上洗白攻击成功率为 0% | 摘要 |
-| 技能过拟合 | SkillBoost（2607.26643） | SkillOpt、Trace2Skill 存在测试减训练为负的情况 | Table III；去掉接收门控 BFCL 48.5→37.7 | 原文 |
-| 有害经验 | EDGE（2608.21946） | 去掉增益门控后低于无经验的 GRPO | 72.3 vs 82.1（Table 3） | 原文 |
+| 技能过拟合 | SkillBoost（2607.26643） | SkillOpt、Trace2Skill 存在测试减训练为负的情况 | Table III；去掉接收门控 BFCL 48.5→37.7（仍高于无技能 27.1） | 原文 |
+| 有害经验 | EDGE（2608.21946） | 去掉增益门控后，不论经验是否带来增益都计入 RL 损失并参与蒸馏，结果低于无经验的 GRPO；该门控作用于训练信号，与写入经验库的准入不同 | 72.3 vs 82.1（Table 3） | 原文 |
+| 自评准入 | Crystallization（2608.07213） | 以多样本自投票代替外部验证决定卡片入库 | 自投票候选中只有 3.9% 通过 oracle；不经外部验证的卡片库比无记忆低 2.03pp | 原文 |
 | 自生成技能无增益 | SkillsBench（2602.12670） | 模型在解题前、不看执行经验自行写技能 | 自生成约 −1.3pp；人工整理技能约 +16pp（摘要 33.9%→50.5%，正文表 24.3%→40.6%） | 原文 |
 | 自动构建记忆无增益 | VibeMemBench（2609.23570） | 4 个现有记忆系统在 code agent 上自行构建与检索 | 12 组中 11 组未超过无记忆基线，glm-5 + Mem0 −5.5（CI 不含零）；直接注入已验证经验 +1.1–4.5pp，CI 均跨零，且目标按"经验有效"筛选，属上限估计 | 原文 |
 | 技能 shadowing | Skill Shadowing（2605.24050） | 技能库变大后选错技能，上下文长度影响不显著 | 库扩到 202 个时最多 −21% | 摘要 |
@@ -550,7 +560,7 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 | 分组批量归纳 | AWM（按网站一次归纳）、WISE-Flow（按任务三遍校验）、CLIN、CONTRAMEM（同任务多模型） | 分组键决定记忆的适用范围 |
 | 层次合并 + 支持频次 | Trace2Skill（论文 32 路，仓库 5 路）、G-Memory（支持集 Ω）、Memory as Middleware（support count） | 频次作为普遍模式的证据，同时是投毒攻击面 |
 | 效用计数与淘汰 | ExpeL 投票、ACE helpful / harmful、EvolveR、ReMe u/f、MemRL Q 值、EDGE Δe、OPD-Evolver、Darwinian Memory 存活值、SkillForge fitness | 依赖记忆被使用后的结果日志 |
-| 验证门控 | ASI 重放、SkillOpt / SkillBoost held-out 接收、Skill-V 历史重放、SkillSpec 配对评估、EvoSOP Reviewer、WebXSkill 执行验证、Grounding Agent Memory 环境只读核验、WISE-Flow 反思核对 | 按可得性分为环境只读查询、历史 trace 重放、held-out 对照、LLM 核对 |
+| 验证门控 | ASI 重放、SkillOpt / SkillBoost held-out 接收、Skill-V 历史重放、SkillSpec 配对评估、EvoSOP Reviewer、WebXSkill 执行验证、Grounding Agent Memory 环境只读核验、WISE-Flow 反思核对 | 按可得性分为环境只读查询、历史 trace 重放、held-out 对照、LLM 核对；分类、消融与离线可行方式见第 4.8.6 节 |
 
 #### 4.8.4 批量方式的实证
 
@@ -565,7 +575,8 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 | 结构化 workflow vs 原始日志 / 纯文本 | 85.0% vs 71.6% / 70.9% | WISE-Flow Table 4 |
 | 查询时生成笔记 vs 离线通用摘要 vs 完整轨迹 | 62.3% vs 47.9% vs 51.6% | QCR Table 1 |
 | 多模型对比 vs 同模型自采样 | 前者更好（同等预算） | CONTRAMEM（据摘要） |
-| 有接收门控 vs 无门控 | BFCL 48.5 vs 37.7 | SkillBoost Table V |
+| 有接收门控 vs 无门控 | BFCL 48.5 vs 37.7（无技能 27.1） | SkillBoost Table V |
+| 逐 patch 按验证集贪心选择 vs 全部 patch 聚合 | 前者各曲线均低于后者；子集级贝叶斯优化选择 65.83→69.83 | Trace2Skill |
 
 现有证据支持"分组后一次性归纳、并行提议后层次合并、合并结果经门控后生效"的批量方式，反对流式反复重写同一份记忆。QCR 与 2601.22436 同时提示离线摘要会丢失可用信息，原始轨迹需要作为证据保留并可回取。
 
@@ -574,14 +585,165 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 1. **span 级溯源**。保留"记忆 → 源轨迹"关联的有 IBM 2603.10600（trace ID + step 区间）、G-Memory、EvolveR、AutoManual、DENSE、TRAD、SkillBoost 仓库、SAGA、SkillMorph；未见以 OTel span ID 为锚点、支持按来源撤销或重新生成记忆的研究。开源实现中 altk-evolve 溯源最细到 span_id，合并后丢失；Trace2Skill 最终技能不回指 trace。溯源与删除级联的研究见《输入、存储与评测调研》第 7.4、7.7.6 节。
 2. **选样预算**。现有工作多为全量处理，或按类别成功率挑薄弱区（EDGE、SkillRL）。按任务簇重复度排序（Evo-Memory 发现增益与任务相似度正相关）、成败对的可得性、每簇抽样数量与多模型配比，缺少系统比较。
 3. **无标签 trace**。多数方法依赖 GT；judge 误差对记忆质量的影响只有 ReasoningBank 做过敏感性分析，2608.00017 给出自评偏差闭环放大的反例。altk-evolve 与 AgentBrew 是不依赖结果标签的实现，但缺少与有标签方法的对照。
-4. **离线评测闭环**。SkillOpt、SkillBoost、Skill-V、ASI 的接收门控依赖可重放环境；纯离线 trace 库只能依靠环境只读核验、LLM 校验或部署后的使用统计，三者的效果对比缺少实证。整合质量分与真实迁移不相关（2609.33013，据摘要），接收决策需以有 / 无记忆端到端对照为准。
+4. **离线评测闭环**。SkillOpt、SkillBoost、ASI 的接收门控依赖可重放环境；纯离线 trace 库可用的方式为对照源 trace 的依据校验、trace 内执行侧信号 verifier、跨 trace 独立支持、影子回放、按时间切分，以及有只读访问时的环境核验与部署后的使用统计（第 4.8.6 节），各方式之间的效果对比缺少实证，经验条目类在纯离线 trace 上的直接证据只有 MemGuard、Grounding Agent Memory、Crystallization 三项。整合质量分与真实迁移不相关（2609.33013，据摘要），接收决策需以有 / 无记忆端到端对照为准。
 5. **层级 trace 结构**。H²R（任务—子目标）、G-Memory（utterance 图）、LEGOMem（orchestrator / worker）、MACE（功能单元图）最接近 span 树；开源实现普遍把 trace 压平为消息或步骤文本，未见直接以多 agent、多层 span 树为输入做归纳并评估收益的工作。
 6. **合并退化**。流式合并退化（2605.12978）、技能过拟合（SkillBoost）、库规模导致的 shadowing（2605.24050）说明合并次数与库规模都需要上限或门控；把原始情景作为主要证据保留是现有缓解手段，何时触发重新归纳缺少研究。
 7. **安全**。仅由良性成功轨迹生成的经验会提高攻击成功率（2604.16968）；整合投毒（PoisonedEvolution、TBA、OEP、EvoBreak）与权限塌缩（AuthMem-Bench）针对的正是批量归纳环节；经验对代码库或 API 版本变化的过期处理未见研究，SWE-Exp 只在检索时按仓库与时间排除。
 
+#### 4.8.6 写入前验证与候选试用
+
+本节的验证门控指候选记忆、技能或修订在生效前经过的验证与准入判断，也包括生效后以候选状态试用、按使用结果晋升或停用的机制。只取 GT 或 judge 判为成功的轨迹再抽取（来源筛选）作用于输入轨迹，候选本身仍可能错误或有害，本节把它与候选级验证分开统计。
+
+表 4-11 验证与试用机制的分类
+
+| 类别 | 时机 | 验证信号 | 典型接收判据 | 代表工作 |
+|---|---|---|---|---|
+| LLM 核对或 verifier | 写入前 | LLM 对候选或来源轨迹打分，可读取执行侧信号 | 分数或标签过阈值 | Voyager critic、MemGuard、WISE-Flow 反思遍、EvoSOP Reviewer、ReMe 验证、Codex 阶段一的最小信号门槛 |
+| 依据校验（grounding） | 写入前或使用时 | 候选与源 trace、源上下文或代码引用的一致性 | 支持度过阈值；引用仍成立 | ConsistencyGate、MemTxn、Gated Memory、Copilot citation 校验 |
+| 只读环境核验 | 写入前（异步）或使用时 | 对当前环境的只读查询 | 新建、收窄、修订、删除或跳过 | Grounding Agent Memory、MIRA（使用时激活）、Braintrust Patterns（《信号与选样调研》第 4 节） |
+| 回放与留出集对照 | 写入前 | 候选与当前版本在同一任务集上的逐例成败 | 修好数多于改坏数；留出集不退化；多次重复一致 | SkillBoost、GRASP、SkillOpt、SkillSpec、RSEA、Recuris、HarnessEvolve、OpsHarness、STEVE、Skill-V |
+| 执行与测试 | 写入前 | 技能代码或 SQL 的执行结果、测试、oracle 正确性位 | 执行通过 | ASI、WebXSkill、Crystallization、CoEvoSkills |
+| 组内有 / 无对照 | 训练中 | 同组带与不带经验的 rollout 回报差 | 差值为正才计入训练信号 | EDGE |
+| 人工确认 | 写入前 | 有权限者审阅 | 接受、编辑或驳回 | Hex、Augment Pending Memory、Devin Knowledge（第 6.3 节、《信号与选样调研》第 7 节） |
+| 候选状态与晋升 | 写入后 | 使用次数、正负反馈 | 信号累积后激活；持续负信号停用 | Cursor Bugbot、Augment Noisy memory、SkillForge trial、MemGuard provisional |
+| 效用统计与淘汰 | 写入后 | 使用后成败；有 / 无该记忆的回报差 | 效用低于阈值删除或降权 | ACE、ReMe、MemRL、OPD-Evolver、Memory Worth（2604.12007，据摘要） |
+| 使用时校验与过期 | 使用时 | 引用核对、按需重验 | 校验失败不用并修正；未用 N 天删除 | Copilot（28 天）、Codex（30 天）、ERRAND（2609.29545，据摘要） |
+
+接收判据有四种写法：修好多于改坏并设回归上限（SkillBoost、GRASP、STEVE、Recuris），以逐例翻转计数，避免总分掩盖回归；严格改善或不退化（SkillOpt 平局拒绝、RSEA、OpsHarness、HarnessEvolve）；多次重复一致（SkillSpec），用于应对单次评估噪声；有 / 无对照（EDGE），直接估计边际增益。
+
+**有 / 无门控的消融**。检索范围内写入前门控的有 / 无消融共 15 组，另有 MIRA 一组使用时门控，方向一致为门控更好，全部由提出门控的作者在各自基准上报告。
+
+表 4-12 有 / 无门控的消融
+
+| 工作 | 设置 | 有门控 | 无门控 | 无记忆或不演化基线 | 无门控低于基线 |
+|---|---|---|---|---|---|
+| EDGE（2608.21946） | ALFWorld，Qwen2.5-7B；门控作用于 RL 损失与蒸馏 | 90.4 | 72.3 | GRPO 82.1 | 是 |
+| OpsHarness（2608.25661） | 四底座平均，末段 A@1 | 0.83 | 0.33 | 0.43 | 是 |
+| Crystallization（2608.07213） | BIRD dev，3 种子；无门控为自投票入库 | 无记忆 +2.82pp | 无记忆 −2.03pp | 0 | 是 |
+| WebXSkill（2604.13318） | WebArena，GPT-5 | 69.5 | 55.2 | 59.7 | 是 |
+| GRASP（2605.29668） | MedAgentBench，gpt-oss-120b | 88.8 | 63.5（K=4）/ 40.1（K=1） | 无技能 40.6 | K=1 持平 |
+| Skill-V（2610.11781） | ALFWorld | 95.3 | 75.0 | 冻结策略无技能 78.59（训练设置不同） | 不可直接比较 |
+| SkillBoost（2607.26643） | BFCL / SpreadsheetBench，Claude-opus-4-6（三模型同向） | 48.5 / 82.5 | 37.7 / 75.7 | 27.1 / 50.0 | 否 |
+| STEVE（2609.23716） | GSM8K / StrategyQA / Object Counting | 86.2 / 93.2 / 95.7 | 84.1 / 91.5 / 92.2 | 76.3 / 88.7 / 77.9 | 否 |
+| RSEA（2606.28374） | ALFWorld | 67.3 | 66.7 | ReAct 63.6 | 否 |
+| Grounding Agent Memory（2609.11060） | CLBench 漂移，pass / reward；无门控指仅轨迹整理 | 73% / 22.60 | 70% / 20.00 | 39% / 8.60 | 否 |
+| HarnessEvolve（2609.00829） | CloudCoreNetwork-QA，只去质量门 | 86.9 | 80.1 | 未报告 | — |
+| MemGuard（2608.21867） | Terminal-Bench / SWE-Bench Verified / WebArena / Mind2Web，Qwen-3.5-Plus，只去准入 | 67.4 / 83.6 / 58.4 / 51.8 | 64.4 / 80.9 / 52.8 / 48.0 | 紧凑表未给 | — |
+| ASI（2504.06821） | WebArena shopping | 已验证文本 39.0 | 未验证文本 32.6 | 该表未给 | — |
+| CoEvoSkills（2604.01687） | SkillsBench；无门控为去掉 surrogate verifier | 71.1 | 41.1 | 无技能 30.6 | 否 |
+| Voyager（2305.16291） | Minecraft 发现物品数 | — | −73% | — | — |
+| MIRA（2608.06950，使用时门控） | BIRD–DeepEye 371 例；修好 / 改坏 42 / 3 vs 40 / 14 | 90.57 | 87.06 | 当前 SQL 80.05 | 否 |
+
+两组对照最能说明门控的独立价值。GRASP 在同等 probe 预算下不用 probe 分数选择时得到 70.8（按提议者排序）与 67.2（随机），与无门控 K=4 的 63.5 处于同一方差范围；把同一门控加给 5 个基线后域内 +1.6 至 +15.0、分布外平均 −0.1，作者据此认为增益来自"门控 + 有界、可编辑的技能库"的组合，并把适用范围写为任务重复出现且结构可验证的环境。MIRA 中证据核验的作用主要是减少改坏（14→3），修好数几乎不变。
+
+**反例与弱效应**。门控收益依赖验证集的规模与代表性。Recuris 的 dev 集只有 10–14 题时，同一补丁包两次运行相差 [−12.1, +11.1] 点，被拒的 18 个候选区间全部含零，不执行 dev 门控的运行仍 +14.5 至 +18.0，作者结论为门控"errs on the side of caution"；GRASP 的 probe 下限为 16 题（82.3），36 题达到完整效果。Trace2Skill 在 32 题验证集上逐 patch 贪心选择全部低于全量聚合，逐条门控忽略了 patch 之间的组合效应。SkillOpt 有严格留出门控，在两个 Qwen 模型的 BFCL 上仍低于无技能。STEVE 的保留集从 k=20 增至 40 时 Object Counting 95.7→91.0，过严的门控也会降低效果。RSEA 在 ALFWorld 上去掉门控样本内 100%、测试 66.7%，有门控 67.3%，门控的作用体现为跨基准的下行保护。ConsistencyGate（2607.22962）把污染率由 50.0% 降到 34.1%（LoCoMo-Contam），代价是隐式陈述的事实被拒，召回 0.58。Feedback Dynamics 中验证集选中的 11 个技能有 9 个在测试集上提升（据摘要）；EvoPathBench 指出候选中存在留出增益较大的更新，被选中的更新达不到（据摘要）；Random rules（2604.11088）中随机规则与专家规则在 SWE-bench Verified 子集上同为 +13.8pp（据摘要），说明有 / 无对照需加入内容无关的对照，否则会把上下文启动效应计为记忆价值。综合来看，门控的主要作用是限制下行风险，选择精度受验证集噪声约束。
+
+**成本与通过率**。验证 rollout 常占优化预算的一半或更多：GEPA 达到最佳测试分的 678–6,858 次 rollout 中训练 rollout 只有 79–737 次（第 7.3 节）；OpsHarness 每轮验证 1.55M token，占 49.8%；GRASP 每批 411 次 agent 调用；SkillBoost 每轮 95K–154K token；MemGuard 每任务额外 2.6k–4.0k token。候选通过率普遍较低：ASI 15.6%，GRASP 16%，Crystallization 自投票候选 3.9%，OpsHarness 拒绝 37%。
+
+**LLM 判定的适用边界**。MemGuard 的 verifier 只接收 agent 自身可见的执行侧信号（退出码、公开测试输出、工具报错、页面确认），对任务完成、证据一致、执行有效、可泛化四项打分，R≥0.70 且置信 c≥0.60 才激活，不足者保持 provisional 或转为失败防护条目；人工抽查 800 个判定的一致率为 86%（Qwen-3.5-Plus）与 83%（Qwen-3.5-Flash），与基准结果对照的 balanced accuracy 88.1%、假阳性率 9.3%；只做 verifier 过滤的对照在 16 组中 15 组优于 ReasoningBank。只读 agent 自述的 LLM 判定证据为负：Crystallization 的自投票入库低于无记忆；Memory Reward Inflation（2608.00017）中更强或跨厂商的 judge 继承自评偏差；整合质量分与真实迁移 ρ=−0.24（2609.33013，据摘要）。LLM 判定在读取执行侧证据时有效，在只读 agent 自述时不可靠。依据校验检查的是"记忆是否忠实于来源"，来源本身错误时（失败轨迹中 agent 的错误结论）仍会通过，需要与结果信号或执行侧信号组合使用。
+
+**共识范围**。按表 4-2 中约 68 项生成方法（不含安全风险、合并调度等实证研究）逐项归类：对候选本身做独立验证（执行、回放、留出集、环境、oracle、有 / 无对照）的约 15 项（ASI、AgentRR、WebXSkill、SkillOpt、Tool-Making、SciConsolidate、SkillBoost、MERIT、EDGE、Recuris、HarnessEvolve、Grounding Agent Memory、SkillSpec、Skill-V、SkillForge），其中 13 项发表于 2026 年；部分验证（单 patch 对照 GT、LLM critic 读环境、架构级搜索）3 项；候选级 LLM 核对 4 项（WISE-Flow、EvoSOP、ReMe、EvoSkill-GUI）；只有写后效用统计约 9 项（ACE、MemRL、Darwinian Memory、OPD-Evolver 等）；只有来源筛选或未述约 36 项（ReasoningBank、AWM、Agent KB、IBM 2603.10600、CONTRAMEM、LEGOMem、AMD、DENSE 等），摘要级条目的"未述"可能低估门控。以门控为检索词另行找到的 GRASP、RSEA、STEVE、CoEvoSkills、MemGuard、ConsistencyGate、Gated Memory（2610.11270，据摘要）、MemTxn（2607.27834，据摘要）、A-MAC（2603.04549，据摘要）均以门控为核心，这一组存在检索选择偏差，不计入上述比例。
+
+表 4-13 写入前门控在各研究线与产品中的共识程度
+
+| 领域 | 是否共识 | 依据 | 主要例外 |
+|---|---|---|---|
+| 技能、harness、prompt 的演化（产物全局生效或按技能加载） | 是，强 | 2026 年工作普遍以留出集或回测接收；GEPA、DSPy 以"proposal 集与 selection 集分离、selection 集提升才接受"为默认结构（第 7.3 节）；2607.10113 把验证准入列为生命周期的固定阶段（据摘要） | Trace2Skill 默认不设聚合门控；Dynamic Cheatsheet、ACE 在线策展无门控 |
+| 可检索经验条目（按任务检索注入） | 否 | 主流方法（ReasoningBank、ACE、AWM、MemRL）以来源筛选加使用后效用为主；按任务注入的条目逐条做全局回归成本高 | 2026 年出现 MemGuard、Grounding Agent Memory、Crystallization 等逐条准入 |
+| 对话事实记忆 | 新出现，未成共识 | ConsistencyGate、A-MAC、Gated Memory、MemTxn 均为 2026 年工作 | Mem0、LangMem 等主流组件由 LLM 直接决定写入 |
+| 产品：个人偏好 | 否 | 自动写入、事后可查可删（Claude Code、Codex、Copilot、ChatGPT、Claude.ai、Kiro） | Cursor 1.2–2.0、Augment IDE、Devin 曾逐条确认 |
+| 产品：团队共享知识、数据口径 | 是，以人工确认或证据累积为准 | Hex（默认至少 2 个不同用户、2 次对话、3 个支持来源后形成建议，由管理员接受或驳回）、Cortex Analyst、Genie、Wren AI；Bugbot、Augment Code Review Memory | Vanna 2.0 以 agent 自判成功直接写入（《信号与选样调研》第 7 节） |
+| 产品：使用时校验与过期 | 部分 | Copilot（citation 校验 + 28 天）、Codex（漂移风险高且验证便宜的事实先验证 + 30 天） | 其余产品未公开 |
+
+产品中的 A/B 与分阶段上线都针对整个记忆功能：Copilot Memory 的 coding agent A/B（第 6.4 节）；AutoCommenter 按 teamfood → 约 3,000 名志愿者 → 约一半开发者 A/B → 全员的顺序上线，进入下一阶段的目标为有用率 80%（第 7.6 节）。按单条记忆做灰度或影子试用的公开实现未见，最接近的是 Bugbot 的候选规则、MemGuard 的 provisional 状态与 Skill-V 的离线影子回放。写入后的效用统计受因果性限制：同时检索的多条记忆共享轨迹级回报，Memory Worth 的计数只给出关联量（据摘要），能给出因果增益的是 EDGE、OPD-Evolver 一类同组有 / 无对照，前提是同一任务有多次执行。
+
+**只有离线 trace 时的可行方式**。各类门控的前提不同：回放与留出集对照需要可执行环境、标准答案（或稠密奖励）与有代表性的同类任务集；执行验证需要记忆本身可执行；只读环境核验需要最小权限连接器；依据校验只需完整保留源上下文；LLM verifier 需要 trace 中记录了执行侧信号；人工确认需要有权限的审阅者。只有已存 trace、无法重新执行时，现有工作中可用的方式见表 4-14。
+
+表 4-14 只有离线 trace 时的验证方式
+
+| 方式 | 做法 | 检验对象 | 已有实现与数据 | 局限 |
+|---|---|---|---|---|
+| 对照源 trace 的依据校验 | 候选须指向源 span，由 LLM 或规则检查是否被 span 内容支持，不允许出现源中没有的实体 | 忠实性 | ConsistencyGate 污染率 50.0%→34.1% / 36.7%；MemTxn 留出审计 60/60 支持样本接受、179/179 难负例拒绝（据摘要） | 来源本身错误时仍通过；隐式事实召回低 |
+| trace 内执行侧信号做 verifier | 只用已记录的退出码、测试输出、SQL 执行结果、空结果、字面量匹配判定来源轨迹与候选 | 正确性的代理 | MemGuard 判定一致率 83%–86%、假阳性 9.3%；LUCID 判错精确率 0.90（《信号与选样调研》第 7 节） | 依赖 trace 记录了这些信号；公开测试不等于隐藏测试 |
+| 跨 trace 独立支持 | 同一候选须由不同会话、用户或任务独立支持 | 普遍性 | Hex 2 用户 / 2 对话 / 3 来源；Trace2Skill 多 patch 重复出现才保留 | PoisonedEvolution 中 30 条批次里 3 条一致记录即可越过（据摘要）；需按来源独立性计数 |
+| 历史 trace 上的影子回放 | 把记忆写成可判定的谓词（适用条件 → 预期动作或结果），在历史 trace 上计算预测准确率，修订须不退化 | 适用边界与预测力 | Skill-V（无门控的 46 次修订中 9 次退化）；AutoCommenter 历史评审回测 | 只能检验可判定部分；环境变化后历史证据失效 |
+| 时间切分 | 用时间点 T 之前的 trace 生成，用 T 之后的同类 trace 做影子回放或统计 | 泛化 | OpsHarness 按时间与故障族分层重采样留出集；AutoCommenter 验证与测试按时间切分 | 需要足够的后段同类 trace |
+| 只读环境核验（可访问时） | 代码仓库按 commit 只读检出、数据库只读查询 schema 与编码 | 时效与可执行性 | Grounding Agent Memory；Copilot citation 校验 | 需要连接器与权限；成本单独计 |
+| 上线后试用 | 新条目为候选状态，按"被检索且采用后的结果"累积证据再激活，持续负信号停用 | 实际效用 | Bugbot、SkillForge trial、MemGuard provisional | 关联量；需灰度或 A/B 才有因果估计 |
+
+同模型自评或多样本自投票、只用整合质量分两种方式的证据为负，不宜单独作为门控。候选级评估以"不退化"为主、样本小，单个候选在几十题上的配对差多落在噪声带内；对整个记忆库或生成流水线的总体评估以同一求解器、同一任务有 / 无记忆的端到端配对差为主指标，需要数百至上千个配对才能检出 1–5 个百分点的增益（《输入、存储与评测调研》第 8 节）。
+
+#### 4.8.7 生成者与生成模型的选择
+
+从 trace 生成记忆时，执行生成的模型可以是使用记忆的 agent 自身，也可以是另行配置的模型。按"由谁生成"与"何时生成"两个维度，现有做法分为六类。
+
+表 4-15 生成者的分类
+
+| 类别 | 定义 | 可见上下文 | 典型触发 | 代表 |
+|---|---|---|---|---|
+| 会话内由会话模型写入 | 当前 agent 在任务中调用写记忆工具或编辑记忆文件 | 完整会话，含未落盘的推理与中间状态 | 模型自主判断、用户要求 | Claude Code auto memory 主路径、Anthropic memory tool、Copilot `store_memory`、Claude.ai、ChatGPT saved memories、Cascade；研究中的 Reflexion、Dynamic Cheatsheet |
+| 会话旁路或后台由同一模型写入 | 与主 agent 同一模型的子 agent 或 fork，在回合或会话结束后回看 | 共享前缀或读取 transcript | 回合结束、步数、压缩事件 | Claude Code memory extraction（使用同一模型的说法来自第三方源码分析，二手资料） |
+| 离线流水线中的独立模型 | 固定配置的模型读取渲染后的会话或 trace | 渲染与截断后的 trace | 启动时后台、空闲阈值、定时、显式批作业 | Codex memories、Managed Agents Dreams、Letta Code reflection、claude-mem、LangSmith Engine、Clio（第 5.6、6.4 节） |
+| 同一模型自演化 | 执行模型对自身轨迹做反思与整理，在线逐任务或离线批量 | 渲染后的轨迹 | 每任务或离线构建 | ACE、ReasoningBank（抽取器与 judge 均与 agent 同 backbone）、ReMe、IBM 2603.10600、Trace2Skill、Memory Transfer Learning（2604.14004） |
+| 更强的教师模型 | 教师读取学生或自身的成败轨迹，为学生生成记忆 | 渲染后的轨迹，可含教师续写 | 离线构建或训练 | ExpeL（GPT-4 → gpt-3.5-turbo）、AutoManual（GPT-4-turbo → GPT-3.5-turbo）、Mem^p（GPT-4o → Qwen2.5-14B）、SkillRL（o3 → 7B）、EvolveR（GPT-4o-mini 教师）、AMD（GPT-5-mini → 4–8B，据摘要）、SkillPivot |
+| 专门训练的记忆管理模型 | 以 RL 或 SFT 训练的小模型执行写入决策 | 对话块或轨迹块 | 每轮或每块 | Memory-R1、Mem-α、APEx（据摘要）；Honcho 托管服务的 Neuromancer XR（据第三方资料为 Qwen3-8B 微调，二手资料） |
+
+LangMem 概念文档把会话内写入称为 hot path（更新即时、实现简单，代价是增加可感知的延迟与 agent 的工具选择负担），把后台写入称为 background（不影响交互延迟、召回更高，代价是更新延后）。
+
+表 4-16 生成者选择的共识程度
+
+| 问题 | 共识程度 | 依据 |
+|---|---|---|
+| 会话内写入由谁做 | 强：必然是会话模型 | 表 4-15 第一类全部实例 |
+| 后台或离线生成是否与会话模型解耦 | 强：公开的产品流水线都单独配置模型 | Codex、Dreams、Letta Code、claude-mem、LangSmith Engine、Clio |
+| 离线逐条抽取用什么档位 | 中强：廉价档占多数 | Codex `gpt-5.6-luna`、Engine 与 Clio 的 Haiku 档、claude-mem Haiku 4.5、8 个开源组件默认 mini / haiku 档 |
+| 跨会话整合用什么档位 | 中：中档或强模型 | Codex `gpt-5.6-terra`、Dreams 只支持 Opus / Sonnet / Fable、Clio 用 Claude 3.5 Sonnet、Letta 博客建议后台 agent 用更强模型 |
+| 研究实验中生成模型与执行模型是否同一 | 中：多数同一，以"自演化"为卖点 | ACE、ReasoningBank、ReMe、IBM、Trace2Skill、Memory Transfer Learning |
+| 小模型 agent 的记忆由谁生成 | 中：强教师更好 | ExpeL、AutoManual、SkillRL、AMD、EvolveR 0.5B |
+| 自生成与他模型生成孰优 | 弱：方向随规模与任务变化 | Memory Transfer Learning 自源略优；EvolveR 3B 自蒸馏略优、0.5B 教师更好；Trace2Skill 中强模型 skill-creator 反而更差 |
+| 用 RL 训练专用记忆管理器 | 弱：研究多、部署少 | Memory-R1、Mem-α；产品中只有 Honcho 托管服务（二手资料） |
+
+**生成模型强度的消融**。固定使用方、只改变生成模型的实验结果见表 4-17。
+
+表 4-17 固定使用方、改变生成模型的实验
+
+| 工作 | 使用方（固定） | 生成模型 | 结果 |
+|---|---|---|---|
+| ExpeL（2308.10144） | gpt-3.5-turbo | 自身 vs GPT-4 | HotpotQA SR 32.0 ± 0.4 vs 39.0 ± 1.7；无记忆 ReAct 28.0（Table 3） |
+| ReMe（2512.10696） | Qwen3-8B | 摘要模型 Qwen3-8B / 14B / 32B | BFCL-V3 Avg@4 44.50 / 46.33 / 47.83，Pass@4 65.77 / 66.00 / 68.00（Table 5，无标准差） |
+| ACE（2510.04618） | DeepSeek-V3.1（Generator、Curator） | Reflector：GPT-OSS-120B / DeepSeek-V3.1 / GPT-5.1 | FiNER 76.6 / 78.3 / 78.5，基线 70.7（Table 16） |
+| SkillRL（2602.08234） | Qwen2.5-7B | 自身 vs o3 | ALFWorld 42.5 vs 89.9，WebShop 19.6 vs 72.7，搜索类 35.7 vs 47.1（Table 5） |
+| SkillRL | Kimi-K2.5 | 自身 vs o3 | 88.5 vs 91.4，73.4 vs 77.6，49.0 vs 52.2 |
+| EvolveR（2510.16079） | Qwen2.5-0.5B / 1.5B / 3B | 自蒸馏 vs GPT-4o-mini 教师 | 7 个 QA 平均 EM 0.150 vs 0.220；0.270 vs 0.290；0.382 vs 0.370（Table 2，无方差） |
+| Memory-R1（2508.19828） | Answer Agent（LoCoMo） | LLaMA-3.1-8B 管理器 vs GPT-4o-mini 管理器 | Answer Agent 增益 +10.10 vs +19.72 |
+| Mem-α（2509.25911） | Qwen3-32B 回答 | 未训练 Qwen3-4B / gpt-4.1-mini / RL 训练的 Qwen3-4B | 0.389 / 0.517 / 0.642（Table 3） |
+
+使用方较弱（≤7B 或 GPT-3.5 级）时，生成模型从自身换为强模型的收益大（SkillRL +47.4，ExpeL +7.0，EvolveR 0.5B +0.070 EM）；使用方已较强时收益收窄到 0.2–3.3 点（ACE GPT-5.1 比自身 +0.2，SkillRL Kimi-K2.5 +2.9，ReMe 32B 摘要比 8B 摘要 +3.3）；经过任务奖励训练的小模型可以超过未训练的更大通用模型（Mem-α 4B 0.642 高于 gpt-4.1-mini 0.517）。上述实验分属不同任务与规模，数字跨论文不可比。
+
+**自生成与跨模型生成**。Memory Transfer Learning（2604.14004）在 LiveCodeBench v6、SWE-bench Verified、ReplicationBench 三个基准上比较记忆来源模型（三基准平均 Pass@1，Table 6；逐基准有负迁移）：GPT-5-mini 无记忆 0.515，用 DeepSeek V3.2、Qwen3-Coder、自身生成的记忆分别为 0.518、0.528、0.543；DeepSeek V3.2 无记忆 0.486，用 GPT-5-mini 的记忆 0.501、自身 0.511；Qwen3-Coder 无记忆 0.402，他源与自源均 0.413。作者称跨模型迁移持续低于自生成记忆；正文未说明跨模型实验中抽取模型是否随来源模型变化。该工作的主实验中生成记忆、执行与 judge 全部为 GPT-5-mini；insight 层记忆优于轨迹层，轨迹层在 TerminalBench2 上 0.315→0.270。Trace2Skill 中 Qwen3.5 35B 与 122B 互用对方演化的技能，增量多数为正，Creation 模式 35B → 122B 在 SpreadsheetBench Soft 上为 −5.83（Table 1）。CONTRAMEM 的同等预算下多模型对比轨迹优于同模型自采样（据摘要）；SciConsolidate 中同一份经验注入 9B 几乎无收益（据摘要）；Dynamic Cheatsheet 作者称大模型记忆迁移给小模型结果不一。由此得到：自源记忆对来源模型最合适，差距在 0–0.025（Pass@1）；强 → 弱与弱 → 强都观察到正迁移，也都有个别负值；记忆的抽象层级比来源模型更决定可迁移性。
+
+**信息来源比生成模型强度更重要**。SkillsBench 中模型不看任何执行经验自行撰写技能平均约 −1.3 个百分点；Letta skill learning 让同一模型读轨迹 +9 个百分点、加验证反馈 +15.7 个百分点（无训练与测试划分）；Trace2Skill 中 Claude Opus 4.6 驱动的 skill-creator 低于 Qwen3.5 自演化（23.33 vs 48.63）。增益来自 trace 与验证器带来的新信息，生成流程是否对齐失败证据比生成模型的通用能力更重要。判定与打分环节另有同源偏差：ReasoningBank 的 judge 与 agent 同 backbone，与 GT 一致率 72.7%；Memory Reward Inflation 中自评记忆的分数随复用放大，更强或跨厂商的 judge 同样继承偏差，改用执行侧信号降权后 BIRD 54.0%→56.9%；LLM 评估者偏好自身生成的内容（2404.13076，据摘要）。
+
+**趋势（2025 → 2026）**。产品侧，2025 年以会话内工具写入（Anthropic memory tool、Copilot Memory、Cascade）与旁路 sidecar（Cursor 1.0–1.2）为主；2026 年出现成体系的后台批量流水线（Codex memories 自 2026-02、Managed Agents Dreams 2026-04、ChatGPT Dreaming V3 2026-06、Letta Code reflection），都单独配置模型；个人偏好类记忆回到会话内即时写入（Claude.ai 2026-08-25），Cursor Memories 在 2.1.x 移除。默认生成模型随厂商廉价档更新，与 agent 会话模型的更换各自独立：Codex 阶段一默认模型自 2026-02 起换了三次、先后四个型号（第 6.2 节），Cognee 默认已为 `gpt-5.6-luna`。研究侧，2023 年的 ExpeL、AutoManual 用强模型为弱模型生成记忆；2025 年的 ACE、ReasoningBank、ReMe 转为同模型自演化；2026 年同模型"100% 自演化"（Trace2Skill）、强教师为 4–8B 小模型蒸馏（AMD、SkillRL）、冻结任务模型与独立演化模型分离（SkillBoost）、多模型轨迹对比（CONTRAMEM）并存。选型开始被当作实验变量：Letta Code 内置 `reflection_arena` 对反思模型做盲测 A/B，ACE、ReMe、EvolveR、SkillRL 在论文中加入了生成模型消融。RL 训练的记忆管理器集中在对话与问答记忆，面向 code / data agent 执行 trace 的只有 APEx 一项（据摘要）。
+
+表 4-18 各类生成者的优劣
+
+| 维度 | 会话内或后台同一模型 | 离线独立模型（廉价档抽取 + 强档整合） | 强教师 | 训练的小模型 |
+|---|---|---|---|---|
+| 质量 | 依赖主 agent 判断，受任务注意力挤占；单会话视角 | 可跨会话归纳；抽取档过弱时漏抽或误判（ExpeL、ReMe 的消融方向） | 对弱使用方增益最大（SkillRL、AMD） | 在训练分布内可超过未训练的更大模型（Mem-α），分布外未知 |
+| 成本 | 计入主会话 token；后台 fork 与主会话共享前缀缓存（第三方分析称约 92% 复用，二手资料） | 廉价档单价约为主力档的 1/10（二手资料）；Clio 成本约 92% 在逐条抽取；可用批量接口与前缀缓存 | 教师调用贵，只在构建期 | 需训练与托管；推理便宜 |
+| 延迟 | 会话内写入增加可感知延迟（LangMem 文档）；后台不阻塞 | 延后数小时到数天（Codex 空闲 ≥6h；Dreams 数分钟至数小时） | 构建期离线 | 低 |
+| 数据外发 | 无新增外发 | 新增一次外发，可选本地或另一厂商模型，需脱敏（Codex `redact_secrets`） | 学生 trace 发往教师厂商 | 可本地部署 |
+| 上下文可得性 | 最完整：含推理、未落盘状态、用户语气 | 只见渲染与截断后的 trace（Codex 丢弃推理项，v1 截断到窗口 70%） | 同离线独立模型 | 通常只见块级文本 |
+| 偏差 | 自我确认，自评成功不可信 | 对 agent 行为无利益关联，同族模型仍有自我偏好；需执行侧信号 | 教师风格可能与学生不匹配（EvolveR 3B） | 继承奖励设计的偏差 |
+| 可复现 | 随会话触发，难复现 | 固定模型与 prompt、批量重跑，可按作业水位重算 | 构建一次固定 | 权重固定，可复现性最好 |
+| 与 agent 升级的耦合 | 强：换模型即换写入风格与判断标准 | 解耦：生成模型与会话模型各自升级，生成模型版本需写入溯源 | 解耦 | 解耦，领域漂移需重训 |
+
+调研倾向（推论）：对从库内 trace 离线批量生成的场景，现有实例支持分层配置——逐 trace 抽取用廉价档模型并行、以 trace 与输入哈希为键缓存，跨 trace 整合、冲突消解与技能升格用中档或强模型单写者执行（依据为 Codex、LangSmith Engine、Clio 的成本结构与表 4-17 的边际递减）；成败判定与条目打分优先用 trace 中已有的执行侧信号，LLM judge 只作补充且不与被评 agent 同源；使用方为小模型时生成侧用更强模型；抽取档的选择需要在同一批 trace 上做小规模对照，公开资料中没有可直接套用的产品级消融；会话内写入（明确表达的偏好与纠正）与离线批量生成（跨 trace 的经验与流程）可以并存，Managed Agents 的"会话内写入 + Dreams"与 Codex 把 ad_hoc 笔记交给阶段二整合是同一结构。
+
 ## 5. 开源组件与实现
 
-本节考察开源记忆组件如何把会话或执行轨迹转为记忆，重点是能消费工具调用轨迹的组件。考察内容为输入形态、抽取 prompt、触发与更新逻辑、存储 schema、溯源与检索。所有仓库均在固定 commit 的浅克隆上只读源码，未安装、未执行；commit 与版本见文末来源，发布信息取自 GitHub API（2026-10-09）。依据 README 或官方文档的陈述写明"README 称"或"文档称"，与源码事实分开陈述；依据第三方资料的陈述在句末括注"二手资料"。
+本节考察开源记忆组件如何把会话或执行轨迹转为记忆，重点是能消费工具调用轨迹的组件。考察内容为输入形态、抽取 prompt、触发与更新逻辑、存储 schema、溯源与检索。所有仓库均在固定 commit 的浅克隆上只读源码，未安装、未执行；commit 与版本见文末来源，发布信息取自 GitHub API（2026-10-09）；OpenViking 与第 5.6 节的默认生成模型于 2026-10-10 读取。依据 README 或官方文档的陈述写明"README 称"或"文档称"，与源码事实分开陈述；依据第三方资料的陈述在句末括注"二手资料"。
 
 本节使用以下术语。工具调用轨迹指包含工具调用参数与工具返回的消息序列或 step 序列。溯源（provenance）指记忆条目回指其来源数据（会话、trace、消息、span）的能力。delta 更新指 LLM 只输出对记忆库的增量操作，由程序执行。水位线（watermark）指作业记录的已处理输入位置，用于增量处理。
 
@@ -604,6 +766,7 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 | letta-code | Apache-2.0 | 2026-10-08 | 是，保留参数与结果 | MemFS 记忆文件 + skills | 每 25 step 反思 | 每次至多一个技能操作；git commit | git 管理的 Markdown | 中：git commit + source_message_id | 8f20b78 |
 | EverOS | Apache-2.0 | 未记录 | 是（tool_calls） | AgentCase → AgentSkill | 事件链；每周定时反思 | 簇内增改，未实现退役 | Markdown + SQLite + LanceDB | source_case_ids | v1.4.1 |
 | memU | 改写过的 Apache 文本 | 2026-10-09；不兼容重构中 | 是（tool_call / tool_result 条目） | memory / skill Markdown | 每小时批处理 | 宿主 agent 三选一：noop / patch / create | PG + pgvector，无 ANN 索引 | 无 | v1.5.1（HEAD 2.0 beta） |
+| OpenViking | AGPL-3.0 | 2026-10-09 | 是（`ToolPart` 含工具名、输入、输出、状态、耗时；Claude Code 日志回放适配器丢弃仅含工具调用的轮次） | 用户记忆（profile、preferences、entities、events）、agent 记忆（identity、soul）；Agent Evolution 的 cases、trajectories、experiences（默认关闭） | 会话 commit 后台抽取；agent 插件经 hooks 实时捕获；`ingest backfill / watch` 回放本地 agent 日志 | ExtractLoop 输出结构化操作；字段级 `merge_op`（immutable / patch / replace / sum），类型级 add_only / upsert；experiences 可 `supersedes` 旧条目 | RAGFS（本地或 S3）+ 向量索引（内嵌引擎、VikingDB、openGauss 等）；无 PG 适配器 | 强：events 的 `ranges` 指向归档消息下标；每次提交写 `memory_diff.json`；经验 → 轨迹 URI 写入版本提交信息 | v0.5.0（1440338） |
 | AutoGen TCM | MIT | 项目声明进入维护模式 | 间接（work_history 文本） | task-insight memo | 离线训练循环 | 无 | pickle + Chroma | 弱 | 0.7.5 |
 | Mem0 | Apache-2.0 | 2026-10-07 | 推断抽取时跳过 tool 消息 | 事实；procedural 摘要 | 每次 add 同步 | 2.x 只做 ADD + 哈希去重；1.x 为 ADD / UPDATE / DELETE / NONE | pgvector；history 只支持 SQLite（Python） | 弱 | Py 2.2.1 |
 | LangMem | MIT | 2026-10-02 | 是（以文本形式） | 自定义 schema；prompt 优化 | hot path 工具；后台 debounce | insert / patch / remove，多 phase | LangGraph PostgresStore | 无 | 0.0.30 |
@@ -618,7 +781,7 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 | MemoryOS | — | 2026-07-07；研究原型 | 否 | 短 / 中 / 长期三层对话记忆 | 每次写入 | 热度晋升 | JSON 文件或 Chroma | 弱 | 587ed77 |
 | LongMemory / MemMachine | Apache-2.0 / — | 2026-09-20，重写中 / 未记录 | 否 | 时间线记忆 / Episodic + Profile | 每次写入 | 内容不可变，supersedes / — | 内存或 SQLite（1.0 移除 PG）/ Neo4j + SQL | 弱到中 | v1.2.3 / 未读取源码 |
 
-表中"消费工具调用轨迹"一列为"是"的组件共 11 个。第 5.2 节说明其中除 LangMem 外的 10 个，以及该列为"部分""间接""只保留工具名"的 ReMe 0.4、Cognee、Letta 服务端与 AutoGen TCM；LangMem 只以文本形式接收工具调用，与其余会话类、通用记忆组件一起在第 5.3 节简述。
+表中"消费工具调用轨迹"一列为"是"的组件共 12 个。第 5.2 节说明其中除 LangMem 外的 11 个，以及该列为"部分""间接""只保留工具名"的 ReMe 0.4、Cognee、Letta 服务端与 AutoGen TCM；LangMem 只以文本形式接收工具调用，与其余会话类、通用记忆组件一起在第 5.3 节简述。
 
 ### 5.2 可消费执行轨迹的组件
 
@@ -642,13 +805,15 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 
 **EverOS、memU、AutoGen TCM**。EverOS 的处理链为 MemCell → AgentCase（`task_intent, approach, quality_score, key_insight`）→ 聚类 → AgentSkill（带 `source_case_ids`），另有每周定时反思；抽取 prompt 位于独立 PyPI 包，未纳入阅读。memU HEAD（2.0 beta）服务端不再调用 LLM，抽取交给宿主 agent 每小时执行；输入为 `message / tool_call / tool_result(is_error)` 三类条目，规范输入模型拒收 id 与时间戳，因此无法回指来源。AutoGen Task-Centric Memory 的流程为失败 → 诊断误解 → 生成一两句通用建议 → 带建议重试，答对后才入库；AutoGen 已进入维护模式。
 
+**OpenViking（volcengine，v0.5.0）**。字节跳动火山引擎 Viking 团队发布的 agent 上下文数据库（"The Context Database for AI Agents"），仓库创建于 2026-01-05，AGPL-3.0，2026-10-10 读取时约 3.95 万 star；README 称其开源了 VikingMem 论文（2605.29640，PVLDB 19 卷）的部分核心能力，火山引擎另有托管服务。它把资源、记忆与技能组织为 `viking://` 虚拟文件系统，agent 用 `ls / tree / read / grep / find` 浏览；经过语义处理的目录带 L0 一句话摘要（`.abstract.md`）、L1 概览（`.overview.md`）与 L2 原文，检索先看摘要再按需读原文。会话 API 为 `create_session → add_message → commit`：消息由 `TextPart`、`ContextPart`、`ToolPart` 等组成，`ToolPart` 带 `tool_name / tool_input / tool_output / tool_status / duration_ms` 与 token 用量，超长输出外置并保留引用。commit 第一步同步把消息写入 `history/archive_NNN/messages.jsonl` 并入持久化队列；第二步在后台回填外置的工具输出、生成归档摘要、抽取长期记忆，写 `memory_diff.json`（adds / updates / deletes 的前后值与跳过的操作）后才写 `.done` 标记，失败时已成功的步骤按消息 id 记录、重试时跳过。抽取循环 ExtractLoop 先预取目录与语义搜索结果，再让 LLM 在至多 3 轮内调用 `read / search / ls` 查看已有记忆，最后输出结构化操作；所有记忆类型的 schema 编入同一次调用（对应 VikingMem 的单次多类型抽取），默认输出上限 32,768 token、面向豆包模型调优。记忆类型分用户侧（profile、preferences、entities、events，其中 events 只追加，`ranges` 指向来源消息下标，正文附原始对话片段）、agent 侧（identity、soul）与 Agent Evolution 三类（tools、skills 两类默认不启用）。Agent Evolution 与"从轨迹生成经验"直接相关：trajectories 只在 agent 执行了含决策、工具调用或多步动作的任务时抽取，每条对应"一个主意图 + 一个主工具效果目标 + 一个生命周期边界"，禁止合成总括记录，正文固定为 Domain、Trigger、Operation Intent（9 个枚举族，如 `read_verify_only`、`update_existing_object`）、Preconditions、Immutable Object Boundary、Procedure、Write Field Provenance、Anti-patterns、Applicability Boundary、Negative Applicability、Result、Evidence 等标签，要求去除标识符、人名、数字、日期、路径等实例值，另有 `outcome`（success / failure / partial / unfinished / unknown）、可重跑的 `task_query` 与检索锚点；experiences 输出直接注入系统提示的命令式规则，分 Situation（入口条件）、Approach（只写正向步骤，IF / THEN / ELSE，至多 8 条）、Reflect（只写禁止项与失败教训）三段，一条经验只覆盖一个用户意图，可用 `supersedes` 替换更窄的旧经验并继承其轨迹历史；cases 为带 rubric 的可评测任务用例，产生 case 时同一提交的轨迹交给进程内训练器生成 trajectories 与 experiences。经验更新时，VikingFS 以一次版本提交记录变更，提交信息含"经验 → 轨迹 URI"映射，`experience_lineage.py` 还识别 agent 读取经验的行为，用于统计经验的使用次数与执行结果分布。`memory_policy` 含 experiences 时自动启用 cases 与 trajectories，全局开关 `agent_evolution.enabled` 默认 false，训练框架 `session/train/` 官方声明为非公开 API。OpenViking 自身以 OTel 输出遥测，不提供 OTel trace 的摄取入口，外部 trace 需先转为会话消息加 `ToolPart`。适用条件：输入能组织为带工具调用的会话消息；抽取 prompt 很长、按豆包模型调优，换用其他模型时抽取质量与输出截断需实测。
+
 ### 5.3 会话类与通用记忆组件
 
 表 5-2 会话类与通用记忆组件
 
 | 组件 | 抽取与更新机制 | 存储与溯源 | 与执行轨迹的关系 |
 |---|---|---|---|
-| Mem0 | 2.x（Python SDK 2.0.0 于 2026-04-14 发布）写入流程固定使用 `ADDITIVE_EXTRACTION_PROMPT`，单次 LLM 调用、只做 ADD，重复项按 MD5 哈希跳过；UPDATE / DELETE 只出现在用户显式调用中。1.x 为"事实抽取 → 逐条召回 top-5 → LLM 输出 ADD / UPDATE / DELETE / NONE"（论文 2504.19413 称 NOOP）。v2 prompt 要求自包含事实、每条 15–80 词，以 Observation Date 为唯一时间锚点 | pgvector 表 `(id UUID, vector, payload JSONB)` + tsvector GIN 索引；外部图存储移至 Platform，OSS 保留内置实体链接；不保存源消息 id | `parse_messages` 只处理 system / user / assistant，推断抽取时跳过 tool；`infer=False` 时 tool 消息原样存为记忆 |
+| Mem0 | 2.x（Python SDK 2.0.0 于 2026-04-16 发布）写入流程取同一会话最近 10 条消息作上下文、召回已有记忆 top-10（UUID 映射为整数以减少幻觉），固定使用 `ADDITIVE_EXTRACTION_PROMPT` 单次 LLM 调用、只做 ADD，重复项按 MD5 哈希跳过；UPDATE / DELETE 只出现在用户显式调用中。1.x 为"事实抽取 → 逐条召回 top-5 → LLM 输出 ADD / UPDATE / DELETE / NONE"（论文 2504.19413 称 NOOP）。v2 prompt 要求自包含事实、每条 15–80 词，以 Observation Date 为唯一时间锚点；检索融合语义向量、BM25 与实体匹配三路分数（README 称）；`procedural_memory` 把单段执行历史整理为逐步摘要，代码注释标明计划在后续破坏性版本中移除 | pgvector 表 `(id UUID, vector, payload JSONB)` + tsvector GIN 索引；外部图存储移至 Platform，OSS 保留内置实体链接；不保存源消息 id | `parse_messages` 只处理 system / user / assistant，推断抽取时跳过 tool；`infer=False` 时 tool 消息原样存为记忆 |
 | LangMem | `create_memory_store_manager`：检索 → 抽取 → 多个整理 phase → 与原值 diff 后写入；prompt optimizer 以 `(messages, feedback)` 轨迹列表为输入，gradient 算法先反思假设再改写 prompt；`ReflectionExecutor` 对同一 thread 做 debounce，队列不持久化 | LangGraph `PostgresStore`（store + store_vectors 两表）；无来源、无版本 | 工具调用经 `pretty_repr` 以文本进入 prompt |
 | Graphiti / Zep | 每个 episode 串行：抽节点 → 三层消歧（余弦 0.6、MinHash 近似 Jaccard 相似度、LLM）→ 抽边并产出 valid_at / invalid_at → 小模型判重与判矛盾；旧边 `invalid_at` 设为新边 `valid_at`，能处理乱序到达，边从不物理删除 | 只支持 Neo4j 系与 Neptune；EntityEdge 含 `episodes[]` | json episode 只把原文交给 LLM，prompt 明确不抽时间戳与 ID |
 | Honcho | PG 队列表，消息累计到一定 token 或最老消息超过 1800 s 时批处理；dream 每 300 s 轮询，同时满足"新增文档 ≥50、空闲 ≥60 分钟、距上次 ≥8 小时"才执行 | `documents(level, times_derived, embedding, observer, observed)` + `document_sources(derived_id, source_id)` 推理树；AGPL-3.0 | deriver prompt 把 agent turn 与工具输出视为噪声 |
@@ -661,6 +826,8 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 | MemoryOS | 短、中、长三层；热度 `H = N_visit + L_interaction + R_recency` ≥5 时晋升 | JSON 文件或 Chroma | 无 |
 | LongMemory / MemMachine | LongMemory 1.0 重写移除 HSG 五分区与 Postgres，内容不可变，区分 valid 与 recorded 两条时间线；MemMachine 文档称 Episodic 存 Neo4j、Profile 存 SQL | 内存 / SQLite；Neo4j + SQL | 无 |
 
+Mem0（mem0ai/mem0，Apache-2.0，2026-10-10 读取时约 6.69 万 star）由嵌入应用进程的 Python / TypeScript 记忆层库、托管平台 Mem0 Platform 与论文 2504.19413 组成，是 agent 记忆评测中常用的对照基线。论文摘要称在 LoCoMo 上以 LLM-as-a-Judge 计相对 OpenAI Memory 提升 26%、p95 延迟比全上下文低 91%（据摘要）；README 给出的 2.x 新算法分数（LoCoMo 71.4→92.5、LongMemEval 67.8→94.4）来自托管平台，含开源 SDK 没有的专有优化。它以会话事实为对象：默认抽取路径丢弃 tool 消息，不从多条轨迹归纳做法，不消费 OTel trace，记忆 payload 不保存源消息 id。在代码 agent 上，VibeMemBench 中 glm-5 + Mem0 比无记忆低 5.5 个百分点（第 4.7 节）。
+
 ### 5.4 横向分析
 
 表 5-3 抽取流水线模式
@@ -668,7 +835,7 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 | 模式 | 流程 | 代表 | 特点 |
 |---|---|---|---|
 | A. 单次抽取直接追加 | 消息 → LLM → 写入 | Mem0 2.x、claude-mem、Honcho deriver | 成本低；冲突消解留给检索或后台流程 |
-| B. 抽取 → 比对 → 更新 | 抽取 → 召回相似项 → LLM 输出 ADD / UPDATE / DELETE / NOOP | Mem0 1.x、altk-evolve 写前消解、CrewAI、Agno、LangMem、MemOS | 经典做法；存在误删风险，CrewAI 以"prefer keep"约束 |
+| B. 抽取 → 比对 → 更新 | 抽取 → 召回相似项 → LLM 输出 ADD / UPDATE / DELETE / NOOP | Mem0 1.x、altk-evolve 写前消解、CrewAI、Agno、LangMem、MemOS、OpenViking（LLM 以工具读取已有记忆后输出操作） | 经典做法；存在误删风险，CrewAI 以"prefer keep"约束 |
 | C. 结果信号分路 | 按成败或分数分路 → 抽取 → 验证 → 去重 | ReMe 0.2、Acontext、AutoGen TCM | 依赖外部 score 或任务终态判定 |
 | D. 反思 → 策展（delta） | Reflector 诊断 → Curator 以工具执行 delta | ACE、MIRIX、letta-code、MemOS 插件 | 产出技能或策略；配合计数、编辑预算、泛化门槛 |
 | E. 分层巩固 | 原始 → 日记或观察 → 定时整合为抽象知识 | ReMe HEAD、Honcho dream、Letta sleep-time、EverOS、Cognee improve | 与离线批处理的形态一致 |
@@ -676,7 +843,7 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 
 **更新操作语义**。各组件的更新操作分为 LLM 决策增删改、只追加、失效而不删除、delta 加计数、只增不删的整合五类，分类与代表实现见《输入、存储与评测调研》第 7.7.1 节；效用驱动遗忘（ReMe 0.2 的 freq / utility、MemOS 插件的增益与 Beta 后验、claude-mem 按 ACT-R 认知架构激活公式计算的记忆强度、MemoryOS 的热度）见《输入、存储与评测调研》第 7.7.2 节。
 
-**存储形态**。Markdown 或文件形态有 Acontext、letta-code（MemFS + git）、ReMe HEAD、memU、EverOS，特点是人可读、可 diff，检索依靠 agent 渐进读取或 BM25；2026 年新出现的技能类实现多采用这一形态。关系表 + pgvector（JSONB 存元数据）有 Mem0、ReMe 0.2、altk-evolve、Memobase、Honcho、MIRIX、MemOS postgres 后端、Agno、LangGraph Store 与 Letta 归档服务端。图形态中 Graphiti 只支持 Neo4j 系，Cognee 的 PG 图后端为 demo，MemOS polardb 与 Mem0 1.x 使用 Apache AGE；考察范围内没有可用于生产的 PG 原生图记忆实现。内存 + JSON 文件形态有 ACE、A-MEM、MemoryOS、AutoGen TCM。pgvector 与 tsvector 组合的混合检索被 Mem0、MIRIX、claude-mem 共同采用。
+**存储形态**。Markdown 或文件形态有 Acontext、letta-code（MemFS + git）、ReMe HEAD、memU、EverOS，特点是人可读、可 diff，检索依靠 agent 渐进读取或 BM25；2026 年新出现的技能类实现多采用这一形态。关系表 + pgvector（JSONB 存元数据）有 Mem0、ReMe 0.2、altk-evolve、Memobase、Honcho、MIRIX、MemOS postgres 后端、Agno、LangGraph Store 与 Letta 归档服务端。图形态中 Graphiti 只支持 Neo4j 系，Cognee 的 PG 图后端为 demo，MemOS polardb 与 Mem0 1.x 使用 Apache AGE；考察范围内没有可用于生产的 PG 原生图记忆实现。内存 + JSON 文件形态有 ACE、A-MEM、MemoryOS、AutoGen TCM。OpenViking 采用虚拟文件系统加向量索引的双层存储，正文为分层 Markdown（L0 / L1 / L2），向量后端可选内嵌引擎、VikingDB 或 openGauss（DataVec 向量类型），没有 PostgreSQL 适配器。pgvector 与 tsvector 组合的混合检索被 Mem0、MIRIX、claude-mem 共同采用。
 
 表 5-4 溯源支持级别
 
@@ -684,8 +851,8 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 |---|---|---|
 | 记忆 → 源 trace 或事件（多对多） | claude-mem Server（PG）、Supermemory、ACE | `observation_sources`、`MemoryDocumentSource`、`occurrences[].trace_id` |
 | 记忆 → 源 span（单字段） | altk-evolve | `source_task_id=trace_id`、`source_span_id`，合并后丢失 |
-| 记忆 → 源消息或 episode | Honcho、MemOS（定义）、Graphiti、Cognee（仅 LIVE） | `message_ids`、`SourceMessage`、`episodes[]`、`source_trace_ids` |
-| 推导链或血缘 | Honcho（document_sources）、MIRIX（influenced_skill_ids）、MemOS 插件、EverOS（source_case_ids） | 前提 id、经验 → 技能 |
+| 记忆 → 源消息或 episode | Honcho、MemOS（定义）、Graphiti、Cognee（仅 LIVE）、OpenViking（events） | `message_ids`、`SourceMessage`、`episodes[]`、`source_trace_ids`、`ranges` |
+| 推导链或血缘 | Honcho（document_sources）、MIRIX（influenced_skill_ids）、MemOS 插件、EverOS（source_case_ids）、OpenViking（经验 → 轨迹 URI 写入版本提交；`memory_diff.json`） | 前提 id、经验 → 技能、经验 → 轨迹 |
 | 版本历史 | Letta（block_history，无调用方）、Supermemory（版本链）、letta-code（git）、Mem0（history 表） | — |
 | 基本无溯源 | ReMe 0.2 task memory、LangMem、Memobase、memU、Agno、CrewAI、A-MEM | 只有时间戳 |
 
@@ -703,6 +870,7 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 | 反思 → delta，计数与软删除，泛化门槛 | ACE、MIRIX | 能取得本次实际注入的条目 ID，计数才有意义 |
 | 合并时 LLM 只输出归属关系，support 由程序累加 | altk-evolve | 合并结果需同步继承来源集合 |
 | 双时态边，矛盾时只置失效时间 | Graphiti | 环境与项目事实类记忆；需稳定的实体与关系键 |
+| 轨迹 → 操作契约 → 可泛化经验两级模板：一条轨迹记录对应一个主意图，去除实例值，显式写适用与不适用边界；经验以 `supersedes` 替换更窄的旧条目并继承轨迹历史 | OpenViking | 输入含工具调用及结果；抽取模型能稳定输出长结构化结果 |
 
 **倾向**。从已存执行轨迹批量生成记忆，现有开源实现的组合方式集中在模式 C 与 D：先按 trace 或任务切分并附结果信号，再由反思产出候选，以 delta 方式写入；模式 E 用于周期整合。各实现的输入层均先把 trace 压平为消息或步骤文本，span 的父子关系、耗时与状态码不进入 prompt。具备"注入 → 归因 → 计数 → 淘汰"效用闭环的只有 ACE、ReMe 0.2 与 MemOS 插件，且前两者的计数依赖在线回报。
 
@@ -723,6 +891,7 @@ Agent 运行时产生 trace：用户消息、模型调用、工具调用及其�
 | SkillBoost（2607.26643） | 每簇生成 N=4 个修复候选；接收条件为"a candidate must fix more cases than it breaks" | Best-of-N 后取 top-2 全量评测；门控默认 `min_improvement=0.0`、`max_case_regression=None`，只在 improvement 小于阈值时拒绝，零增益也通过；无合并步骤，整份替换 | `src/skillboost/contracts.py` L101-176；`orchestrate.py` L266-300 |
 | Agent KB（2507.06229） | 新条目与已有条目余弦 >0.8 时由 LLM ranker 择优；效用更新 u←u+η(r−u)；BM25 初筛 + MiniLM 重排 | 仓库未见"轨迹 → 经验"构建代码，只有检索与已构建的 5899 条 `knowledge_base.json`，条目无 id、无来源、无时间戳；检索为 TF-IDF 与 sentence-transformers 各 0.5 加权，只用 query 字段，服务默认 top_k=1 | `agent_kb_service.py` L34-35；`agent_kb_retrieval.py` L213-228 |
 | Who&When（2505.00212）与 AgenTracer（2509.03312） | Who&When 给出三种归因基线；AgenTracer 以强化学习训练 AgenTracer-8B 做反事实归因 | Who&When 归因输出为 stdout 文本 `Agent Name / Step Number / Reason for Mistake`，由正则解析；step_by_step 提示中含 ground truth；binary_search 无法判定时随机选择。AgenTracer README 声明不发布 8B 权重，仓库无 RL 训练代码；样本沿用 Who&When 格式，诊断中间物为 `{mistake_step, mistake_agent, reason, suggested_fix}`，失败轨迹注入 fix 后重跑成功才写入标签，需要完整 MetaGPT 环境 | `Automated_FA/Lib/utils.py` L92、L140-150、L189-269；`diagnose_fail_log_metagpt.py` L408-423 |
+| OpenViking v0.5.0（README 称开源了 VikingMem 2605.29640 的部分核心能力） | VikingMem 论文：两阶段 LLM 分段（先过滤寒暄等低显著性内容，再输出每个话题的起止位置）；事件与实体 schema 编入同一 prompt 单次抽取；实体由事件经聚合算子（SUM、MAX、AVG、COUNT、LLM_MERGE、TIME_COMPRESS）得到，类比事件日志上的物化视图，实体更新用字段级 search-and-replace 补丁；不活跃时间线的旧事件合成摘要后按 TTL 清理；论文未描述记忆到源消息的溯源。官方 benchmark 博客报告 tau2-bench 有 / 无经验记忆 Retail 70.94%→77.81%、Airline 54.38%→66.25%（自报） | 单次多类型抽取由 ExtractLoop 实现，字段级合并为 immutable / patch / replace / sum 四种 `merge_op`；events 以 `ranges` 回指归档消息、每次提交写 `memory_diff.json`，溯源强于论文；Agent Evolution（trajectories / experiences / cases）默认关闭，训练框架声明为非公开 API；博客未说明 tau2-bench 中经验的构建方式与训练测试划分；Claude Code 日志回放适配器只取文本块，仅含工具调用的轮次被丢弃 | `session/memory/merge_op/`；`prompts/templates/memory/events.yaml` L142-152；`session/compressor_v3.py` L200-237；`session/memory_policy.py` L80-83；`ingest/sources/claude_code.py` L55 |
 
 WISE-Flow（2601.08158）未见开源代码，prompt 只出现在附录图中。
 
@@ -750,6 +919,34 @@ WISE-Flow（2601.08158）未见开源代码，prompt 只出现在附录图中。
 | 作业调度可靠性 | claude-mem 依赖 BullMQ 且无租约回收与对账；Cognee 水位越过未处理数据；ACE checkpoint 不能续跑 |
 | 离线效用计数 | ACE、ReMe 计数依赖在线回报；离线运行时 ACE 计数恒为 0；无实现从 trace 中解析实际使用的记忆并关联结果 |
 | 抽取质量评测 | 各实现均无操作级或溯源级的离线评测集 |
+
+### 5.6 生成模型配置
+
+开源组件的默认生成模型反映"每条消息或每个事件都要调用一次"的成本约束。表 5-9 为各组件在固定 commit 上的默认值（2026-10-10 读取，部分组件的 commit 晚于表 5-1，见文末来源）。
+
+表 5-9 开源组件的默认生成模型
+
+| 组件（commit） | 生成环节 | 默认模型 | 分层 | 源码位置 |
+|---|---|---|---|---|
+| Mem0（b7ad69a） | 事实抽取 | `gpt-5-mini` | 单模型 | `mem0/llms/configs.py` L7；`mem0/llms/openai.py` L40 |
+| Graphiti（a9ef13f） | 节点与边抽取用 medium；时间戳、属性、边判重、摘要用 small | `gpt-5.5` / `gpt-4.1-nano` | 两档 | `graphiti_core/llm_client/openai_base_client.py` L34-35 |
+| Cognee（0ec7a9f） | 图抽取与 lesson 批处理 | `openai/gpt-5.6-luna` | 单模型 | `cognee/infrastructure/llm/config.py` L110、L153 |
+| Honcho（3922af8） | deriver、summary、dialectic、dream 各自配置 | 均为 `gpt-5.4-mini` | 每角色独立，默认同一模型 | `src/config.py` L931、L1063、L1210、L1405、L1417 |
+| claude-mem（fa8ab09） | observation、每轮 summary | `claude-haiku-4-5-20251001`；按复杂度路由，simple / fast → haiku，smart → sonnet | 按复杂度两档 | `src/shared/SettingsDefaultsManager.ts` L372、L488-492 |
+| ACE（3a31983） | Agent / Reflector / SkillManager 可分别配置 | 默认 `gpt-4o-mini`；Claude Code runner 中 agent 为 Claude Code，Reflector 与 SkillManager 为 `gpt-4o-mini` | 每角色独立 | `ace/runners/litellm.py` L259；`ace/runners/claude_code.py` L188-211 |
+| ReMe HEAD（c1de31a） | daily note、Auto Dream | `qwen3.7-plus`，关闭思考；agent 宿主可换为 Claude Code 或 Codex | LLM 与 agent 宿主两套 | `reme/config/default.yaml` L851、L877-892 |
+| altk-evolve（493c313） | guideline 生成、写前冲突消解 | `gpt-4o`；`EVOLVE_GUIDELINES_MODEL` 可与 `EVOLVE_MODEL_NAME` 分开 | 两角色可分 | `altk_evolve/config/llm.py` L8-24 |
+| Acontext（259d73b） | 任务切分、蒸馏、Skill Learner | `gpt-4.1` | 单模型 | `src/server/core/acontext_core/schema/config.py` L26 |
+| MIRIX（8cb06a6） | 六类记忆 agent 与技能蒸馏 | `gpt-4o-mini` | 单模型 | `mirix/configs/mirix.yaml` L12 |
+| MemOS（a7367d0） | MemReader 抽取 | `gpt-4o-mini`；API 配置另有本地 `Qwen/Qwen3-1.7B` 选项 | 单模型 | `src/memos/mem_os/utils/default_config.py` L51 |
+| EverOS（824dfc7） | 入库抽取；检索决策器与多模态解析另配 | `openai/gpt-4.1-mini`；多模态解析 `google/gemini-3.8-flash` | 按任务分开 | `src/everos/config/default.toml` L72、L118 |
+| letta-code（44d351b） | reflection 子 agent | `letta/auto-memory` 服务端路由句柄，底层模型不可见；对 reflection 类型不继承父模型，本地后端时继承 | 与主 agent 分开 | `src/agent/subagents/subagent-model.ts` L247-258 |
+| LangMem（48e3c11） | memory manager | 无默认，调用方必须传入 | — | `src/langmem/knowledge/extraction.py` L536 |
+| OpenViking（1440338） | ExtractLoop 记忆抽取 | 无固定默认，初始化向导选择 provider（火山引擎、OpenAI、Kimi、GLM、本地 Ollama 等）；prompt 面向豆包模型调优 | 单个对话模型 + embedding 模型 | 官方文档 `docs/en/guides/01-configuration.md` |
+| Trace2Skill（3d0b52a） | 轨迹、分析、合并 | 复现脚本 `MODEL=Qwen3.5-122B-A10B`，全流程同一模型 | 同模型自演化 | README L113 |
+| SkillBoost（2435016） | 归因与变异 | 任务模型冻结，演化模型默认以非交互方式启动 Claude Code，也可交给当前 Codex / Claude Code 会话 | 任务模型与演化模型分离 | README L100-155 |
+
+13 个给出默认值的通用组件中，默认抽取模型属 mini / flash / haiku / nano 档的有 Mem0、Cognee、Honcho、claude-mem、ACE、MIRIX、MemOS、EverOS 8 个（GPT-5.6 Luna 按 mini 档计），另有 Graphiti 的 small 档子任务与 ReMe 的非思考 plus 档；默认用主力档的有 altk-evolve（`gpt-4o`）、Acontext（`gpt-4.1`）与 Graphiti 的主抽取（`gpt-5.5`）。面向执行 trace 的经验类组件（ACE、altk-evolve、claude-mem、ReMe）都提供按角色分开配置模型的入口。生成模型的分类、消融与趋势见第 4.8.7 节，产品配置见第 6.4 节。
 
 ## 6. 产品中的记忆机制
 
@@ -795,9 +992,11 @@ Codex 是公开材料中流水线最完整的产品实现，源码基线为 `ope
 | `max_unused_days` | 30 | 0–365 | 未使用淘汰窗口 |
 | `min_rate_limit_remaining_percent` | 25 | 0–100 | 额度门槛 |
 | `disable_on_external_context` | false | — | 为 true 时使用 MCP、web 搜索、tool search 的会话标为 polluted |
-| `extract_model` / `consolidation_model` | 未设 | — | 两阶段可用不同模型 |
+| `extract_model` / `consolidation_model` | 未设（由 provider 给默认值 `gpt-5.6-luna` / `gpt-5.6-terra`） | — | 两阶段可用不同模型，均与会话模型无关 |
 
 阶段常量（`memories/write/src/lib.rs`）：阶段一 reasoning effort 为 Low、并发 8、租约与重试间隔各 3600 s，rollout 输入占模型有效窗口 70%（无窗口信息时 150k token）；阶段二 effort 为 Medium、租约 3600 s、心跳 90 s。
+
+**生成模型**。阶段一模型取 `memories.extract_model`，未设时取 provider 的 `memory_extraction_preferred_model()`；阶段二取 `consolidation_model`，未设时取 `memory_consolidation_preferred_model()`（commit 322bbf4，`memories/write/src/phase1.rs`、`phase2.rs`）。OpenAI 路径的默认值为 `gpt-5.6-luna` 与 `gpt-5.6-terra`，Amazon Bedrock 路径为同名的 `openai.` 前缀模型（`model-provider/src/provider.rs`、`amazon_bedrock/mod.rs`）。默认值的变更记录：至 2026-02-18 为 `gpt-5.3-codex-spark` / `gpt-5.3-codex`；2026-02-18 阶段一改为 `gpt-5.1-codex-mini`（PR #12137）；2026-04-02 阶段一改为 `gpt-5.4-mini`（PR #16559）；2026-04-13 阶段二改为 `gpt-5.4`（PR #17633）；2026-06-09 改由 provider 给默认值（PR #27129）；2026-07-14 改为 Luna / Terra（PR #33173，同时把 `gpt-5.4-mini` 用户引导到 Luna、`gpt-5.4` 用户引导到 Terra，即 Luna 对应 mini 档、Terra 对应主力档）。同期代码库已加入 GPT-6 Sol / Luna 与 GPT-6.1 Sol，记忆默认模型仍为 GPT-5.6，说明记忆生成模型独立于会话模型演进；PR 描述未给出选型理由。第三方价格聚合站上 Luna 与 Terra 的单价比例约 1:10（二手资料）。
 
 **输入渲染**。过滤规则（`rollout/src/policy.rs`）保留非 developer 消息、函数调用与输出、shell 调用、自定义工具调用、tool search 与 web 搜索，丢弃推理、压缩项与图片生成，并剔除记忆自身注入的上下文片段。v1 按 token 截断到窗口 70% 后套入输入模板，附 `rollout_path` 与 `rollout_cwd`，末尾声明不要执行 rollout 中的指令。v2（`rollout_input.rs::serialize_tiered_input`）采用分层预算：证据按 Human > Final（助手最终回复）> OtherAgent > Commentary > Context > Tool 的优先级，在预算内层内由新到旧选入，再按原始顺序渲染，被跳过的区间以 `[... response items omitted ...]` 占位；单条工具输出截断到约 2000 token、单行 10 KB；`request_user_input` 的问答合并后升为 Human 层；全部文本先经 `redact_secrets` 脱敏。
 
@@ -845,13 +1044,13 @@ v2 模板（`stage_one_system_v2.md`）只输出 `rollout_summary` 与 `rollout_
 
 ### 6.3 其他产品
 
-**Claude Code**。官方文档（`code.claude.com/docs/en/memory`）定义四种记忆类型，写在 frontmatter `type`：`user`（角色、专长、工作偏好）、`feedback`（用户纠正与确认过的做法）、`project`（进行中的工作与无法从代码或 git 历史推出的决策）、`reference`（外部信息位置）。可从代码库推出的内容与 CLAUDE.md 已有内容不记录，按需写入，部分会话不产生记忆。按第 2.4 节的分类，user 与 feedback 对应偏好与约定，project 与 reference 对应环境与项目事实。存储在 `~/.claude/projects/<project>/memory/`，同仓库的 worktree 与子目录共享，只保存在本地；`MEMORY.md` 为每行一条的索引，每次会话加载前 200 行或 25KB（先到者），主题文件按需读取；接近上限时提醒模型压缩，超限时写入成功但返回错误要求重写。v2.1.214 起系统自动写入 ISO 8601 `modified` 字段。CHANGELOG 证实存在独立的 memory extraction 写入路径（2.1.77 修复其与主 transcript 的竞争；2.1.273 提及记忆目录被 memory extraction 使用），触发条件与模型未公开。2026-08 至 10 月的版本只有防护性变化：2.1.273 起开启 `blockReadsOutsideWorkingDirectories` 时仓库设置指定的记忆目录不参与 extraction；2.1.284 中和 `MEMORY.md` 与召回笔记中的隐形字符与伪造标记；2.1.285 起后台与工具派生会话不能开启 auto memory。
+**Claude Code**。官方文档（`code.claude.com/docs/en/memory`）定义四种记忆类型，写在 frontmatter `type`：`user`（角色、专长、工作偏好）、`feedback`（用户纠正与确认过的做法）、`project`（进行中的工作与无法从代码或 git 历史推出的决策）、`reference`（外部信息位置）。可从代码库推出的内容与 CLAUDE.md 已有内容不记录，按需写入，部分会话不产生记忆。按第 2.4 节的分类，user 与 feedback 对应偏好与约定，project 与 reference 对应环境与项目事实。存储在 `~/.claude/projects/<project>/memory/`，同仓库的 worktree 与子目录共享，只保存在本地；`MEMORY.md` 为每行一条的索引，每次会话加载前 200 行或 25KB（先到者），主题文件按需读取；接近上限时提醒模型压缩，超限时写入成功但返回错误要求重写。v2.1.214 起系统自动写入 ISO 8601 `modified` 字段。CHANGELOG 证实存在独立的 memory extraction 写入路径（2.1.77 修复其与主 transcript 的竞争；2.1.273 提及记忆目录被 memory extraction 使用），触发条件与模型未公开；第三方源码分析称 extraction 以 fork 方式运行，与父会话共享系统提示、工具、模型与思考配置以命中 prompt 缓存（二手资料）。2026-08 至 10 月的版本只有防护性变化：2.1.273 起开启 `blockReadsOutsideWorkingDirectories` 时仓库设置指定的记忆目录不参与 extraction；2.1.284 中和 `MEMORY.md` 与召回笔记中的隐形字符与伪造标记；2.1.285 起后台与工具派生会话不能开启 auto memory。
 
 安装包内嵌提示词（第三方镜像 Piebald-AI/claude-code-system-prompts 收录，经 2.1.263 安装包逐字对照）给出写入规则：用户纠正（"no not that""stop doing X"）与对非显然做法的确认都要记录，理由为"只记纠正会偏离用户已验证的做法并变得过度谨慎"；feedback 正文先写规则，再写 **Why:** 与 **How to apply:**；单次明确纠正即可写入，限定范围靠措辞承载（如"for refactors in this area"）；可从代码库推出的约定、调试修复配方、只在本次对话有效的任务细节即使用户要求也不保存，改问"其中什么是非显然的"；写前检查是否已有覆盖该内容的文件，更新而不重复。团队记忆开启时的变体规定 user 类型始终私有，feedback 默认私有，只有全体贡献者都应遵循的约定才写入团队空间，私有 feedback 写入前须检查是否与团队 feedback 冲突。召回的记忆作为背景上下文注入，冲突时以当前观察为准并更新记忆。extraction 子 agent 只使用最近若干条消息（条数由提示词中的变量设定），禁止 grep 源码与执行 git 命令。
 
 Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHANGELOG 中均不存在 "dream" 条目，相关设置只有 `autoMemoryEnabled`、`autoMemoryDirectory` 与 `CLAUDE_CODE_DISABLE_AUTO_MEMORY`。"距上次 >24h 且其间 ≥5 个会话"的触发条件与"定位 → 收集信号 → 整合 → 修剪"四步描述只见于第三方对特性开关的逆向分析（二手资料）。上述镜像中收录了 dream 整合提示词文本（ccVersion 2.1.285），内容包括与 CLAUDE.md 对账、相对日期改绝对日期、索引条目压缩；该提示词的启用条件无官方说明。本报告不把 Auto Dream 作为跨会话整合的产品依据。
 
-**Anthropic memory tool 与 Managed Agents**。memory tool（`memory_20250818`）由客户端执行 `view / create / str_replace / insert / delete / rename` 六个命令，路径限定 `/memories`，API 在系统提示中加入"先查看记忆目录、假设会被中断"的协议；文档建议剥离敏感信息、限制文件大小、定期删除久未访问的文件。Managed Agents memory store 为 workspace 级文本文档集合，单条 ≤100 kB、单 store ≤10,000 条，每会话最多挂载 8 个，挂载为 `/mnt/memory/<slug>/`；每次变更生成不可变版本并归属到 session，版本保留 30 天，更新支持 `content_sha256` 乐观并发；文档明确提示写入 store 的 prompt injection 会在后续会话被当作可信记忆，建议参考资料挂只读。Dreams（研究预览，beta 头 `dreaming-2026-04-21`）以一个现有 store 与 1–100 个历史会话为输入，可选 `instructions`（≤4,096 字符），异步生成新的 output store，输入 store 不变，可审阅后切换或丢弃；作业状态为 pending → running → completed / failed / canceled，失败或取消时保留部分输出；底层为可流式观察的 session；功能为合并重复、以最新值替换陈旧或矛盾条目、提炼新洞见；成本与会话数和长度近似线性。2026-08-01 与 10-01 扩展了支持的模型，机制未变。这是公开 API 中最接近"会话批量 → 整合记忆"的形态。
+**Anthropic memory tool 与 Managed Agents**。memory tool（`memory_20250818`）由客户端执行 `view / create / str_replace / insert / delete / rename` 六个命令，路径限定 `/memories`，API 在系统提示中加入"先查看记忆目录、假设会被中断"的协议；文档建议剥离敏感信息、限制文件大小、定期删除久未访问的文件。Managed Agents memory store 为 workspace 级文本文档集合，单条 ≤100 kB、单 store ≤10,000 条，每会话最多挂载 8 个，挂载为 `/mnt/memory/<slug>/`；每次变更生成不可变版本并归属到 session，版本保留 30 天，更新支持 `content_sha256` 乐观并发；文档明确提示写入 store 的 prompt injection 会在后续会话被当作可信记忆，建议参考资料挂只读。Dreams（研究预览，beta 头 `dreaming-2026-04-21`）以一个现有 store 与 1–100 个历史会话为输入，可选 `instructions`（≤4,096 字符），异步生成新的 output store，输入 store 不变，可审阅后切换或丢弃；作业状态为 pending → running → completed / failed / canceled，失败或取消时保留部分输出；底层为可流式观察的 session；功能为合并重复、以最新值替换陈旧或矛盾条目、提炼新洞见；成本与会话数和长度近似线性。2026-08-01 与 10-01 扩展了支持的模型，机制未变。Dream 的整合模型由调用方以 `model` 指定，研究预览支持 Opus、Sonnet、Fable 系列（如 `claude-opus-5-5`、`claude-sonnet-5-5`、`claude-fable-5-1`），不含 Haiku 档，按所选模型的标准 token 价计费。这是公开 API 中最接近"会话批量 → 整合记忆"的形态。
 
 **GitHub Copilot Memory**。使用方为 cloud agent、code review、CLI 与 agentic autofix，记忆跨 agent 共享。仓库事实（编码约定、架构决策、构建命令）对该仓库有权限的用户共享，且只由有写权限的用户触发的操作产生；用户偏好（"stated or implied preferences"）仅本人跨仓库可用，引用可含用户原话。agent 在任务中调用 `store_memory`，字段为 `subject, fact, citations, reason`，citations 为支撑事实的文件与行号。使用前按当前分支校验 citation，代码与记忆矛盾或位置失效时存一条修正版，校验通过且有用则重新存储以刷新时间戳；未合并 PR 中得到的事实在当前代码无支撑时不产生影响。未使用 28 天自动删除。code review 只用仓库事实。用户偏好归属于为用户授权的计费实体，企业管理员可导出或批量删除。2026-08-11 扩展到 JetBrains；09-25 起 agentic autofix 在修复安全告警前查询记忆，生成修复后把修复模式写为新记忆，文档未述其校验与过期规则。
 
@@ -863,7 +1062,7 @@ Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHA
 
 **Kiro**。Kiro Web memory 从任务创建者的反馈中学习偏好，PR 评论中的约定会应用到该用户所有仓库的后续工作，只有任务创建者的反馈影响学习结果；用户只能查看与删除。Kiro Crew memory 分六层：偏好层与项目层每 30 条消息由整合器整体重写（上限分别为 4,250 与 6,400 字符）；history 与隐式 lessons 在会话空闲 3 小时后生成，显式"always do X"立即保存为 lesson；LLM 写入的语义事实需置信度 ≥0.8、每次 ≤20 条；情景记忆余弦相似度 >0.88 去重，上限 10,000 条。history 分层保留：0–13 天全文、14–60 天每天首条、61–180 天只留计数、365 天以上删除；情景记忆得分乘以 `exp(-0.03×天数)`。冲突优先级为 lessons > 用户写入事实 > LLM 写入事实 > 偏好与项目 > 情景 > history。条目无引用。0.5.0（08-29）加入 incognito 模式。
 
-**Cline 与 Letta Code**。Cline Memory Bank 是规则驱动的约定：用户把指令放入 `.clinerules/memory-bank.md`，Cline 在仓库维护 `projectbrief.md`、`activeContext.md`、`progress.md` 等 6 个文件，"update memory bank"触发全量复查，每次会话开始全部读入，溯源依赖 git 历史；`/newrule` 从对话引导生成规则文件。Letta Code 把记忆存于 git 管理的 MemFS，后台 reflection 子 agent 在完成若干步骤后或上下文压缩时回顾近期对话并更新记忆，由 `/sleeptime` 配置，可选由第二个后台对话审查拟议更新（不请求用户批准）。Letta 的 skill learning 博客（2025-12）以 Terminal-Bench 2.0 全部 89 题的基线轨迹（含失败）反思后用 skill-creator 写技能：Sonnet 4.5 仅用轨迹 +9 个百分点，轨迹加验证反馈 +15.7 个百分点；该实验无训练与测试划分，学习与评估使用同一批题。
+**Cline 与 Letta Code**。Cline Memory Bank 是规则驱动的约定：用户把指令放入 `.clinerules/memory-bank.md`，Cline 在仓库维护 `projectbrief.md`、`activeContext.md`、`progress.md` 等 6 个文件，"update memory bank"触发全量复查，每次会话开始全部读入，溯源依赖 git 历史；`/newrule` 从对话引导生成规则文件。Letta Code 把记忆存于 git 管理的 MemFS，后台 reflection 子 agent 在完成若干步骤后或上下文压缩时回顾近期对话并更新记忆，由 `/sleeptime` 配置，可选由第二个后台对话审查拟议更新（不请求用户批准）。reflection 子 agent 的模型默认解析为 `letta/auto-memory` 服务端路由句柄（底层模型不可见），对 reflection 类型不继承主 agent 的模型，可显式指定；实验开关 `reflection_arena` 对同一 transcript 样本做反思模型的盲测 A/B。Letta 服务端博客建议把 sleep-time agent 配为更强的模型，理由是其延迟约束较小。Letta 的 skill learning 博客（2025-12）以 Terminal-Bench 2.0 全部 89 题的基线轨迹（含失败）反思后用 skill-creator 写技能：Sonnet 4.5 仅用轨迹 +9 个百分点，轨迹加验证反馈 +15.7 个百分点；该实验无训练与测试划分，学习与评估使用同一批题。
 
 **ChatGPT**。旧体系为 saved memories（用户要求或模型主动保存的条目）与 reference chat history 两项开关；删除聊天不删除由其产生的 saved memory，已删除记忆的日志最多保留 30 天（二手资料，帮助中心原文返回 403）。2026-06-04 官方公告"Dreaming: Better memory for a more helpful ChatGPT"（官方 RSS 与检索摘录核对）称后台进程"learn from many conversations and synthesize ChatGPT's memory state"，初版 dreaming 于 2025-04 推出，当前为 Dreaming V3。新体系提供可编辑的 Memory Summary（显示最后更新时间），过时事实改写为过去时（"You're going to Singapore in July"→"You went to Singapore in July 2026"），回答下方可展示所用记忆、过往聊天与自定义指令；"Don't mention this again"只减少后续提及，不删除原始来源；完全删除须删除出现该信息的所有来源，包括过往与归档聊天、文件、memory summary，并断开相关应用。Temporary Chat 默认不读记忆，较新版本增加可选的个性化临时对话。macOS 桌面版 Computer History（2026-08-13，08-20 扩展到 EEA、瑞士、英国）经辅助功能接口采集白名单应用的操作与可见文本，定期启动临时 Codex 会话汇总为记忆与时间线，产物为本地 Markdown，临时事件最多保留 48 小时；时间线条目标注来源应用，无正式引用；按时间范围清除时事件与对应记忆一并删除。
 
@@ -908,15 +1107,33 @@ Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHA
 
 | 产品 | 数据 | 口径 |
 |---|---|---|
-| GitHub Copilot Memory | code review 精确率 +3%、召回 +4%；coding agent A/B 中 PR 合并率 83% → 90%；code review 正反馈 75% → 77%（p < 0.00001） | 官方博客（2026-01-15）自报 |
+| GitHub Copilot Memory | 离线评测：在早于评测任务的历史任务上运行 agent 填充记忆，并有意多放入来自未合并分支的记忆，code review 精确率 +3%、召回 +4%；线上 A/B：coding agent PR 合并率 83% → 90%，code review 评论正反馈 75% → 77%（两项均 p < 0.00001） | 官方博客（2026-01-15）自报；样本量、随机化单元与离线指标的计算方式未披露 |
 | Cursor Bugbot | 整体 resolution rate 52%（2025-07）→ 约 78%；超过 11 万仓库、4.4 万条规则 | 官方博客自报；Learned Rules 的单独贡献未报告 |
 | ChatGPT Dreaming V3 | 事实召回 41.5%（2024）→ 82.8%（2026）；偏好相关任务成功率 71.3% | 第三方转述 OpenAI 内部图表，基线说法不一，未核实 |
 | Letta Code skill learning | Terminal-Bench 2.0 上 +9pp（仅轨迹）、+15.7pp（轨迹 + 验证反馈） | 官方博客；无训练与测试划分 |
 | Codex | 只有指标名（`codex.memory.*`），无效果数据 | — |
 
-**空白**。Claude Code memory extraction 的触发、prompt 与模型未公开，Auto Dream 无官方材料。除 Codex 外，产品均未公开选取会话的规则；多数产品选取会话时不按成败或用户纠正过滤，按结果加权选取的公开实践只有 Bugbot 与 Augment Code Review Memory。各产品均未公开记忆冲突的量化处理规则（Codex 以 prompt 中"近因 + 验证强度"为准，Kiro Crew 给出类型优先级）。官方给出的公开效果数据有 Copilot、Bugbot 与 Letta Code 三项，均为自报：Bugbot 的数字为整体 resolution rate，未单独归因到 Learned Rules；Letta Code 的实验无训练与测试划分。
+**生成模型的配置**。会话内即时写入的产品由会话模型写入（Copilot、Claude Code 主路径、Anthropic memory tool、Claude.ai、ChatGPT saved memories、Cascade）；后台或离线流水线都单独配置生成模型，与会话模型解耦（表 6-8）。
 
-**倾向**。产品侧的机制按记忆类型分化：个人偏好类记忆出现由批量整合转向会话中即时写入的案例（Claude.ai 08-25 改版）；跨会话的经验与程序类记忆以后台批量整合为主，Codex 为两阶段流水线，Managed Agents Dreams 与 ChatGPT dreaming 为批量整合。批量整合的公开实现中，Codex 给出了会话选取条件、作业租约与水位、diff 驱动遗忘、使用回写四项可核对的工程细节，其余产品只公开到接口与行为层面。校验手段中，使用时按代码位置校验（Copilot）与按后续结果晋升或停用（Bugbot）各由一家产品采用；Copilot Memory 公开了整体效果数据，Bugbot 公开的 resolution rate 未单独归因到 Learned Rules。
+表 6-8 产品与平台的生成模型配置
+
+| 产品或平台 | 生成者 | 默认或可选模型 | 依据 |
+|---|---|---|---|
+| Codex memories | 阶段一逐会话抽取；阶段二全局整合 agent | `gpt-5.6-luna`（Low 推理）/ `gpt-5.6-terra`（Medium 推理），可分别覆盖；计入用户 Codex 额度 | 源码 |
+| Managed Agents Dreams | 显式异步作业 | 调用方指定，只支持 Opus / Sonnet / Fable 档；按所选模型计费，成本随会话数与长度近似线性 | 官方文档 |
+| Letta Code reflection | 后台子 agent | `letta/auto-memory` 路由句柄，底层模型未公开；可显式指定；内置反思模型盲测 A/B | 源码 |
+| Claude Code memory extraction | 回合后台子 agent | 未公开；第三方分析称与主会话同一模型 | 二手资料 |
+| ChatGPT Dreaming V3 | 后台进程 | 未公开 | 官方公告 |
+| Cursor Memories（已移除） | sidecar 模型 | 未公开 | 二手资料 |
+| LangSmith Engine | 筛查子 agent（每次约 20 条 trace，多路并行）→ 调查子 agent | Haiku 档筛查；调查模型未公开 | 官方博客（《信号与选样调研》第 4 节） |
+| Anthropic Clio（2412.13678） | 离线批量 | facet 抽取 Claude 3 Haiku；簇命名与层次 Claude 3.5 Sonnet；每 10 万条对话约 $48.81，其中 facet 抽取 $45.00（约 92%） | 原文（《信号与选样调研》第 4 节） |
+| Honcho 托管服务 | 后台 deriver | Neuromancer XR，据第三方资料为 Qwen3-8B 在约 1 万条推理轨迹上微调 | 二手资料 |
+
+批量流水线的公开实例都把逐条抽取放在廉价档、把整合或深查放在中档以上，成本主体在逐条抽取（Clio）；Managed Agents Dreams 只提供整合环节，模型限于 Opus / Sonnet / Fable 档。各产品均未公开选型理由与不同档位的效果对比。
+
+**空白**。Claude Code memory extraction 的触发、prompt 与模型未公开，Auto Dream 无官方材料；Codex、LangSmith Engine、Clio 的生成模型选型理由与档位对比未公开。除 Codex 外，产品均未公开选取会话的规则；多数产品选取会话时不按成败或用户纠正过滤，按结果加权选取的公开实践只有 Bugbot 与 Augment Code Review Memory。各产品均未公开记忆冲突的量化处理规则（Codex 以 prompt 中"近因 + 验证强度"为准，Kiro Crew 给出类型优先级）。官方给出的公开效果数据有 Copilot、Bugbot 与 Letta Code 三项，均为自报：Bugbot 的数字为整体 resolution rate，未单独归因到 Learned Rules；Letta Code 的实验无训练与测试划分。
+
+**倾向**。产品侧的机制按记忆类型分化：个人偏好类记忆出现由批量整合转向会话中即时写入的案例（Claude.ai 08-25 改版）；跨会话的经验与程序类记忆以后台批量整合为主，Codex 为两阶段流水线，Managed Agents Dreams 与 ChatGPT dreaming 为批量整合。批量整合的公开实现中，Codex 给出了会话选取条件、作业租约与水位、diff 驱动遗忘、使用回写四项可核对的工程细节，其余产品只公开到接口与行为层面。校验手段中，使用时按代码位置校验（Copilot）与按后续结果晋升或停用（Bugbot）各由一家产品采用；Copilot Memory 公开了整体效果数据，Bugbot 公开的 resolution rate 未单独归因到 Learned Rules。生成模型的配置上，后台批量流水线均与会话模型解耦，并随厂商型号代际独立更换。
 
 ## 7. 相邻与可迁移方向
 
@@ -999,6 +1216,8 @@ Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHA
 | Meta-Harness | 2603.28052 | 文件系统中全部历史候选的源码、分数、原始执行 trace → harness 代码 | 搜索集与测试集分离 | 消融：只看分数中位 34.6、分数 + 摘要 34.9、分数 + 源码 + 原始 trace 50.0；每轮读取的文件约 40% 为执行 trace |
 | Combee | 2604.04247 | 大批量 trace 并行反思 → ACE playbook 或 GEPA 提示 | 沿用底层方法 | ACE 批大小 1 → 100 时 Formula 87.0% → 72.5%、更新数 264 → 21；约 √n 的层次 mini-batch 与重复打乱后 AppWorld 65.8（顺序 ACE 58.1） |
 | meta-agent（README） | — | 无标签生产 trace + LLM judge → harness 文件 | holdout 提升才接受 | tau-bench airline 10/15 → 13/15；单次运行，selection 集反复使用 |
+| STEVE | 2609.23716 | 难例上的失败 → prompt 更新 | 难例改善且保留集（k=20）退化在正则化容许内 | GSM8K / StrategyQA / Object Counting 86.2 / 93.2 / 95.7，无验证 84.1 / 91.5 / 92.2；k=40 时 Object Counting 降到 91.0；每次运行约 $2.2 |
+| Darwin Gödel Machine | 2505.22954 | 自修改后的 coding agent 源码 | 分阶段评估：10 题基本功能 → 60 题 → 200 题，40% 阈值按初步运行的噪声设定 | SWE-bench 20.0% → 50.0% |
 
 过拟合证据：TextReg（2605.21318）描述提示分布外差距扩大与窄规则累积；Wan 等（2406.15708）发现随机搜索示例即可优于未做示例优化的指令优化（二手资料）；2607.07847 在 Qwen3-8B 上发现提示类方法在后续阶段覆盖先前收益（GEPA 在 FinQA 上提升近 40%，经过下一阶段后跌回接近基线）。
 
@@ -1052,9 +1271,9 @@ Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHA
 
 | 工作 | 编号 | 机制 | 结果 |
 |---|---|---|---|
-| SkillForge | 2610.09832 | trial / active / stable / retired 四状态，按 fitness 管理；SkillFurnace 数据集 5k+，含淘汰事件与失败类别 | 最高相对 +7.8%（据摘要） |
-| Skill-V | 2610.11781 | 技能为带版本、可证伪的契约；失败触发新建，契约评估与任务结果不一致触发修订；修订须在历史回放上不退化 | ALFWorld 95.3%、WebShop 85.9%（据摘要） |
-| SkillSpec | 2610.00704 | 多次配对评估一致通过才提交；按优化轨迹选择扁平、图或混合结构 | 比 SkillOpt 平均 +6.89%（据摘要） |
+| SkillForge | 2610.09832 | trial / active / stable / retired 四状态，trial → active 只按使用次数，active → retired 按成功率 <0.4；种子技能用基础模型 rollout 预淘汰；SkillFurnace 数据集 5k+，含淘汰事件与失败类别 | 最高相对 +7.8%（据摘要）；去掉生命周期 WebShop 相对 −7.4% |
+| Skill-V | 2610.11781 | 技能为带版本、可证伪的契约；失败触发新建，契约评估与任务结果不一致触发修订；修订须在已观测证据池的影子回放上不退化 | ALFWorld 95.3%、WebShop 85.9%；去掉证据门控 75.0 |
+| SkillSpec | 2610.00704 | 同一验证集上 K 次配对评估，合计净增益与每次增益均达阈值才提交；按优化轨迹选择扁平、图或混合结构 | 比 SkillOpt 平均 +6.89%（据摘要） |
 | SkillGraph | 2605.12039 | 使用 ≥ 20 次且成功率 < 0.15 的技能标记弃用 | 二手资料 |
 | SkillOps | 2605.13716 | 按效用、兼容性、风险、验证四维诊断技能技术债 | ALFWorld 79.5%（据摘要） |
 | Dynamic Agent Skills 综述 | 2607.10113 | 124 篇；8 阶段生命周期：证据、提议、验证准入、存储、检索、维护、蒸馏、治理与溯源回滚；给出技能记录 schema 与 10 种库更新操作 | 综述 |
@@ -1076,7 +1295,7 @@ Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHA
 | Getafix（1902.06111） | 被合入且使 Infer 告警消失的人工修复 | AST 差分 + 层次聚类 + 反统一，保留上下文，得到带洞模板 | 编译通过且告警消失；偏好匹配位置少的具体模式 | 1,268 个 bug 中 top-5 覆盖 526；Instagram 修复 1,077 个 |
 | Revisar（1803.03806） | 出现于 ≥ 3 个项目的编辑 | 具体编辑聚类 + 反统一 | 问卷、PR | 89 个跨项目模式，64% 不在现有工具中（二手资料） |
 | FixMiner、Phoenix、SpongeBugs | 修复补丁；静态分析违规；高频修复规则 | 多视图聚类；程序综合；频次统计后人工实现 | Defects4J；人工判定；开源 PR | SpongeBugs 920 处修复接受 84%（二手资料） |
-| AutoCommenter（2405.13565） | 附带最佳实践文档 URL 的审查评论 | 多任务模型预测违规位置 + URL | 逐 URL 阈值、只评论改动行、正则抑制过时规则；验证与测试按时间切分 | 有用率 54% → 80% 以上；解决率约 40% |
+| AutoCommenter（2405.13565） | 附带最佳实践文档 URL 的审查评论 | 多任务模型预测违规位置 + URL | 逐 URL 阈值（初始全局 0.98）、只评论改动行、正则抑制过时规则；验证与测试按时间切分；按 teamfood → 约 3,000 名志愿者 → 约一半开发者 A/B → 全员分阶段上线 | 有用率 54% → 80% 以上；解决率约 40% |
 | Greptile 评论过滤 | 历史 bot 评论的处理、点赞、点踩 | 团队级 embedding 近邻 | 与 ≥ 3 条被踩评论相似即屏蔽 | 处理率 19% → 55% 以上 |
 | DeepDelta | 构建由失败转为通过的编辑 | AST 差分转 DSL + NMT | 与历史修复对比 | 38,788 个错误中正确 19,314 个（二手资料） |
 | agent PR 研究 | 合并与拒绝标签 + 人工编码 | — | — | AIDev 接受率 Codex 64%、Devin 49%、Copilot 35%，人类 76.8%（二手资料）；Peralta 等（2605.22534）被拒 PR 中 35.7% 为明确的 agent 失败、31.2% 由工作流约束导致、33.1% 无可观察理由（据摘要）；Nakashima 等（2602.04226）在 654 个被拒 PR 中识别出 7 种仅见于 agent PR 的拒绝模式，67.9% 无明确审查反馈（二手资料）；Ehsani 等（2601.15195）分析 3.3 万个 PR，失败与审查者放弃、重复提交、CI 失败相关（二手资料） |
@@ -1142,11 +1361,12 @@ Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHA
 
 | 共识 | 独立得出该结论的方向与代表证据 |
 |---|---|
-| 写入前的验证门控有独立价值，去掉门控可能低于不演化 | 经验记忆论文：EDGE、SkillBoost、WebXSkill、SkillOpt（第 4.5、4.7 节）；data agent：Crystallization（《信号与选样调研》第 7.7 节）；AIOps：OpsHarness（第 7.2 节）；技能生命周期：Skill-V、SkillSpec 的回放与配对评估（第 4.6 节）；产品：Copilot 使用前按代码位置校验、Bugbot 候选规则晋升（第 6.4 节） |
+| 写入前的验证门控有独立价值，去掉门控可能低于不演化（该共识限于技能、harness 与 prompt 演化；经验条目类与产品中不是共识，第 4.8.6 节） | 技能与经验论文：15 组有 / 无门控消融同向，其中 WebXSkill、GRASP 去门控低于或持平无技能，SkillBoost、MemGuard、STEVE 去门控下降但仍高于基线，EDGE 的增益门控作用于训练信号（第 4.5、4.7、4.8.6 节）；data agent：Crystallization（《信号与选样调研》第 7.7 节）；AIOps：OpsHarness（第 7.2 节）；技能生命周期：Skill-V 的影子回放、SkillSpec 的配对评估（第 4.6 节）；prompt 优化：GEPA、DSPy 的 selection 集接收（第 7.3 节）；产品：Copilot 使用前按代码位置校验、Bugbot 候选规则晋升（第 6.4 节） |
 | 分组后一次性归纳、并行提议后层次合并，优于流式反复重写 | 论文：2605.12978、Trace2Skill、WISE-Flow（第 4.8.4 节）；prompt 优化：Combee（第 7.3 节）；trace 平台：摘要持久化后聚类与命名可重跑（《信号与选样调研》第 4.2 节）；产品：Codex 的两阶段流水线与 Managed Agents Dreams 的批量整合（第 6.4 节） |
 | 原始证据需保留并可回查，预先生成的摘要会丢失信号 | 程序优化：Meta-Harness（《输入、存储与评测调研》第 4.1 节）；经验复用：QCR、2601.22436（第 4.8.4 节）；溯源研究：TierMem、Eywa（《输入、存储与评测调研》第 7.4 节）；产品：Codex 以 rollout summary 作证据层（第 6.2 节）；平台：簇与 issue 回指源 trace（《信号与选样调研》第 4.1 节） |
 | 分组前先去除具体实体与常量做归一化 | 论文：IBM 子任务泛化、2511.21730（《信号与选样调研》第 4.4 节）；平台：facet 摘要（《信号与选样调研》第 4.1 节）；AIOps：Drain 模板化；查询日志：SQL 参数化与子句拆分；软件工程：AST 差分与反统一（第 7 节） |
 | 成熟的经验挖掘系统采用"选样 → 归一化 → 归并 → 泛化 → 验证门控 → 反馈淘汰"结构 | 软件工程、查询日志、AIOps、过程挖掘（第 7.8 节）；trace 平台的漏斗筛查与持久 issue 表（《信号与选样调研》第 4.8 节）；论文中的候选—门控—效用淘汰（第 4.8.3 节） |
+| 后台或离线生成与会话模型解耦、单独配置生成模型，逐条抽取用廉价档 | 产品：Codex 阶段一 `gpt-5.6-luna`、阶段二 `gpt-5.6-terra`，Managed Agents Dreams 由调用方指定，Letta Code reflection 独立路由（第 6.2、6.4 节）；平台：Clio、LangSmith Engine 以 Haiku 档逐条抽取或筛查（《信号与选样调研》第 4 节）；开源组件：13 个给出默认值的组件中 8 个默认 mini / haiku 档，ACE、altk-evolve、claude-mem、ReMe 可按角色分开配置（第 5.6 节） |
 | 使用记录驱动保留与淘汰 | 产品：Codex 使用计数、Copilot 28 天未用删除、Bugbot 负信号停用（第 6.4 节）；论文：ACE 计数、EDGE Δe、OPD-Evolver 选中回报差（《信号与选样调研》第 5.5 节）；技能：SkillGraph、SkillForge（第 4.6 节） |
 
 ### 8.2 分歧与证据强度
@@ -1157,14 +1377,19 @@ Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHA
 
 | 结论 | 强度 | 依据类型 | 主要依据 | 分歧或限制 |
 |---|---|---|---|---|
-| 验证门控有独立价值 | 强 | 原文实验（多篇消融） | EDGE、SkillBoost、WebXSkill、OpsHarness、Crystallization | 门控依赖可重放环境或执行验证；纯离线 trace 库上的门控效果无实证 |
+| 验证门控有独立价值（技能、harness、prompt 演化） | 强 | 原文实验（15 组消融，作者自报） | GRASP（含同算力对照与"给基线加门控"对照）、SkillBoost、WebXSkill、OpsHarness、Crystallization、MemGuard、STEVE | 门控依赖可重放环境、执行验证或有代表性的验证集；小验证集上近似随机拒绝（Recuris）；Trace2Skill 逐 patch 门控低于全量聚合；GRASP 加门控后分布外无改善；EDGE 的增益门控作用于训练信号 |
+| 无门控会低于不演化或无记忆基线 | 中 | 原文实验 | 15 组中 5 组（EDGE、OpsHarness、Crystallization、WebXSkill、GRASP K=1） | 多出现在演化轮数多或策略同步训练的设置中；SkillBoost、STEVE、RSEA、MemGuard 去门控仍高于基线 |
+| 经验条目在纯离线 trace 上的写入前门控效果 | 弱 | 原文实验 | MemGuard、Grounding Agent Memory、Crystallization | 前两者分别依赖 trace 中的公开测试信号与可只读访问的环境；Grounding Agent Memory 环境探测在仅轨迹整理之上的增量约 3 个百分点、区间重叠 |
+| 单独的 LLM 自评或自投票可作门控 | 证据为负（中） | 原文实验 + 摘要 | Crystallization 自投票低于无记忆 2.03pp；Memory Reward Inflation 中跨厂商 judge 继承偏差；2609.33013 ρ=−0.24（据摘要） | 读取执行侧信号的 verifier 有效（MemGuard 一致率 83%–86%） |
 | 流式反复合并退化，分组批量与层次合并更优 | 强 | 原文实验 | 2605.12978、Trace2Skill、Combee、WISE-Flow | 各工作的任务与指标不同；"每组多少条"无收益曲线 |
-| 自动构建与检索的记忆在编码任务上多数无收益 | 中 | 原文实验 | VibeMemBench、SWE Context Bench、DreamBench-SWE | 分歧：CONTRAMEM（据摘要）、Letta skill learning（无训练与测试划分）报告正收益；直接注入的上限估计经过选样 |
+| 自动构建与检索的记忆在编码任务上多数无收益 | 中 | 原文实验 | VibeMemBench、SWE Context Bench | 分歧：DreamBench-SWE（2608.20664）预注册的后继审计中，逐字事件记忆 82/180、Mem0 直接存原文 97/180，三种有记忆条件对无记忆（21/180）在 Holm 校正后均显著，有记忆条件之间差异不显著，原版一轮的主对比是两种有记忆条件之间的比较（95/180 vs 89/180），不显著；Mem0 默认事实抽取在原版一轮中为 21/180，与无记忆持平，该基准的任务按构造依赖前序会话中不可推断的证据（据摘要）；CONTRAMEM（据摘要）、Grounding Agent Memory（可只读访问环境）、Letta skill learning（无训练与测试划分）报告正收益；直接注入的上限估计经过选样 |
 | 失败轨迹对生成的价值 | 中 | 原文实验 + 摘要 | ReasoningBank 加失败 46.5→49.7、ExpeL 去掉成败对下降、Feedback Dynamics（据摘要） | 分歧：AWM 加入失败轨迹 44.4→42.2；LEGOMem、AMD 只用成功轨迹也有大幅收益（据摘要）。差异与产物类型（规则或流程）对应 |
 | 条目粒度与抽象程度 | 中 | 原文实验 + 摘要 | ReMe keypoint 级优于轨迹级；2604.27003 抽象程序优于详细轨迹（据摘要） | 分歧：QCR 查询时生成笔记优于离线通用摘要，2601.22436 显示 agent 依赖原始经验、忽略压缩经验；Crystallization 中最简格式不劣于更丰富的格式 |
 | 外置记忆在未见任务与需删除的内容上优于参数化 | 中 | 原文实验 + 摘要 | 2603.18272、2607.07847 | SciConsolidate（据摘要）显示小模型从注入中获益少、从 SFT 中获益多 |
 | 产品中的记忆收益 | 弱 | 生产部署自报 | Copilot PR 合并率 83%→90%；Bugbot 整体 resolution rate 52%→约 78%（未单独归因到 Learned Rules） | 无公开实验设计；ChatGPT 71.3% 未核实 |
-| 2026 年 7–10 月新工作的机制与数字（CONTRAMEM、Grounding Agent Memory、Skill-V、SkillForge 等） | 弱 | 摘要 | 表 4-2、表 4-4 中标"摘要"的条目 | 未读全文，实验条件不明 |
+| 2026 年 7–10 月新工作的机制与数字（CONTRAMEM、AMD、SkillMorph、MACE 等） | 弱 | 摘要 | 表 4-2、表 4-4 中标"摘要"的条目 | 未读全文，实验条件不明；Grounding Agent Memory、Skill-V、SkillForge、Recuris、HarnessEvolve 已核对全文 |
+| 生成模型更强时记忆更好，收益随使用方能力递减 | 中 | 原文实验 | ExpeL、ReMe、ACE、SkillRL、EvolveR、Memory-R1、Mem-α（第 4.8.7 节） | 各实验任务与规模不同；EvolveR 3B 自蒸馏略优于教师；产品级的抽取档位消融未公开 |
+| 自生成记忆对来源模型更合适，跨模型迁移多为正 | 弱至中 | 原文实验 + 摘要 | Memory Transfer Learning、Trace2Skill 35B ↔ 122B；CONTRAMEM（据摘要） | 差距小（Pass@1 0–0.025）；个别负迁移；跨模型实验中抽取模型是否随来源变化未说明 |
 | 整合环节的投毒与权限塌缩 | 弱至中 | 摘要 + 原文实验（MINJA） | PoisonedEvolution、TBA、OEP、AuthMem-Bench、TMA-NM；MINJA 为原文 | 攻击设置多为作者构造 |
 | 相邻方向做法在 agent trace 上的效果 | 弱 | 原文实验（单篇、合成）+ 生产部署自报 | COMPASS、TraceCompiler、AgentLTL、Incident Memory | 方法本身成熟，迁移到 code agent 与 data agent trace 的效果无直接对照 |
 | span 树结构对记忆生成的收益 | 无证据 | 无 | — | 检索范围内未见实验 |
@@ -1178,7 +1403,8 @@ Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHA
 | 组合 | 环节构成 | 代表工作 | 前提 |
 |---|---|---|---|
 | 两阶段生成 + 作用域内分组整合 + 增量操作 | 逐 trace 抽取并缓存；在仓库或数据库作用域内分组，一次性整合；LLM 输出增量操作与来源归属，程序执行合并并累加支持计数 | Codex、Trace2Skill、altk-evolve、ACE | 抽取结果以 trace 为键缓存；少量一致记录即可越过频次门槛（PoisonedEvolution、TBA，据摘要），支持计数需与来源独立性和来源权限一同使用（推论） |
-| 候选状态 + 核验门控 + 使用阶段效用回写 | 新条目先为候选；按可得性选择环境只读核验、历史 trace 重放或留出集对照；生效后按使用记录计算效用并淘汰 | Grounding Agent Memory、Skill-V、HarnessEvolve、EDGE、ACE、Codex | 有只读环境或可重放环境；记忆使用进入 trace（`gen_ai.memory.client` span 或引用回写）；效用统计区分"检索且采用"与"检索未采用" |
+| 候选状态 + 核验门控 + 使用阶段效用回写 | 新条目先为候选；按可得性选择环境只读核验、历史 trace 影子回放、留出集对照或读取执行侧信号的 verifier；生效后按使用记录计算效用并淘汰 | Grounding Agent Memory、Skill-V、MemGuard、HarnessEvolve、SkillForge、ACE、Codex | 有只读环境、可重放环境或 trace 中记录了执行侧信号；验证集有代表性；记忆使用进入 trace（`gen_ai.memory.client` span 或引用回写）；效用统计区分"检索且采用"与"检索未采用" |
+| 分层配置生成模型 | 廉价档模型逐 trace 抽取并缓存；中档或强模型单写者整合与冲突消解；成败判定用执行侧信号；生成模型 ID 记入溯源 | Codex（Luna / Terra）、Clio（Haiku / Sonnet）、LangSmith Engine（Haiku 筛查 + 调查子 agent）、Graphiti（nano / 主力档） | 逐条抽取占成本主体；使用方较弱时生成侧需用更强模型（SkillRL、ExpeL）；抽取档位对记忆质量的影响需在目标 trace 上对照（推论） |
 
 ### 8.4 研究空白与机会
 
@@ -1189,6 +1415,8 @@ Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHA
 | trace 结构 | 开源实现与研究均把 trace 压平为消息或步骤文本；H²R、G-Memory、LEGOMem、MACE 的层级结构最接近 span 树；过程挖掘有父子 span 作子过程边界、参数级数据流边等做法 | 以多 agent、多层 span 树为输入做渲染、切分与归纳并评估收益的工作；span 的耗时、状态码、父子关系作为判别特征的实证 |
 | 注入时机与使用 | 现有评测多为任务开始时注入或按需检索；正确且相关的记忆也会被过度依赖（MEMTRIM 2610.07311，据摘要）；独立 agent 逐步判断提醒或沉默在 Terminal-Bench 2.0 上 pass@1 +8.3pp（Proactive Memory Agent 2607.08716，据摘要） | 固定 top-k 下系统比较任务开始注入、每步注入、按需工具调用三种时机的研究；生成侧产出触发条件以供逐步判断的效果 |
 | 安全与删除 | 整合投毒与权限塌缩针对批量归纳环节；删除级联有 MEMOREPAIR、SBU 的方法；撤销在检索层不生效的问题有基准 | 批量生成流水线上频次门槛、来源独立性、隔离期与组合审查的联合评测；按来源删除在多层派生（摘要、技能、注入上下文的产物、缓存）上的端到端验证 |
+| 写入前候选选择 | 技能与 harness 演化普遍用留出集或回测接收；GRASP、SkillBoost 以逐例修好与改坏计数；小验证集上门控近似随机拒绝（Recuris）；EvoPathBench 指出被选中的更新达不到候选潜力（据摘要） | 纯离线 trace 上各类验证方式（依据校验、执行侧信号 verifier、影子回放、时间切分）的对照；可检索经验条目的逐条门控与组合效应；单条记忆的灰度或影子试用 |
+| 生成模型的选择 | 产品与组件默认廉价档抽取、中档整合，选型理由未公开；研究中的生成模型消融分散在不同任务与规模 | 在 code agent 与 data agent 生产 trace 上比较会话内同模型写入与离线独立模型生成、不同抽取档位；生成模型升级后旧记忆的有效性评估 |
 | 失效与漂移 | SWE-Exp 只在检索时按仓库与时间排除；Continual Learning Bench 是 schema 在线迁移的唯一设置；Braintrust Patterns 只在近期数据表明行为停止时关闭条目，数据缺失或查询失败不计为停止 | 代码库、API 与 schema 变化后记忆失效的检测与再生成；"无新 trace"与"新 trace 中不再出现"两类情形的淘汰规则评估 |
 
 ## 9. 证据边界
@@ -1206,7 +1434,7 @@ Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHA
 | 底座模型与 harness | 同一方法在不同模型上的增益差别大（如 CONTRAMEM 各模型 23.0–28.0 提升到 52.5–61.0，据摘要）；AgentSM 的前后对比底座模型不同 |
 | 基线不同 | 无记忆、ReAct、GRPO、人写技能、其他记忆系统等基线并存；"比最强基线高"依赖作者选取的基线集合 |
 | 评测规模 | 小样本评测（H²R 每环境 3 个 episode、Letta skill learning 无训练与测试划分、meta-agent 单次运行）与大规模评测并列；已报告的 1–5 pp 记忆增益与《输入、存储与评测调研》第 8.8 节估算的置信区间半宽（600 个配对约 ±4 pp）相当（估算） |
-| 自报与独立评测 | 产品数字（Copilot、Bugbot、Cursor、LangSmith Engine 处理量）为生产部署自报，无公开实验设计 |
+| 自报与独立评测 | 产品数字（Copilot、Bugbot、Cursor、LangSmith Engine 处理量、OpenViking 与 Mem0 的官方基准分数）为生产部署或厂商自报，无公开实验设计；写入前门控的 15 组有 / 无消融均由提出门控的作者在各自基准上报告，无独立复现 |
 | 判定方式 | 部分工作的成败由 LLM judge 判定（ReasoningBank、PASB、HaluMem）；ReasoningBank 报告了 judge 与 GT 的一致率 72.7%，HaluMem 未报告 judge 与人工的一致性 |
 
 表 4-2 的"相关度"列为本报告按与研究问题的契合度给出的 1–5 分，属于主观评级。
@@ -1216,6 +1444,7 @@ Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHA
 - 检索截至 2026-10-09。产品能力、平台规模、开源实现与模型接口均为该时点的状态，后续变化未纳入。
 - 产品状态有时效：Cursor Memories 于 2.1.x 移除；Devin Knowledge 于 2026-09-18 迁移为 Skills；Codex memories v2 于 2026-09-17 发布、默认仍为 v1；Claude Code 依据官方文档最高版本 v2.1.287 与 CHANGELOG；LangSmith Engine 的处理量为截至 2026-09-24 的官方数字；Managed Agents Dreams 为研究预览。
 - 开源实现的源码事实对应文末所列 commit 与版本。多个项目在 2026 年发生不兼容变化（Mem0 2.x、Letta V1 服务端退役、ReMe 主线删除 task / tool 记忆、memU 抽取移出服务端、ACE skillbook schema v2），引用效果数字时需区分论文实验版本与当前开源版本（第 5.4、5.5 节）。
+- 第四阶段方向 4 的材料读取于 2026-10-10：OpenViking 对应 commit 1440338（v0.5.0），第 5.6 节默认生成模型对应表 5-9 所列 commit，Codex 生成模型配置对应 commit 322bbf4 与所列 PR。默认生成模型随厂商型号代际更换（Codex 阶段一默认模型 2026-02 至 2026-07 换了三次），属时效信息。
 - OTel GenAI 语义约定依据 commit `06ec68e`（2026-10-07，schema `gen-ai-dev/1.42.0-dev`），全部属性为 development 级，2026-09 内仍有三处相关新增；通用约定依据 v1.44.0；Langfuse 依据 commit `d179469`（2026-09-01）。
 - 模型服务的参数支持、上下文上限、价格与限流为 2026-10-09 读取值（《输入、存储与评测调研》第 6 节）。
 - arXiv 论文按检索时的最新版本阅读；同一工作的摘要与正文口径不同时以正文表格为准。
@@ -1230,10 +1459,10 @@ Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHA
 |---|---|---|
 | 2 | 2504.15965 的分类、2606.04990、2607.10113、2608.03392 | 2504.15965 的象限细节、2505.00675、2512.23343 的分类细节（二手资料） |
 | 3 | 2605.22534（agent PR 拒绝归因） | — |
-| 4 | 表 4-2 中证据列为"摘要"的 26 项（如 CONTRAMEM、Grounding Agent Memory、Skill-V、SkillForge、AMD、LEGOMem、Darwinian Memory、Feedback Dynamics、2609.33013）；表 4-3 中 APEx、SciConsolidate、AgentBrew 与 OPD-Evolver 的数字；表 4-4 中 SkillMorph、AMD、Tool-Making、Recuris、MACE、MERIT 的数字；表 4-5 中除 SkillGraph 外的各项；2607.10113、2608.03392、EvoPathBench、Prompt-side Playbooks；表 4-6 中的整合投毒、组合风险、技能提取、权限塌缩、shadowing、有害技能与压缩经验各项；2604.27003 | SkillGraph 弃用阈值；2601.04748 的选择准确率数字（二手资料） |
-| 5 | — | —（Memori、MemMachine、LongMemory 的部分说法依据 README 或文档，未读源码） |
-| 6 | — | 二手资料：Cursor 旧 sidecar 描述；Devin 使用透明；Augment 动机说明；ChatGPT 删除日志保留期；Claude Code Auto Dream 触发条件；Amp 第三方插件。未核实：ChatGPT Dreaming V3 的事实召回与 71.3% 偏好成功率 |
-| 7 | 1710.09323、2609.22475、Sato 等综述（2112.02000）、COLA、OPRO 的提升数字、DSPy MIPROv2、TextGrad、Trace / OptoPrime、AFlow、ADAS、Memory Decoder、Sparse Memory Finetuning、Cartridges、2604.27003、AgentBrew、SciConsolidate、RL 与 SFT 的遗忘对比、Skill Shadowing、2608.11888、Feedback Dynamics、SkillForge、Skill-V、SkillSpec、SkillOps、Beyond the Harness、LinkedIn SQL Bot、2605.22534 | 二手资料：约束 trace 聚类（2110.06703）、Bose 等的编辑距离与漂移分类、act2vec / trace2vec、Case2vec、Taymouri 综述（1911.07582）、LILAC、LiDAR 与 DeepRmd、Smyth & Keane、OPRO 过拟合差距、2406.15708、RL 与 SFT 遗忘对比的部分来源、SkillGraph、2601.04748、Agent Skills in the Wild、Revisar、FixMiner 等修复模式挖掘、DeepDelta、AIDev 接受率、2602.04226、2601.15195、workload 压缩与 ISUM、QueryBot5000、Pinterest |
+| 4 | 表 4-2 中证据列为"摘要"的 20 项（如 CONTRAMEM、AMD、LEGOMem、Darwinian Memory、Feedback Dynamics、2609.33013）与 SkillSpec 的数字；表 4-3 中 APEx、SciConsolidate、AgentBrew 与 OPD-Evolver 的数字；表 4-4 中 SkillMorph、AMD、Tool-Making、Recuris（37 组与 tau-bench 数字）、MACE、MERIT 的数字；表 4-5 中 SkillForge 的 +7.8%、SkillSpec 的 +6.89%，以及 SkillVine、SkillOps、Epistemics of Agent Memory、Feedback Dynamics；第 4.8.6 节中 MemTxn、Gated Memory、A-MAC、Memory Worth、ERRAND、Random rules（2604.11088）、EvoPathBench、Feedback Dynamics 的数字；第 4.8.7 节中 AMD、CONTRAMEM、SciConsolidate、APEx 与 2404.13076；2607.10113、2608.03392、EvoPathBench、Prompt-side Playbooks；表 4-6 中的整合投毒、组合风险、技能提取、权限塌缩、shadowing、有害技能与压缩经验各项；2604.27003 | SkillGraph 弃用阈值；2601.04748 的选择准确率数字（二手资料） |
+| 5 | Mem0 论文 2504.19413 的相对提升与延迟数字 | —（Memori、MemMachine、LongMemory 的部分说法依据 README 或文档，未读源码；Mem0 README 与 OpenViking benchmark 博客的分数为厂商自报，未独立复现） |
+| 6 | — | 二手资料：Cursor 旧 sidecar 描述；Devin 使用透明；Augment 动机说明；ChatGPT 删除日志保留期；Claude Code Auto Dream 触发条件；Claude Code memory extraction 以 fork 运行、与主会话同一模型；GPT-5.6 Luna 与 Terra 的分档与价格比例；Honcho Neuromancer XR 的底座与规模；Amp 第三方插件。未核实：ChatGPT Dreaming V3 的事实召回与 71.3% 偏好成功率 |
+| 7 | 1710.09323、2609.22475、Sato 等综述（2112.02000）、COLA、OPRO 的提升数字、DSPy MIPROv2、TextGrad、Trace / OptoPrime、AFlow、ADAS、Memory Decoder、Sparse Memory Finetuning、Cartridges、2604.27003、AgentBrew、SciConsolidate、RL 与 SFT 的遗忘对比、Skill Shadowing、2608.11888、Feedback Dynamics、SkillForge 的 +7.8%、SkillSpec 的 +6.89%、SkillOps、Beyond the Harness、LinkedIn SQL Bot、2605.22534 | 二手资料：约束 trace 聚类（2110.06703）、Bose 等的编辑距离与漂移分类、act2vec / trace2vec、Case2vec、Taymouri 综述（1911.07582）、LILAC、LiDAR 与 DeepRmd、Smyth & Keane、OPRO 过拟合差距、2406.15708、RL 与 SFT 遗忘对比的部分来源、SkillGraph、2601.04748、Agent Skills in the Wild、Revisar、FixMiner 等修复模式挖掘、DeepDelta、AIDev 接受率、2602.04226、2601.15195、workload 压缩与 ISUM、QueryBot5000、Pinterest |
 
 仍无法核实的项：Claude Code Auto Dream 的全部细节与 memory extraction 的触发条件和模型；ChatGPT 帮助中心与 Dreaming 公告原文（403，经官方 RSS 与检索摘录核对）及 71.3% 的出处与基线；Cursor 旧 Memories 文档原文。
 
@@ -1243,7 +1472,8 @@ Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHA
 
 - 2026 年 10 月上旬的新论文多数只读了摘要页；ICLR 2027 投稿在检索时尚未被索引，相关工作可能遗漏。
 - 部分官方页面不可访问：ChatGPT 记忆帮助中心与 Dreaming 公告、OpenAI 内部 data agent 博文返回 403，经官方 RSS、检索摘录与第三方转述核对；Cursor 旧 Memories 文档已跳转。
-- 部分机制未公开：Claude Code memory extraction 的触发、prompt 与模型；产品的会话选取规则（Codex 除外）与记忆冲突的量化规则；产品内部的效果评估。
+- 部分机制未公开：Claude Code memory extraction 的触发、prompt 与模型；产品的会话选取规则（Codex 除外）与记忆冲突的量化规则；产品内部的效果评估；Codex、LangSmith Engine、Clio 的生成模型选型理由，LangSmith Engine 调查子 agent、ChatGPT Dreaming 与 Letta `letta/auto-memory` 背后的模型。
+- 写入前门控的计数（第 4.8.6 节）按表 4-2 逐项归类，摘要级条目的"未述"可能低估门控；以门控为关键词新增的工作存在检索选择偏差，未计入比例。检索范围内未见在 code agent 与 data agent 生产 trace 上比较不同生成者或不同抽取档位的研究。
 - 部分代码或数据未发布：WISE-Flow 无代码；VibeMemBench 代码与数据未发布；Agent KB 的构建流程未开源；AgenTracer 不发布 8B 权重；Supermemory、Memori 的抽取引擎闭源；Evo-Memory 代码未发布。
 - 源码事实来自固定 commit 的只读阅读，未安装与运行，运行时行为（如调度、并发、实际 prompt 拼接结果）以代码逻辑推断。Claude Code 的内嵌提示词依据第三方镜像，并与 2.1.263 安装包逐字对照。
 - 检索以 arXiv、官方文档、GitHub 与 Hugging Face 为主；非 arXiv 的会议论文与工业资料（过程挖掘、AIOps、软件工程、查询日志方向）部分经二手资料。
@@ -1257,10 +1487,11 @@ Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHA
 - 2023–2024：2303.11366 Reflexion；2308.10144 ExpeL（prompt：https://github.com/LeapLabTHU/ExpeL ，`prompts/templates/human.py`）；2310.10134 CLIN；2306.07863 Synapse；2305.16291 Voyager；2403.06221 TRAD；2403.08978 AutoGuide；2405.16247 AutoManual；2406.14596 ICAL；2409.07429 AWM。
 - 2025：2501.11733 Mobile-Agent-E；2505.17716 AgentRR；2506.07398 G-Memory；2507.06229 Agent KB；2507.23361 SWE-Exp；2508.06433 Mem^p；2508.16153 Memento；2508.19828 Memory-R1；2509.12810 H²R；2509.25140 ReasoningBank（ICLR 2026，https://iclr.cc/virtual/2026/poster/10007887 ）；2509.25911 Mem-α；2510.04618 ACE（附录 prompt：https://arxiv.org/pdf/2510.04618 ）；2510.04851 LEGOMem；2510.08191 Training-Free GRPO；2510.16079 EvolveR；2511.06449 FLEX；2512.10696 ReMe；2512.18746 MemEvolve（ICML 2026，https://icml.cc/virtual/2026/poster/61379 ）；2506.15841 MEM1；2510.12635 MemAct。
 - 2026：2601.03192 MemRL；2601.08158 WISE-Flow；2601.22436 压缩经验的因果依赖研究；2601.22528 Darwinian Memory；2602.02474 MemSkill；2603.10600 Trajectory-Informed Memory Generation（IBM）；2604.27003 记忆侧持续学习研究；2605.22721 DecentMem；2606.17628 OPD-Evolver；2606.19911 Multi-Agent Transactive Memory；2607.01480 PMD；2607.07321 EvoSOP；2607.08010 Tool-Making in Low-Latency Systems；2608.07169 AMD；2608.12847 QCR；2608.21946 EDGE；2608.22533 CONTRAMEM；2608.24876 Recuris；2609.00829 HarnessEvolve；2609.02253 APEx；2609.05837 AgentBrew；2609.11060 Grounding Agent Memory；2609.16635 EchoPath；2609.17653 EvoSkill-GUI；2609.21423 DENSE；2609.21533 MACE；2609.32091 Memory as Middleware；2609.35808 MATE；2610.06964 SAGA。
+- 写入前验证与准入：2605.29668 GRASP；2606.28374 RSEA；2608.21867 MemGuard；2607.22962 ConsistencyGate；2607.27834 MemTxn；2610.11270 Gated Memory；2603.04549 A-MAC；2604.12007 Memory Worth（When to Forget）；2609.29545 ERRAND；2604.11088 agent 规则文件中的随机规则对照（Random rules）。
 
 ### 技能与整合
 
-- 技能生成与演化：2504.06821 ASI；2504.07079 SkillWeaver；2504.07952 Dynamic Cheatsheet；2602.08234 SkillRL；2603.25158 Trace2Skill；2604.13318 WebXSkill；2605.23904 SkillOpt；2607.24459 SciConsolidate；2607.26643 SkillBoost；2608.02636 Feedback Dynamics（Rethinking Self-Evolving Agent Skills）；2609.29154 SkillPivot；2610.11858 SkillMorph。
+- 技能生成与演化：2504.06821 ASI；2504.07079 SkillWeaver；2504.07952 Dynamic Cheatsheet；2602.08234 SkillRL；2603.25158 Trace2Skill；2604.13318 WebXSkill；2605.23904 SkillOpt；2607.24459 SciConsolidate；2607.26643 SkillBoost；2608.02636 Feedback Dynamics（Rethinking Self-Evolving Agent Skills）；2609.29154 SkillPivot；2610.11858 SkillMorph；2604.01687 CoEvoSkills。
 - 技能生命周期与治理：2605.12039 SkillGraph；2605.13716 SkillOps；2609.32731 SkillVine；2610.00704 SkillSpec；2610.09832 SkillForge（NeurIPS 2026）；2610.11781 Skill-V。
 - 整合与合并：2605.12978 Useful Memories Become Faulty；2609.33013 Epistemics of Agent Memory（ConsolidationBench）。
 - 技能规模、风险与评测：2601.04748 技能库规模与选择准确率研究；2601.10338 Agent Skills in the Wild；2602.12670 SkillsBench；2605.24050 Skill Shadowing；2607.25560 SigLeak；2608.11888 Agent Skills Can Be Harmful。
@@ -1270,8 +1501,10 @@ Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHA
 仓库地址为 `https://github.com/<仓库>`，括注为读取的 commit 或版本。
 
 - 记忆组件：AgentToolkit/altk-evolve 493c313（v1.6.1；评审制品说明 jayaramkr/Middleware-2026-artifact-evaluation）；kayba-ai/agentic-context-engine 3a31983（v0.13.0）；agentscope-ai/ReMe 084c02e（HEAD，v0.4.1.13）/ 554eec1（v0.2.0.6）；FlowLLM-AI/flowllm bd64f9c（v0.2.0.10）；thedotmack/claude-mem eccb15e（v13.34.2）；memodb-io/Acontext 259d73b；memodb-io/memobase 358c16b；Mirix-AI/MIRIX 8cb06a6；topoteretes/cognee 0ec7a9f（v1.6.3）；MemTensor/MemOS a7367d0（v2.0.34）；letta-ai/letta 5bcdd17（main）/ 56ba9c2（archive，0.16.8）；letta-ai/letta-code 8f20b78；EverMind-AI/EverOS d2aa949（v1.4.1）；NevaMind-AI/memU 718f6a9（v1.5.1）；microsoft/autogen 027ecf0；agno-agi/agno 5f1fd0c；crewAIInc/crewAI 274fba6（旧版 d28daa2）；mem0ai/mem0 b7ad69a（Python 2.2.1）/ 144627c（v1.0.11）；langchain-ai/langmem 48e3c11（0.0.30）；langchain-ai/langgraph bfcfea5（`libs/checkpoint-postgres/langgraph/store/postgres/base.py`）；getzep/graphiti 1026ae7（v0.30.2）；plastic-labs/honcho cb8ab1a（v3.2.2）；supermemoryai/supermemory 02474bb；MemoriLabs/Memori 574b1ea（v3.3.6）；CaviraOSS/LongMemory 9ee2c8e；agiresearch/A-mem ceffb86；BAI-LAB/MemoryOS 587ed77。
+- 上下文数据库：volcengine/OpenViking 1440338（v0.5.0，2026-10-09；`openviking/session/`、`openviking/session/memory/`、`openviking/prompts/templates/memory/`、`openviking/ingest/`、`openviking/storage/`）。
+- 默认生成模型读取（2026-10-10）：mem0ai/mem0 b7ad69a；getzep/graphiti a9ef13f；topoteretes/cognee 0ec7a9f；plastic-labs/honcho 3922af8；thedotmack/claude-mem fa8ab09；kayba-ai/agentic-context-engine 3a31983；agentscope-ai/ReMe c1de31a；AgentToolkit/altk-evolve 493c313；memodb-io/Acontext 259d73b；Mirix-AI/MIRIX 8cb06a6；MemTensor/MemOS a7367d0；EverMind-AI/EverOS 824dfc7；letta-ai/letta-code 44d351b；langchain-ai/langmem 48e3c11。
 - 论文配套代码：Qwen-Applications/Trace2Skill 3d0b52a；HQ-Lin/SkillBoost 2435016；OPPO-PersonalAI/Agent-KB 588d669；ag2ai/Agents_Failure_Attribution f4d2b6d；bingreeky/AgenTracer 256b19e；whowhenpro/whowhen_pro；henrymao2004/agent-sycophancy（PASB）；ai-jiaqian/text-to-sql-memory-crystallization；MohammadAsadolahi/Reliable-Memory-Agents-in-the-Wild（Memory Reward Inflation）；zjuidg/BIRD-History；MemTensor/HaluMem；gepa-ai/gepa；canvas-org/meta-agent（README）；AlibabaResearch/DAMO-ConvAI 下 VibeMemBench（截至 2026-10-09 仅占位 README）。
-- 产品与 agent：openai/codex 82883da（2026-10-09，记忆流水线与 prompt 模板 `codex-rs/memories/write/templates/memories/`、`state/memory_migrations/`、`codex-rs/secrets/src/sanitizer.rs`；release rust-v0.155.0、0.156.0；PR #43797、#43799、#43800、#43808、#43813、#43827、#45956、#45960）与 2351d9e（2026-10-09，遥测埋点）；Piebald-AI/claude-code-system-prompts（第三方镜像，经 Claude Code 2.1.263 安装包对照）。
+- 产品与 agent：openai/codex 82883da（2026-10-09，记忆流水线与 prompt 模板 `codex-rs/memories/write/templates/memories/`、`state/memory_migrations/`、`codex-rs/secrets/src/sanitizer.rs`；release rust-v0.155.0、0.156.0；PR #43797、#43799、#43800、#43808、#43813、#43827、#45956、#45960）与 2351d9e（2026-10-09，遥测埋点）、322bbf4（2026-10-10，记忆生成模型配置：`codex-rs/memories/write/src/{lib,phase1,phase2}.rs`、`codex-rs/model-provider/src/provider.rs`、`codex-rs/model-provider/src/amazon_bedrock/mod.rs`、`codex-rs/config/src/types.rs`；PR #12137、#16559、#17633、#27129、#33173）；Piebald-AI/claude-code-system-prompts（第三方镜像，经 Claude Code 2.1.263 安装包对照）。
 - 可观测与插桩：langfuse/langfuse d179469（2026-09-01，`packages/shared/src/server/otel/`、ClickHouse migrations）；Arize-ai/openinference（`spec/semantic_conventions.md`、`spec/configuration.md`）；langchain-ai/langsmith-sdk（`_otel_exporter.py`、`client.py`）；OpenHands/software-agent-sdk。
 - 日志与工具：logpai/Drain3。
 
@@ -1287,9 +1520,13 @@ Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHA
 - Augment：https://www.augmentcode.com/changelog/memory-review ；https://www.augmentcode.com/blog/how-we-built-memory-review ；https://docs.augmentcode.com/cosmos/experts-memory.md ；https://docs.augmentcode.com/cosmos/experts-code-review-memory.md
 - Kiro：https://kiro.dev/docs/web/memory/ ；https://kiro.dev/docs/crew/features/memory/ ；https://kiro.dev/changelog
 - Cline：https://docs.cline.bot/features/memory-bank ；https://docs.cline.bot/features/slash-commands/new-rule
-- Letta：https://docs.letta.com/letta-code/memory ；https://docs.letta.com/reference/changelog ；Skill Learning 博客 https://www.letta.com/blog/skill-learning/
+- Letta：https://docs.letta.com/letta-code/memory ；https://docs.letta.com/reference/changelog ；Skill Learning 博客 https://www.letta.com/blog/skill-learning/ ；Sleep-time Compute 博客 https://www.letta.com/blog/sleep-time-compute
 - ChatGPT：https://openai.com/news/rss.xml （"Dreaming: Better memory for a more helpful ChatGPT"，2026-06-04）；https://openai.com/index/chatgpt-memory-dreaming （403，经 RSS 与检索摘录核对）；https://help.openai.com/en/articles/8590148-memory-faq （403）；第三方转述 https://gigazine.net/gsc_news/en/20260605-chatgpt-memory-dreaming-v3
 - Gemini 与 Jules：https://gemini.google/release-notes ；https://jules.google/docs/ ；Amp 第三方插件（二手资料）https://mem.nowledge.co/docs/integrations/amp
+- OpenViking：文档 https://docs.openviking.ai/ ；benchmark 博客（2026-05-29）https://blog.openviking.ai/post/openviking-benchmark-results/ ；PyPI https://pypi.org/project/openviking/
+- Mem0：PyPI https://pypi.org/project/mem0ai/ ；README "New Memory Algorithm (April 2026)" 节
+- LangMem 概念指南：https://langchain-ai.github.io/langmem/concepts/conceptual_guide/
+- GPT-5.6 分档与价格（二手资料）：https://docs.litellm.ai/blog/gpt_5_6 、https://openrouter.ai/compare/openai/gpt-5.6-luna/openai/gpt-5.6-terra ；Claude Code memory extraction 第三方分析（二手资料）：https://www.mintlify.com/killlowkey/claude-code/concepts/memory ；Honcho Neuromancer（二手资料）：https://github.com/elkimek/honcho-self-hosted
 - 其他开源组件文档：Zep 概念文档 https://help.getzep.com/concepts ；memU v1.5.1 README；LongMemory v1.2.3 README；Honcho https://docs.honcho.dev 、https://blog.plasticlabs.ai
 - 数据产品：Hex https://learn.hex.tech/docs/agent-management/suggestions 、https://learn.hex.tech/docs/agent-management/agent-personalization ；Databricks Genie https://docs.databricks.com/aws/en/genie/talk-to-genie 、https://docs.databricks.com/aws/en/genie-agents/monitor ；Snowflake Cortex Analyst https://docs.snowflake.com/user-guide/snowflake-cortex/cortex-analyst/verified-query-suggestions 、https://docs.snowflake.com/en/user-guide/snowflake-cortex/cortex-analyst/analyst-optimization ；ThoughtSpot https://docs.thoughtspot.com/cloud/latest/spotter-coaching-permissions ；OpenAI 内部 data agent https://openai.com/index/inside-our-in-house-data-agent/ （403；转述 https://www.zenml.io/llmops-database/building-a-production-data-agent-for-90000-tables-at-scale 、https://blog.bytebytego.com/p/how-openai-built-its-data-agent ）；Uber QueryGPT https://www.uber.com/en-us/blog/query-gpt/ ；MotherDuck https://motherduck.com/research/query-log-informed-schema-descriptions-text-to-sql.md
 - trace 平台：Braintrust https://www.braintrust.dev/docs/observe/topics 、https://www.braintrust.dev/blog/topics 、https://www.braintrust.dev/docs/observe/patterns 、https://braintrust.dev/docs/instrument/user-feedback ；LangSmith https://docs.langchain.com/langsmith/insights 、https://langchain.com/blog/how-we-built-langsmith-engine-our-agent-for-improving-agents 、https://www.langchain.com/blog/new-in-langsmith-engine-2x-better-issue-detection 、https://www.langchain.com/blog/langsmith-engine-v2-redteam 、https://docs.langchain.com/langsmith/feedback-data-format ；Arize https://www.arize.com/docs/ax/observe/signal.md 、Phoenix annotation API https://arize.com/docs/phoenix/sdk-api-reference/rest-api/api-reference/spans/create-span-annotations ；Langfuse https://langfuse.com/blog/2025-08-29-error-analysis-to-evaluate-llm-applications ；Raindrop https://www.ycombinator.com/launches/Nn7-raindrop-deep-search 、https://www.raindrop.ai/docs/platform/signals
@@ -1298,7 +1535,8 @@ Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHA
 ### 失败归因与评测
 
 - 失败归因：2505.00212 Who&When；2509.03312 AgenTracer（ICLR 2026）。
-- 结果判定与 judge：2608.00017 Memory Reward Inflation。
+- 结果判定与 judge：2608.00017 Memory Reward Inflation；2404.13076 LLM Evaluators Recognize and Favor Their Own Generations。
+- 平台挖掘：2412.13678 Clio。
 - 记忆效用与信用分配：2604.14004 Memory Transfer Learning。
 - 对话记忆基准：2402.17753 LoCoMo；2511.03506 HaluMem。
 - 经验与程序性记忆基准：2511.20857 Evo-Memory；2511.21730 程序性记忆检索基准；2609.23570 VibeMemBench；2608.20664 DreamBench-SWE；2609.24663 EvoPathBench；2608.05778 Prompt-side Playbooks。
@@ -1312,12 +1550,12 @@ Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHA
 
 ### data agent
 
-- text-to-SQL：2608.07213 Crystallization；2601.15709 AgentSM；2606.00547 MERIT（交互式 text-to-SQL）；2608.05906 MERIT（agent 修复）；2507.14372 LinkedIn SQL Bot。
+- text-to-SQL：2608.07213 Crystallization；2608.06950 MIRA；2601.15709 AgentSM；2606.00547 MERIT（交互式 text-to-SQL）；2608.05906 MERIT（agent 修复）；2507.14372 LinkedIn SQL Bot。
 - 标注错误与评测：2601.08778 text-to-SQL 基准标注错误；2606.05661 Continual Learning Bench。
 
 ### 存储、溯源与安全
 
-- 存储与生命周期：2507.03724 MemOS；2504.19413 Mem0；2502.12110 A-MEM；2507.07957 MIRIX。
+- 存储与生命周期：2507.03724 MemOS；2504.19413 Mem0；2502.12110 A-MEM；2507.07957 MIRIX；2605.29640 VikingMem（PVLDB 19 卷 4344–4357 页，https://www.vldb.org/pvldb/vol19/p4344-ke.pdf ）。
 - 溯源：2602.17913 TierMem；2605.30771 Eywa。
 - 删除、撤销与冲突：2605.07242 MEMOREPAIR；2602.17692 Agentic Unlearning（SBU）；2608.25553 When Stale Constraints Go Unchecked。
 - 访问控制与泄漏：2608.01679 AuthMem-Bench；2606.24322 TMA-NM。
@@ -1334,7 +1572,7 @@ Auto Dream：官方 memory 文档、settings / env-vars / commands 参考与 CHA
 
 - 过程挖掘：1608.08252 Nguyen 等，偏差挖掘综述与对比评测；1710.09323 递归感知的过程发现（SANER 2018）；1911.07582 Taymouri 等，变体分析综述；2110.06703 约束 trace 聚类；2112.02000 Sato 等，概念漂移检测综述；2403.01975 OCEL 2.0；2505.20127 Agentic AI Process Observability；2607.02599 AgentLTL；2608.02680 TraceCompiler；2609.22475 目标驱动的 trace 归类。其他文献：COMPASS https://ceur-ws.org/Vol-3996/paper-5.pdf ；Bose & van der Aalst 上下文感知 trace 聚类 https://www.vdaalst.com/publications/p534.pdf ；act2vec / trace2vec https://www.doi.org/10.1007/978-3-319-98648-7_18 ；Case2vec https://fileserver.tk.informatik.tu-darmstadt.de/Publications/2021/Seeliger%20-%20ICPM%20-%20Case2vec.pdf ；决策挖掘（Rozinat & van der Aalst；de Leoni & van der Aalst，SAC 2013）https://www.doi.org/10.1007/11841760_33 、https://www.vdaalst.com/publications/p741.pdf ；PrefixCDD https://pa.win.tue.nl/prefixcdd-effective-online-concept-drift-detection-over-event-streams-using-prefix-trees/ 
 - AIOps 与案例推理：2310.01796 LILAC；2403.06485 COLA；2305.15778 RCACopilot；2402.17531 Nissist；2510.24145 OpsAgent；2609.01616 Incident Memory；2608.25661 OpsHarness；2504.06943 案例推理与 LLM agent（转述 Aamodt & Plaza 1994）。其他文献：Drain（He 等，ICWS 2017）https://doi.org/10.1109/ICWS.2017.13 ；DeepRmd https://2020.esec-fse.org/details/esecfse-2020-industry-papers/9/How-to-Mitigate-the-Incident-An-Effective-Troubleshooting-Guide-Recommendation-Techn ；LiDAR https://2020.esec-fse.org/details/fse-2020-papers/193/Identifying-Linked-Incidents-in-Large-Scale-Online-Service-Systems ；Zalando 复盘分析 https://engineering.zalando.com/posts/2025/09/dead-ends-or-data-goldmines-ai-powered-postmortem-analysis.html ；Smyth & Keane，Remembering to Forget https://folk.idi.ntnu.no/agnar/CBR%20papers/smyth-keane-remembering-95.pdf
-- trace 驱动的 prompt 与程序优化：2309.03409 OPRO；2406.11695 MIPRO；2406.07496 TextGrad；2406.16218 Trace（OptoPrime）；2507.19457 GEPA；2410.10762 AFlow；2408.08435 ADAS；2508.03680 Agent Lightning；2604.04247 Combee；2603.28052 Meta-Harness；2605.21318 TextReg；2406.15708 Wan 等，示例优化与指令优化对比。DSPy 优化器文档 https://dspy.ai/current/api/optimizers/MIPROv2/ 、https://dspy.ai/current/api/optimizers/SIMBA/
+- trace 驱动的 prompt 与程序优化：2309.03409 OPRO；2406.11695 MIPRO；2406.07496 TextGrad；2406.16218 Trace（OptoPrime）；2507.19457 GEPA；2410.10762 AFlow；2408.08435 ADAS；2508.03680 Agent Lightning；2604.04247 Combee；2603.28052 Meta-Harness；2605.21318 TextReg；2406.15708 Wan 等，示例优化与指令优化对比；2609.23716 STEVE；2505.22954 Darwin Gödel Machine。DSPy 优化器文档 https://dspy.ai/current/api/optimizers/MIPROv2/ 、https://dspy.ai/current/api/optimizers/SIMBA/
 - 参数化固化：2603.18272 ExpRAG 与 LoRA 对比；2508.09874 Memory Decoder；2510.15103 Sparse Memory Finetuning；2506.06266 Cartridges；2412.09764 Memory Layers at Scale；2607.07847 持续学习方法对比；2501.17161 SFT Memorizes, RL Generalizes；2509.04259 RL's Razor；2601.19897 SDFT。
 - 软件工程经验挖掘：1902.06111 Getafix（博客 https://engineering.fb.com/2018/11/06/developer-tools/getafix-how-facebook-tools-learn-to-fix-bugs-automatically/ ）；1803.03806 Revisar；1810.01791 FixMiner；2405.13565 AutoCommenter；2507.15003 AIDev；2605.22534 Peralta 等，agent PR 合并与拒绝研究；2602.04226 Nakashima 等，agent PR 拒绝模式研究；2601.15195 Ehsani 等，agent PR 失败因素研究。其他资料：Greptile https://greptile.com/blog/make-llms-shut-up ；DeepDelta https://research.google/pubs/deepdelta-learning-to-repair-compilation-errors/
 - 查询日志挖掘：2608.29345 BIRD-History；2608.22830 Beyond the Harness；2308.15363 DAIL-SQL；2306.02421 Auto-Validate-by-History。其他资料：QueryBot5000（SIGMOD 2018）https://www.pdl.cmu.edu/PDL-FTP/Database/sigmod18-ma.pdf ；Snowflake 查询哈希 https://docs.snowflake.com/en/user-guide/query-hash ；workload 压缩（Chaudhuri 等，SIGMOD 2002）https://doi.org/10.1145/564691.564734 ；ISUM（SIGMOD 2022）https://doi.org/10.1145/3514221.3526152 ；Zou 等（VLDB 2024）https://www.vldb.org/pvldb/vol17/p1528-zou.pdf
