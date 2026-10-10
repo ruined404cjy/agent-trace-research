@@ -6,7 +6,7 @@
 >
 > 对象：`same_table`、`separate`、`full_core`、`asset_ref` 四种长载荷布局，及其在行存与列存引擎中的实现
 
-本文解释阶段三实验要比较的对象、这些对象在两类存储引擎中的物理组织和读写流程，以及实验场景的设计依据。它是阶段三各份实验报告的共同原理与设计基础，可独立阅读；实测数值、结果分析与结论写在实验报告中。JSONB、TOAST、MergeTree data part 与 merge 的通用机制见 [JSON 存储原理](jsonb-native-json-principles.md)，本文只展开与长载荷位置有关的部分。
+本文解释阶段三实验要比较的对象、这些对象在两类存储引擎中的物理组织和读写流程，以及实验场景的设计依据。它是阶段三各份实验报告的共同原理与设计基础，可独立阅读；实测数值、结果分析与结论写在实验报告中。JSONB、TOAST、MergeTree data part 与 merge 的通用机制见 [JSON 存储原理](stage2-representation-principles.md)，本文只展开与长载荷位置有关的部分。
 
 文中的事实分三类，并就近标明：一是冻结输入（版本固定、内容按摘要校验的输入数据）与实验程序的定义，出处为输入清单与代码；二是已在 x86 主机验证的机制，引用[阶段三实验报告（openGauss 与 ClickHouse 25.12）](stage3-payload-x86-report.md)的章节；三是只能由 ARM 主机实测确定的事实，集中列在第 12 章，由实验报告给出结论。
 
@@ -296,7 +296,7 @@ CREATE INDEX events_trace_idx ON events (project_id, trace_id, start_time, event
 
 ### 4.2 大值在行存中的存放
 
-行存以 heap tuple 为一行的物理单位，tuple 放在固定大小的页中。openGauss 使用 TOAST 处理大值：一行的预计大小超过 `TOAST_TUPLE_THRESHOLD`（默认 8 KiB 页下为 2,032 字节）时，先用 PGLZ 尝试压缩可变长列，压缩后仍超过目标时把该值切成约 2 KiB 的 chunk 移入该表关联的 TOAST relation，主 tuple 只保留外置指针。机制细节见 [JSON 存储原理](jsonb-native-json-principles.md) 第 2.1 节。
+行存以 heap tuple 为一行的物理单位，tuple 放在固定大小的页中。openGauss 使用 TOAST 处理大值：一行的预计大小超过 `TOAST_TUPLE_THRESHOLD`（默认 8 KiB 页下为 2,032 字节）时，先用 PGLZ 尝试压缩可变长列，压缩后仍超过目标时把该值切成约 2 KiB 的 chunk 移入该表关联的 TOAST relation，主 tuple 只保留外置指针。机制细节见 [JSON 存储原理](stage2-representation-principles.md) 第 2.1 节。
 
 载荷的存放方式决定了读取普通列时经过的数据量：
 
@@ -480,7 +480,7 @@ ORDER BY updated_at DESC LIMIT 1 FORMAT JSONEachRow;
 
 ### 5.5 part 状态
 
-每批 INSERT 生成新的 part，后台 merge 把同一 partition 内的相邻 part 合并为更大的 part，merge 规则见 [JSON 存储原理](jsonb-native-json-principles.md) 第 3.5 节。本实验把**受控表**（承载列表查询的表：`same_table` 的 `events`、`separate` 与 `asset_ref` 的 `events_analytics`、`full_core` 的 `events_core`）的 part 组织分为四种状态：
+每批 INSERT 生成新的 part，后台 merge 把同一 partition 内的相邻 part 合并为更大的 part，merge 规则见 [JSON 存储原理](stage2-representation-principles.md) 第 3.5 节。本实验把**受控表**（承载列表查询的表：`same_table` 的 `events`、`separate` 与 `asset_ref` 的 `events_analytics`、`full_core` 的 `events_core`）的 part 组织分为四种状态：
 
 | 状态 | 含义 | 产生方式 | 判定条件 | merge 成本所在阶段 |
 |---|---|---|---|---|
@@ -521,7 +521,7 @@ part 状态通过三条途径影响查询，结果解释需要同时核对对应
 
 ## 6. `asset_ref` 的 Sidecar 实现
 
-本文把 `asset_ref` 中由实验程序实现、运行在应用进程内的对象存储与解析器合称 **Sidecar**。目录表 `assets` 位于数据库内，由 Sidecar 读写。[JSON 存储原理](jsonb-native-json-principles.md) 第 3.9 节的 `fidelity_values` 也是实验自定义的 Sidecar，两者服务不同阶段、保存不同内容。
+本文把 `asset_ref` 中由实验程序实现、运行在应用进程内的对象存储与解析器合称 **Sidecar**。目录表 `assets` 位于数据库内，由 Sidecar 读写。[JSON 存储原理](stage2-representation-principles.md) 第 3.9 节的 `fidelity_values` 也是实验自定义的 Sidecar，两者服务不同阶段、保存不同内容。
 
 ### 6.1 组件
 
@@ -847,7 +847,7 @@ ClickHouse 服务端参数的生效值在服务就绪后读取并保存；XStore
 
 ## 参考资料
 
-- [JSON 存储原理](jsonb-native-json-principles.md)
+- [JSON 存储原理](stage2-representation-principles.md)
 - [阶段三实验设计](stage3-payload-design.md)
 - [阶段三实验报告（openGauss 与 ClickHouse 25.12）](stage3-payload-x86-report.md)
 - [阶段二实验报告](stage2-representation-report.md)

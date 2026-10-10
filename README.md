@@ -22,9 +22,8 @@ ARM 主机上 XStore 与 ClickHouse 23.3 的阶段三实验程序与回传工具
 |---|---|
 | [JSON 存储设计决策](docs/json-storage/design-decision.md) | openGauss、XStore 与 ClickHouse 的逻辑模型、参数取值与判据、真实语料画像和证据缺口 |
 | [JSON 存储设计调研](docs/json-storage/design-survey.md) | 代表性系统、论文、项目现状与设计方向 |
-| [openGauss JSONB 与 ClickHouse Native JSON 原理](docs/json-storage/jsonb-native-json-principles.md) | 四种 JSON 存储结构的写入、物理存储、维护和查询流程 |
 | 阶段一：多字段 JSON | [实验设计](docs/json-storage/stage1-multifield-design.md) · [报告](docs/json-storage/stage1-multifield-report.md) |
-| 阶段二：JSON 表示比较 | [实验设计](docs/json-storage/stage2-representation-design.md) · [调优矩阵设计](docs/json-storage/stage2-tuning-design.md) · [报告](docs/json-storage/stage2-representation-report.md) · [组内汇报](docs/json-storage/stage2-representation-briefing.md) |
+| 阶段二：JSON 表示比较 | [JSONB 与 Native JSON 原理](docs/json-storage/stage2-representation-principles.md) · [实验设计](docs/json-storage/stage2-representation-design.md) · [调优矩阵设计](docs/json-storage/stage2-tuning-design.md) · [报告](docs/json-storage/stage2-representation-report.md) · [组内汇报](docs/json-storage/stage2-representation-briefing.md) |
 | 阶段三：长 payload 布局 | [实验设计](docs/json-storage/stage3-payload-design.md) · [原理与设计](docs/json-storage/stage3-payload-principles.md) · [x86 报告](docs/json-storage/stage3-payload-x86-report.md) · [XStore 报告](docs/json-storage/stage3-payload-xstore-report.md) · [三台主机组内汇报](docs/json-storage/stage3-payload-briefing.md) |
 | [OTel 与 Langfuse 学习指南](docs/project-background/otel-langfuse-study-guide.md) | OTel、Collector、GenAI 语义和 Langfuse 摄入链路 |
 | [标准 openGauss 行存复现指南](docs/project-background/trace-ingestion-demo-blue-zone-guide.md) | 历史固定版本的 openGauss row profile 复现 |

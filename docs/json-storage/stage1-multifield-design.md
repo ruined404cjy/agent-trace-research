@@ -3,7 +3,7 @@
 > 状态：阶段一已结束；多字段 JSON 机制矩阵已完成，Full/Core 与 asset 实验顺延阶段三
 > 初始设计日期：2026-09-04；文档修订日期：2026-09-09
 > 范围：多字段 JSON、Full/Core、JSON 长字段与外部引用
-> 原理说明：[openGauss JSONB 与 ClickHouse Native JSON](jsonb-native-json-principles.md)
+> 原理说明：[openGauss JSONB 与 ClickHouse Native JSON](stage2-representation-principles.md)
 > 配套调研：[design-survey.md](design-survey.md)
 > 阶段一报告：[stage1-multifield-report.md](stage1-multifield-report.md)
 
@@ -352,7 +352,7 @@ Tempo dedicated columns、KV/EAV、Parquet Variant、完整 Langfuse 复现和�
 
 ## 11. 参考资料
 
-- [JSON 存储原理](jsonb-native-json-principles.md)
+- [JSON 存储原理](stage2-representation-principles.md)
 - [JSON 存储设计调研](design-survey.md)
 - [Exporter 18 列冻结 ADR-0010](https://github.com/labmemW/exporter_demo/blob/0c26c9ecf03acf0bd6aa3a3c103ba4e7a78b523a/docs/adr/0010-otel-minimal-schema.md)
 - [当前 Benchmark v4 database catalog](https://github.com/zfwang2021/trace-synthesis/blob/6472d8e1ac6cdb42494b79b28d4d5361919d4776/benchmark/schema/v4/database/catalog.json)

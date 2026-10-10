@@ -4,7 +4,7 @@
 >
 > 详细证据：[阶段二报告](stage2-representation-report.md)
 >
-> 原理说明：[JSON 存储原理](jsonb-native-json-principles.md)
+> 原理说明：[JSON 存储原理](stage2-representation-principles.md)
 
 ## 1. 核心结论
 

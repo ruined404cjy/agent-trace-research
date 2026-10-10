@@ -3,7 +3,7 @@
 > 状态：调研结论，供方案选择和穿刺实验使用
 > 调研日期：2026-09-04；文档修订日期：2026-09-09
 > 范围：多字段 JSON、JSON 内长值、Trace 大 payload、热点字段、半结构化查询
-> 原理说明：[openGauss JSONB 与 ClickHouse Native JSON](jsonb-native-json-principles.md)
+> 原理说明：[openGauss JSONB 与 ClickHouse Native JSON](stage2-representation-principles.md)
 > 阶段一实验设计：[stage1-multifield-design.md](stage1-multifield-design.md)
 > 阶段一报告：[stage1-multifield-report.md](stage1-multifield-report.md)
 

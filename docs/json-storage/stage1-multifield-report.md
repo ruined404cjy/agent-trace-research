@@ -4,7 +4,7 @@
 > 实验完成日期：2026-09-07；文档修订日期：2026-09-09
 > 实验与代码基线：2026-09-07 · `b8a112c`
 > 范围：openGauss 6.0.0、ClickHouse 25.12.11.4、多字段 JSON、长 payload
-> 原理说明：[openGauss JSONB 与 ClickHouse Native JSON](jsonb-native-json-principles.md)
+> 原理说明：[openGauss JSONB 与 ClickHouse Native JSON](stage2-representation-principles.md)
 
 ## 1. 结论
 
@@ -330,7 +330,7 @@ Full/Core、长 payload 和 asset reference 纳入[阶段三实验设计](stage3
 ### 9.1 本地证据
 
 - [第一阶段实验基础设施与结果](../../experiments/json-storage-stage1/README.md)
-- [JSON 存储原理](jsonb-native-json-principles.md)
+- [JSON 存储原理](stage2-representation-principles.md)
 - [JSON 存储设计调研](design-survey.md)
 - [阶段一实验设计](stage1-multifield-design.md)
 - [阶段二实验设计](stage2-representation-design.md)

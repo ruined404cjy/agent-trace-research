@@ -6,7 +6,7 @@
 >
 > 数据库版本：openGauss 6.0.0 build `aee4abd5`；ClickHouse 25.12.11.4
 
-配套的[JSON 存储原理](jsonb-native-json-principles.md)解释 TOAST、MergeTree part 与列式压缩的一般机制。本文集中说明长 payload 的四种物理布局在实验契约、场景、结果和结论上的差异。
+配套的[JSON 存储原理](stage2-representation-principles.md)解释 TOAST、MergeTree part 与列式压缩的一般机制。本文集中说明长 payload 的四种物理布局在实验契约、场景、结果和结论上的差异。
 
 ## 1. 结论
 
@@ -315,7 +315,7 @@ ClickHouse 的读取量与朴素预期相反。保留 payload 列的 `events` �
 | `full_core` | `events_core` | 6 | 17 | 11 | 48,534 | 4,412 | 38,912 |
 | `asset_ref` | `events_analytics` | 6 | 17 | 11 | 48,534 | 4,412 | 38,912 |
 
-granule 的行数上限与字节上限同时生效，宽表的 payload 列使字节上限先达到，granule 因此更多，机制见[JSON 存储原理](jsonb-native-json-principles.md)。运行清单的 `access.plans` 记录的 EXPLAIN 计划给出各表的 granule 总数：`events` 为 18，`events_core` 与 `events_analytics` 为 11，`event_payloads` 为 17；mark 数为 granule 数加每个 part 的一个终止 mark，6 个 part 下为 24、17 和 23，与第 4.1 节记录的 mark 数一致。按 48,534 行折算，宽表每个 granule 约 2,696 行，窄表约 4,412 行；granule 覆盖的主键区间越窄，主键裁剪越细，一页 keyset 结果读入的行数越少。计划给出的选中 granule 数属于计划期结果，运行期 `read_rows` 属于执行期结果，两者不相乘推算扫描行数。本轮运行清单未记录 `index_granularity_bytes` 的实际取值，mark 数、granule 数和扫描行数三项均为实测值。
+granule 的行数上限与字节上限同时生效，宽表的 payload 列使字节上限先达到，granule 因此更多，机制见[JSON 存储原理](stage2-representation-principles.md)。运行清单的 `access.plans` 记录的 EXPLAIN 计划给出各表的 granule 总数：`events` 为 18，`events_core` 与 `events_analytics` 为 11，`event_payloads` 为 17；mark 数为 granule 数加每个 part 的一个终止 mark，6 个 part 下为 24、17 和 23，与第 4.1 节记录的 mark 数一致。按 48,534 行折算，宽表每个 granule 约 2,696 行，窄表约 4,412 行；granule 覆盖的主键区间越窄，主键裁剪越细，一页 keyset 结果读入的行数越少。计划给出的选中 granule 数属于计划期结果，运行期 `read_rows` 属于执行期结果，两者不相乘推算扫描行数。本轮运行清单未记录 `index_granularity_bytes` 的实际取值，mark 数、granule 数和扫描行数三项均为实测值。
 
 `payload_selected` 在四种布局下均为 false，扫描字节也低于分层布局，两项证据共同排除“宽表因读取 payload 而扫描更多”的解释。该效应属于列存的 granule 划分，不适用于 openGauss：后者通过 `(project_id,start_time,event_id)` 复合索引在四种布局下均精确扫描 256 行，与表宽度无关。
 
@@ -1006,7 +1006,7 @@ Asset 分层必须实现独立的内容核对。第 4.10 节的三类故障在�
 
 ## 参考资料
 
-- [JSON 存储原理](jsonb-native-json-principles.md)
+- [JSON 存储原理](stage2-representation-principles.md)
 - [阶段一报告](stage1-multifield-report.md)
 - [阶段二报告](stage2-representation-report.md)
 - [阶段三实验设计](stage3-payload-design.md)

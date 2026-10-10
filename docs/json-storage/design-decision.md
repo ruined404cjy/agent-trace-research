@@ -8,7 +8,7 @@
 >
 > 语料画像：nvidia/Open-SWE-Traces 抽样，9 个 config、3,600 条轨迹、586,851 条消息
 
-本文把[阶段一](stage1-multifield-report.md)、[阶段二](stage2-representation-report.md)和阶段三（[x86 报告](stage3-payload-x86-report.md)、[XStore 报告](stage3-payload-xstore-report.md)、[三台主机汇总](stage3-payload-briefing.md)）的实验结果，连同真实轨迹语料画像，收敛为一份可实施的存储设计。每条参数同时给出取值、支持它的证据和适用边界。[JSON 存储原理](jsonb-native-json-principles.md)解释 TOAST、MergeTree part 和列式压缩的一般机制，[设计调研](design-survey.md)给出代表性系统的横向比较。
+本文把[阶段一](stage1-multifield-report.md)、[阶段二](stage2-representation-report.md)和阶段三（[x86 报告](stage3-payload-x86-report.md)、[XStore 报告](stage3-payload-xstore-report.md)、[三台主机汇总](stage3-payload-briefing.md)）的实验结果，连同真实轨迹语料画像，收敛为一份可实施的存储设计。每条参数同时给出取值、支持它的证据和适用边界。[JSON 存储原理](stage2-representation-principles.md)解释 TOAST、MergeTree part 和列式压缩的一般机制，[设计调研](design-survey.md)给出代表性系统的横向比较。
 
 ## 1. 设计概要
 
@@ -278,7 +278,7 @@ whowhen_pro 的观测与之一致：其 attributes canonical JSON 文本长度 p
 
 ## 参考资料
 
-- [JSON 存储原理](jsonb-native-json-principles.md)
+- [JSON 存储原理](stage2-representation-principles.md)
 - [JSON 存储设计调研](design-survey.md)
 - [阶段一报告](stage1-multifield-report.md)
 - [阶段二报告](stage2-representation-report.md)

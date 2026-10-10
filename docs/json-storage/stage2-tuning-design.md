@@ -8,7 +8,7 @@
 >
 > 契约：`json-storage-tuned-matrix-v2`
 >
-> 原理说明：[JSON 存储原理](jsonb-native-json-principles.md)
+> 原理说明：[JSON 存储原理](stage2-representation-principles.md)
 
 ## 1. 目标
 
@@ -135,5 +135,5 @@ docs/temp/json-storage-stage2-sup/
 ## 参考资料
 
 - [阶段二报告](stage2-representation-report.md)
-- [JSON 存储原理](jsonb-native-json-principles.md)
+- [JSON 存储原理](stage2-representation-principles.md)
 - [阶段一报告](stage1-multifield-report.md)

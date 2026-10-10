@@ -1208,7 +1208,7 @@ part 状态控制的一次运行
 - [阶段三实验报告（openGauss 与 ClickHouse 25.12）](stage3-payload-x86-report.md)
 - [阶段三 XStore 横向比较实验报告](stage3-payload-xstore-report.md)
 - [阶段三实验设计](stage3-payload-design.md)
-- [JSON 存储原理](jsonb-native-json-principles.md)
+- [JSON 存储原理](stage2-representation-principles.md)
 - [openGauss 6.0 TOAST 阈值与外置结构定义](https://github.com/opengauss-mirror/openGauss-server/blob/v6.0.0/src/include/access/tuptoaster.h)
 - [ClickHouse MergeTree](https://clickhouse.com/docs/reference/engines/table-engines/mergetree-family/mergetree)
 - [ClickHouse 稀疏主键索引与自适应 index granularity](https://clickhouse.com/docs/guides/best-practices/sparse-primary-indexes)

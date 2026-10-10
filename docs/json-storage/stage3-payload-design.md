@@ -8,7 +8,7 @@
 >
 > 数据库版本：openGauss 6.0.0；ClickHouse 25.12.11.4
 >
-> 原理说明：[openGauss JSONB 与 ClickHouse Native JSON](jsonb-native-json-principles.md)
+> 原理说明：[openGauss JSONB 与 ClickHouse Native JSON](stage2-representation-principles.md)
 >
 > 上游证据：[阶段一报告](stage1-multifield-report.md)、[阶段二报告](stage2-representation-report.md)
 
@@ -309,7 +309,7 @@ run manifest 至少记录 run ID、状态、完整复现命令、输入与 truth
 
 ## 11. 参考资料
 
-- [JSON 存储原理](jsonb-native-json-principles.md)
+- [JSON 存储原理](stage2-representation-principles.md)
 - [阶段一报告](stage1-multifield-report.md)
 - [阶段一实验设计](stage1-multifield-design.md)
 - [阶段二报告](stage2-representation-report.md)

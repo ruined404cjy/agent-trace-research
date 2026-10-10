@@ -416,5 +416,5 @@ ClickHouse 23.3 上 `separate` 的哈希连接先整表读取右表，与请求�
 
 - [阶段三原理与设计](stage3-payload-principles.md)
 - [阶段三实验报告（openGauss 与 ClickHouse 25.12）](stage3-payload-x86-report.md)
-- [JSON 存储原理](jsonb-native-json-principles.md)
+- [JSON 存储原理](stage2-representation-principles.md)
 - [阶段三实验设计与证据契约](stage3-payload-design.md)
